@@ -73,7 +73,7 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 		return err
 	}
 
-	frontendAccount, err := DeployFrontendCloudRunInstance(ctx, f.FrontendName, f.FrontendImage, f.Project, f.Region, backendService.Uri)
+	frontendAccount, err := f.deployFrontendCloudRunInstance(ctx, args.Frontend, backendService.Uri)
 	if err != nil {
 		return err
 	}

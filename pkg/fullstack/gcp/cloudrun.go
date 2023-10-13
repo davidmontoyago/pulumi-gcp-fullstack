@@ -9,10 +9,16 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-var defaultBackendResourceLimits = pulumi.StringMap{
-	"memory": pulumi.String("1Gi"),
-	"cpu":    pulumi.String("1000m"),
-}
+var (
+	defaultBackendResourceLimits = pulumi.StringMap{
+		"memory": pulumi.String("1Gi"),
+		"cpu":    pulumi.String("1000m"),
+	}
+	defaultFrontendResourceLimits = pulumi.StringMap{
+		"memory": pulumi.String("2Gi"),
+		"cpu":    pulumi.String("2000m"),
+	}
+)
 
 func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *BackendArgs) (*cloudrunv2.Service, *serviceAccount.Account, error) {
 	if args == nil {
@@ -63,7 +69,19 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 	return backendService, serviceAccount, nil
 }
 
-func DeployFrontendCloudRunInstance(ctx *pulumi.Context, serviceName, frontendImage, project, region string, backendURL pulumi.StringOutput) (*serviceAccount.Account, error) {
+func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *FrontendArgs, backendURL pulumi.StringOutput) (*serviceAccount.Account, error) {
+	if args == nil {
+		args = &FrontendArgs{}
+	}
+	if args.ResourceLimits == nil {
+		args.ResourceLimits = defaultFrontendResourceLimits
+	}
+
+	serviceName := f.FrontendName
+	frontendImage := f.FrontendImage
+	project := f.Project
+	region := f.Region
+
 	// TODO concat frontend name
 	accountName := "frontend-identity"
 	serviceAccount, err := serviceAccount.NewAccount(ctx, accountName, &serviceAccount.AccountArgs{
@@ -128,11 +146,7 @@ func DeployFrontendCloudRunInstance(ctx *pulumi.Context, serviceName, frontendIm
 				&cloudrunv2.ServiceTemplateContainerArgs{
 					Image: pulumi.String(frontendImage),
 					Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
-						Limits: pulumi.StringMap{
-							// TODO make configurable
-							"memory": pulumi.String("2Gi"),
-							"cpu":    pulumi.String("2000m"),
-						},
+						Limits: args.ResourceLimits,
 					},
 					Ports: cloudrunv2.ServiceTemplateContainerPortArray{
 						cloudrunv2.ServiceTemplateContainerPortArgs{
