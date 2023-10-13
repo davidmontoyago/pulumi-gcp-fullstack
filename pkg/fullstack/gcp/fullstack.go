@@ -25,6 +25,17 @@ type FullStackArgs struct {
 	BackendImage  string
 	FrontendName  string
 	FrontendImage string
+	// Optional additional config
+	Backend  *BackendArgs
+	Frontend *FrontendArgs
+}
+
+type BackendArgs struct {
+	ResourceLimits pulumi.StringMap
+}
+
+type FrontendArgs struct {
+	ResourceLimits pulumi.StringMap
 }
 
 func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ...pulumi.ResourceOption) (*FullStack, error) {
@@ -43,7 +54,7 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 
 	// TODO prefix all resources with name
 	// proceed to provision
-	err = f.deploy(ctx)
+	err = f.deploy(ctx, args)
 	if err != nil {
 		return nil, err
 	}
@@ -56,13 +67,13 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 	return f, nil
 }
 
-func (f *FullStack) deploy(ctx *pulumi.Context) error {
-	backendService, _, err := DeployBackendCloudRunInstance(ctx, f.BackendName, f.BackendImage, f.Project, f.Region)
+func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
+	backendService, _, err := f.deployBackendCloudRunInstance(ctx, args.Backend)
 	if err != nil {
 		return err
 	}
 
-	frontendServiceAccount, err := DeployFrontendCloudRunInstance(ctx, f.FrontendName, f.FrontendImage, f.Project, f.Region, backendService.Uri)
+	frontendAccount, err := DeployFrontendCloudRunInstance(ctx, f.FrontendName, f.FrontendImage, f.Project, f.Region, backendService.Uri)
 	if err != nil {
 		return err
 	}
@@ -73,7 +84,7 @@ func (f *FullStack) deploy(ctx *pulumi.Context) error {
 		Project:  pulumi.String(f.Project),
 		Location: pulumi.String(f.Region),
 		Role:     pulumi.String("roles/run.invoker"),
-		Member:   pulumi.Sprintf("serviceAccount:%s", frontendServiceAccount.Email),
+		Member:   pulumi.Sprintf("serviceAccount:%s", frontendAccount.Email),
 	})
 	if err != nil {
 		return err

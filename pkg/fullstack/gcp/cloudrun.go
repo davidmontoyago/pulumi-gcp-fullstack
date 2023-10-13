@@ -9,12 +9,25 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-func DeployBackendCloudRunInstance(ctx *pulumi.Context, backendName, backendImageName, project, region string) (*cloudrunv2.Service, *serviceAccount.Account, error) {
+var defaultBackendResourceLimits = pulumi.StringMap{
+	"memory": pulumi.String("1Gi"),
+	"cpu":    pulumi.String("1000m"),
+}
+
+func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *BackendArgs) (*cloudrunv2.Service, *serviceAccount.Account, error) {
+	if args == nil {
+		args = &BackendArgs{}
+	}
+	if args.ResourceLimits == nil {
+		args.ResourceLimits = defaultBackendResourceLimits
+	}
+
+	backendName := f.BackendName
 	accountName := fmt.Sprintf("%s-identity", backendName)
 	serviceAccount, err := serviceAccount.NewAccount(ctx, accountName, &serviceAccount.AccountArgs{
 		AccountId:   pulumi.String(accountName),
 		DisplayName: pulumi.String(fmt.Sprintf("Backend service account (%s)", backendName)),
-		Project:     pulumi.String(project),
+		Project:     pulumi.String(f.Project),
 	})
 	if err != nil {
 		return nil, nil, err
@@ -26,18 +39,14 @@ func DeployBackendCloudRunInstance(ctx *pulumi.Context, backendName, backendImag
 	backendService, err := cloudrunv2.NewService(ctx, backendName, &cloudrunv2.ServiceArgs{
 		Ingress:     pulumi.String("INGRESS_TRAFFIC_INTERNAL_ONLY"),
 		Description: pulumi.String(fmt.Sprintf("Serverless instance (%s)", backendName)),
-		Location:    pulumi.String(region),
-		Project:     pulumi.String(project),
+		Location:    pulumi.String(f.Region),
+		Project:     pulumi.String(f.Project),
 		Template: &cloudrunv2.ServiceTemplateArgs{
 			Containers: cloudrunv2.ServiceTemplateContainerArray{
 				&cloudrunv2.ServiceTemplateContainerArgs{
-					Image: pulumi.String(backendImageName),
+					Image: pulumi.String(f.BackendImage),
 					Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
-						// TODO make configurable
-						Limits: pulumi.StringMap{
-							"memory": pulumi.String("1Gi"),
-							"cpu":    pulumi.String("1000m"),
-						},
+						Limits: args.ResourceLimits,
 					},
 					// TODO read config from secret
 				},
