@@ -35,7 +35,10 @@ type BackendArgs struct {
 }
 
 type FrontendArgs struct {
-	ResourceLimits pulumi.StringMap
+	ResourceLimits       pulumi.StringMap
+	SecretConfigFileName string
+	SecretConfigFilePath string
+	EnvVars              map[string]string
 }
 
 func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ...pulumi.ResourceOption) (*FullStack, error) {

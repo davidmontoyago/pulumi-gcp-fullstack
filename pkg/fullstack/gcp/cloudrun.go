@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v6/go/gcp/cloudrunv2"
-	secretmanager "github.com/pulumi/pulumi-gcp/sdk/v6/go/gcp/secretmanager"
 	serviceAccount "github.com/pulumi/pulumi-gcp/sdk/v6/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -71,7 +70,11 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 
 func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *FrontendArgs, backendURL pulumi.StringOutput) (*serviceAccount.Account, error) {
 	if args == nil {
-		args = &FrontendArgs{}
+		args = &FrontendArgs{
+			// default to a NextJs app
+			SecretConfigFileName: ".env.production",
+			SecretConfigFilePath: "/app/.next/config/",
+		}
 	}
 	if args.ResourceLimits == nil {
 		args.ResourceLimits = defaultFrontendResourceLimits
@@ -95,35 +98,27 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 	ctx.Export("cloud_run_service_frontend_account_id", serviceAccount.ID())
 
 	// create a secret to hold env vars for the cloud run instance
-	secretID := fmt.Sprintf("%s-config", serviceName)
-	configSecret, err := secretmanager.NewSecret(ctx, secretID, &secretmanager.SecretArgs{
-		Labels: pulumi.StringMap{
-			"frontend": pulumi.String("true"),
-		},
-		Replication: &secretmanager.SecretReplicationArgs{
-			UserManaged: &secretmanager.SecretReplicationUserManagedArgs{
-				Replicas: secretmanager.SecretReplicationUserManagedReplicaArray{
-					&secretmanager.SecretReplicationUserManagedReplicaArgs{
-						Location: pulumi.String(region),
-					},
-				},
-			},
-		},
-		SecretId: pulumi.String(secretID),
-	})
+	configSecret, err := newEnvConfigSecret(ctx, serviceName, region, project, serviceAccount)
 	if err != nil {
 		return nil, err
 	}
 
-	// allow the frontend GSA to access the secret
-	_, err = secretmanager.NewSecretIamMember(ctx, secretID, &secretmanager.SecretIamMemberArgs{
-		Project:  pulumi.String(project),
-		SecretId: configSecret.SecretId,
-		Role:     pulumi.String("roles/secretmanager.secretAccessor"),
-		Member:   pulumi.Sprintf("serviceAccount:%s", serviceAccount.Email),
-	})
-	if err != nil {
-		return nil, err
+	envVars := cloudrunv2.ServiceTemplateContainerEnvArray{
+		cloudrunv2.ServiceTemplateContainerEnvArgs{
+			// default for dotenv and nextjs apps
+			Name:  pulumi.String("DOTENV_CONFIG_PATH"),
+			Value: pulumi.String(fmt.Sprintf("%s%s", args.SecretConfigFilePath, args.SecretConfigFileName)),
+		},
+		cloudrunv2.ServiceTemplateContainerEnvArgs{
+			Name:  pulumi.String("BACKEND_API_URL"),
+			Value: backendURL,
+		},
+	}
+	for enVarName, envVarValue := range args.EnvVars {
+		envVars = append(envVars, cloudrunv2.ServiceTemplateContainerEnvArgs{
+			Name:  pulumi.String(enVarName),
+			Value: pulumi.String(envVarValue),
+		})
 	}
 
 	frontendService, err := cloudrunv2.NewService(ctx, serviceName, &cloudrunv2.ServiceArgs{
@@ -153,21 +148,10 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 							ContainerPort: pulumi.Int(3000),
 						},
 					},
-					Envs: cloudrunv2.ServiceTemplateContainerEnvArray{
-						cloudrunv2.ServiceTemplateContainerEnvArgs{
-							// TODO make configurable
-							Name:  pulumi.String("DOTENV_CONFIG_PATH"),
-							Value: pulumi.String("/app/.next/config/.env.production"),
-						},
-						cloudrunv2.ServiceTemplateContainerEnvArgs{
-							Name:  pulumi.String("BACKEND_API_URL"),
-							Value: backendURL,
-						},
-					},
+					Envs: envVars,
 					VolumeMounts: &cloudrunv2.ServiceTemplateContainerVolumeMountArray{
 						cloudrunv2.ServiceTemplateContainerVolumeMountArgs{
-							// TODO make configurable
-							MountPath: pulumi.String("/app/.next/config/"),
+							MountPath: pulumi.String(args.SecretConfigFilePath),
 							Name:      pulumi.String("envconfig"),
 						},
 					},
@@ -181,8 +165,7 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 						Secret: configSecret.SecretId,
 						Items: cloudrunv2.ServiceTemplateVolumeSecretItemArray{
 							&cloudrunv2.ServiceTemplateVolumeSecretItemArgs{
-								// TODO make configurable
-								Path:    pulumi.String(".env.production"),
+								Path:    pulumi.String(args.SecretConfigFileName),
 								Version: pulumi.String("latest"),
 								Mode:    pulumi.IntPtr(0500),
 							},
