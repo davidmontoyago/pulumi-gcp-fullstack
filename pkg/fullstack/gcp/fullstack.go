@@ -28,6 +28,7 @@ type FullStackArgs struct {
 	// Optional additional config
 	Backend  *BackendArgs
 	Frontend *FrontendArgs
+	Network  *NetworkArgs
 }
 
 type BackendArgs struct {
@@ -45,6 +46,14 @@ type InstanceArgs struct {
 	SecretConfigFilePath string
 	EnvVars              map[string]string
 	MaxInstanceCount     int
+}
+
+type NetworkArgs struct {
+	// Domain name for the internet-facing certificate.
+	// E.g.: "myapp.path2prod.dev"
+	DomainURL string
+	// GCP network where to host the load balancer instances. Defaults to "default".
+	ProxyNetworkName string
 }
 
 func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ...pulumi.ResourceOption) (*FullStack, error) {
@@ -100,6 +109,6 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 	}
 
 	// create an external load balancer with a NEG for the frontend
-	err = DeployExternalLoadBalancer(ctx, f.FrontendName, f.Project, f.Region)
+	err = f.deployExternalLoadBalancer(ctx, args.FrontendName, args.Network)
 	return err
 }
