@@ -21,7 +21,12 @@ var (
 
 func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *BackendArgs) (*cloudrunv2.Service, *serviceAccount.Account, error) {
 	if args == nil {
-		args = &BackendArgs{}
+		args = &BackendArgs{
+			&InstanceArgs{
+				SecretConfigFileName: ".env",
+				SecretConfigFilePath: "/app/config/",
+			},
+		}
 	}
 	if args.ResourceLimits == nil {
 		args.ResourceLimits = defaultBackendResourceLimits
@@ -71,9 +76,11 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *FrontendArgs, backendURL pulumi.StringOutput) (*serviceAccount.Account, error) {
 	if args == nil {
 		args = &FrontendArgs{
-			// default to a NextJs app
-			SecretConfigFileName: ".env.production",
-			SecretConfigFilePath: "/app/.next/config/",
+			&InstanceArgs{
+				// default to a NextJs app
+				SecretConfigFileName: ".env.production",
+				SecretConfigFilePath: "/app/.next/config/",
+			},
 		}
 	}
 	if args.ResourceLimits == nil {
@@ -103,24 +110,6 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 		return nil, err
 	}
 
-	envVars := cloudrunv2.ServiceTemplateContainerEnvArray{
-		cloudrunv2.ServiceTemplateContainerEnvArgs{
-			// default for dotenv and nextjs apps
-			Name:  pulumi.String("DOTENV_CONFIG_PATH"),
-			Value: pulumi.String(fmt.Sprintf("%s%s", args.SecretConfigFilePath, args.SecretConfigFileName)),
-		},
-		cloudrunv2.ServiceTemplateContainerEnvArgs{
-			Name:  pulumi.String("BACKEND_API_URL"),
-			Value: backendURL,
-		},
-	}
-	for enVarName, envVarValue := range args.EnvVars {
-		envVars = append(envVars, cloudrunv2.ServiceTemplateContainerEnvArgs{
-			Name:  pulumi.String(enVarName),
-			Value: pulumi.String(envVarValue),
-		})
-	}
-
 	frontendService, err := cloudrunv2.NewService(ctx, serviceName, &cloudrunv2.ServiceArgs{
 		Name:        pulumi.String(serviceName),
 		Ingress:     pulumi.String("INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"),
@@ -148,7 +137,7 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 							ContainerPort: pulumi.Int(3000),
 						},
 					},
-					Envs: envVars,
+					Envs: newFrontendEnvVars(args, backendURL),
 					VolumeMounts: &cloudrunv2.ServiceTemplateContainerVolumeMountArray{
 						cloudrunv2.ServiceTemplateContainerVolumeMountArgs{
 							MountPath: pulumi.String(args.SecretConfigFilePath),
@@ -198,4 +187,24 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 	}
 
 	return serviceAccount, nil
+}
+
+func newFrontendEnvVars(args *FrontendArgs, backendURL pulumi.StringOutput) cloudrunv2.ServiceTemplateContainerEnvArray {
+	envVars := cloudrunv2.ServiceTemplateContainerEnvArray{
+		cloudrunv2.ServiceTemplateContainerEnvArgs{
+			Name:  pulumi.String("DOTENV_CONFIG_PATH"),
+			Value: pulumi.String(fmt.Sprintf("%s%s", args.SecretConfigFilePath, args.SecretConfigFileName)),
+		},
+		cloudrunv2.ServiceTemplateContainerEnvArgs{
+			Name:  pulumi.String("BACKEND_API_URL"),
+			Value: backendURL,
+		},
+	}
+	for enVarName, envVarValue := range args.EnvVars {
+		envVars = append(envVars, cloudrunv2.ServiceTemplateContainerEnvArgs{
+			Name:  pulumi.String(enVarName),
+			Value: pulumi.String(envVarValue),
+		})
+	}
+	return envVars
 }

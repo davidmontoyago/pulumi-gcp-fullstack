@@ -31,10 +31,14 @@ type FullStackArgs struct {
 }
 
 type BackendArgs struct {
-	ResourceLimits pulumi.StringMap
+	*InstanceArgs
 }
 
 type FrontendArgs struct {
+	*InstanceArgs
+}
+
+type InstanceArgs struct {
 	ResourceLimits       pulumi.StringMap
 	SecretConfigFileName string
 	SecretConfigFilePath string
