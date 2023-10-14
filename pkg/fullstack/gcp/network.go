@@ -23,11 +23,11 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, serviceName 
 		return err
 	}
 
-	err = newHTTPSProxy(ctx, serviceName, args.DomainURL, f.Project, backendUrlMap)
+	err = newHTTPSProxy(ctx, serviceName, args.DomainURL, f.Project, args.EnablePrivateTrafficOnly, backendUrlMap)
 	return err
 }
 
-func newHTTPSProxy(ctx *pulumi.Context, serviceName, domainName, project string, backendUrlMap *compute.URLMap) error {
+func newHTTPSProxy(ctx *pulumi.Context, serviceName, domainName, project string, privateTraffic bool, backendUrlMap *compute.URLMap) error {
 	certificate, err := compute.NewManagedSslCertificate(ctx, fmt.Sprintf("%s-tls", serviceName), &compute.ManagedSslCertificateArgs{
 		Description: pulumi.String(fmt.Sprintf("TLS cert for %s", serviceName)),
 		Project:     pulumi.String(project),
@@ -53,14 +53,21 @@ func newHTTPSProxy(ctx *pulumi.Context, serviceName, domainName, project string,
 		return err
 	}
 
-	_, err = compute.NewGlobalForwardingRule(ctx, fmt.Sprintf("%s-https", serviceName), &compute.GlobalForwardingRuleArgs{
-		Description:         pulumi.String(fmt.Sprintf("HTTPS forwarding rule to LB traffic for %s", serviceName)),
-		Project:             pulumi.String(project),
-		PortRange:           pulumi.String("443"),
-		LoadBalancingScheme: pulumi.String("EXTERNAL"),
-		Target:              httpsProxy.SelfLink,
-	})
-	return err
+	if !privateTraffic {
+		// https://cloud.google.com/load-balancing/docs/https#forwarding-rule
+		_, err = compute.NewGlobalForwardingRule(ctx, fmt.Sprintf("%s-https", serviceName), &compute.GlobalForwardingRuleArgs{
+			Description:         pulumi.String(fmt.Sprintf("HTTPS forwarding rule to LB traffic for %s", serviceName)),
+			Project:             pulumi.String(project),
+			PortRange:           pulumi.String("443"),
+			LoadBalancingScheme: pulumi.String("EXTERNAL"),
+			Target:              httpsProxy.SelfLink,
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func newCloudRunNEG(ctx *pulumi.Context, serviceName, network, project, region string) (*compute.URLMap, error) {

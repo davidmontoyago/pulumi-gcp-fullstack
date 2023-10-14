@@ -49,11 +49,13 @@ type InstanceArgs struct {
 }
 
 type NetworkArgs struct {
-	// Domain name for the internet-facing certificate.
+	// Domain name for the internet-facing certificate. Required.
 	// E.g.: "myapp.path2prod.dev"
 	DomainURL string
 	// GCP network where to host the load balancer instances. Defaults to "default".
 	ProxyNetworkName string
+	// Whether to disable public internet access. Useful during development. Defaults to false.
+	EnablePrivateTrafficOnly bool
 }
 
 func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ...pulumi.ResourceOption) (*FullStack, error) {
