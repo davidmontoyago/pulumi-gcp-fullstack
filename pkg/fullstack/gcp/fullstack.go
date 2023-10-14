@@ -54,6 +54,10 @@ type NetworkArgs struct {
 	DomainURL string
 	// GCP network where to host the load balancer instances. Defaults to "default".
 	ProxyNetworkName string
+	// Whether to apply best-practice Cloud Armor policies to the load balancer. Defaults to false.
+	EnableCloudArmor bool
+	// Whether to restrict access to the given list of client IPs. Valid only when EnableCloudArmor=true.
+	ClientIPAllowlist []string
 	// Whether to disable public internet access. Useful during development. Defaults to false.
 	EnablePrivateTrafficOnly bool
 }
