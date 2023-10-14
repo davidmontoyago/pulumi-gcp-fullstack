@@ -36,6 +36,7 @@ type BackendArgs struct {
 
 type FrontendArgs struct {
 	*InstanceArgs
+	EnableUnauthenticated bool
 }
 
 type InstanceArgs struct {
@@ -43,6 +44,7 @@ type InstanceArgs struct {
 	SecretConfigFileName string
 	SecretConfigFilePath string
 	EnvVars              map[string]string
+	MaxInstanceCount     int
 }
 
 func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ...pulumi.ResourceOption) (*FullStack, error) {

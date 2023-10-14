@@ -25,6 +25,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 			&InstanceArgs{
 				SecretConfigFileName: ".env",
 				SecretConfigFilePath: "/app/config/",
+				MaxInstanceCount:     3,
 			},
 		}
 	}
@@ -52,6 +53,9 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 		Location:    pulumi.String(f.Region),
 		Project:     pulumi.String(f.Project),
 		Template: &cloudrunv2.ServiceTemplateArgs{
+			Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
+				MaxInstanceCount: pulumi.Int(args.MaxInstanceCount),
+			},
 			Containers: cloudrunv2.ServiceTemplateContainerArray{
 				&cloudrunv2.ServiceTemplateContainerArgs{
 					Image: pulumi.String(f.BackendImage),
@@ -76,10 +80,11 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *FrontendArgs, backendURL pulumi.StringOutput) (*serviceAccount.Account, error) {
 	if args == nil {
 		args = &FrontendArgs{
-			&InstanceArgs{
+			InstanceArgs: &InstanceArgs{
 				// default to a NextJs app
 				SecretConfigFileName: ".env.production",
 				SecretConfigFilePath: "/app/.next/config/",
+				MaxInstanceCount:     3,
 			},
 		}
 	}
@@ -123,8 +128,7 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 		},
 		Template: &cloudrunv2.ServiceTemplateArgs{
 			Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
-				// TODO make configurable
-				MaxInstanceCount: pulumi.Int(3),
+				MaxInstanceCount: pulumi.Int(args.MaxInstanceCount),
 			},
 			Containers: cloudrunv2.ServiceTemplateContainerArray{
 				&cloudrunv2.ServiceTemplateContainerArgs{
@@ -171,10 +175,8 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 	ctx.Export("cloud_run_service_frontend_id", frontendService.ID())
 	ctx.Export("cloud_run_service_frontend_uri", frontendService.Uri)
 
-	// TODO make configurable
-	enableUnauthenticated := false
-	if enableUnauthenticated {
-		_, err = cloudrunv2.NewServiceIamMember(ctx, "frontend-allow-unauthenticated", &cloudrunv2.ServiceIamMemberArgs{
+	if args.EnableUnauthenticated {
+		_, err = cloudrunv2.NewServiceIamMember(ctx, fmt.Sprintf("%s-allow-unauthenticated", f.FrontendName), &cloudrunv2.ServiceIamMemberArgs{
 			Name:     frontendService.Name,
 			Project:  pulumi.String(project),
 			Location: pulumi.String(region),
