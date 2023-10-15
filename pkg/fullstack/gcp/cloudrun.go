@@ -79,13 +79,14 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 
 func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *FrontendArgs, backendURL pulumi.StringOutput) (*serviceAccount.Account, error) {
 	if args == nil {
-		args = &FrontendArgs{
-			InstanceArgs: &InstanceArgs{
-				// default to a NextJs app
-				SecretConfigFileName: ".env.production",
-				SecretConfigFilePath: "/app/.next/config/",
-				MaxInstanceCount:     3,
-			},
+		args = &FrontendArgs{}
+	}
+	if args.InstanceArgs == nil {
+		args.InstanceArgs = &InstanceArgs{
+			// default to a NextJs app
+			SecretConfigFileName: ".env.production",
+			SecretConfigFilePath: "/app/.next/config/",
+			MaxInstanceCount:     3,
 		}
 	}
 	if args.ResourceLimits == nil {
