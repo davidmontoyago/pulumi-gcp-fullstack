@@ -10,6 +10,7 @@ import (
 type FullStack struct {
 	pulumi.ResourceState
 
+	Name          string
 	Project       string
 	Region        string
 	BackendName   string
@@ -64,6 +65,7 @@ type NetworkArgs struct {
 
 func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ...pulumi.ResourceOption) (*FullStack, error) {
 	f := &FullStack{
+		Name:          name,
 		Project:       args.Project,
 		Region:        args.Region,
 		BackendImage:  args.BackendImage,
@@ -76,7 +78,6 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 		return nil, err
 	}
 
-	// TODO prefix all resources with name
 	// proceed to provision
 	err = f.deploy(ctx, args)
 	if err != nil {

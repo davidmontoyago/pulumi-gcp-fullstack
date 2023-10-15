@@ -21,7 +21,8 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, serviceName 
 	var cloudArmorPolicy *compute.SecurityPolicy
 	var err error
 	if args.EnableCloudArmor {
-		cloudArmorPolicy, err = newCloudArmorPolicy(args, serviceName, ctx, f.Project)
+		policyName := fmt.Sprintf("%s-%s", f.Name, serviceName)
+		cloudArmorPolicy, err = newCloudArmorPolicy(ctx, policyName, args, f.Project)
 		if err != nil {
 			return err
 		}

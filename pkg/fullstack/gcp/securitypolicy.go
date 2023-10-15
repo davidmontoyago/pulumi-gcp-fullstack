@@ -10,7 +10,7 @@ import (
 // creates a best-practice Cloud Armor security policy.
 // See:
 // https://github.com/GoogleCloudPlatform/terraform-google-cloud-armor/blob/9ea03ee3ff0778a087888582e806da7342635d69/main.tf#L445
-func newCloudArmorPolicy(args *NetworkArgs, serviceName string, ctx *pulumi.Context, project string) (*compute.SecurityPolicy, error) {
+func newCloudArmorPolicy(ctx *pulumi.Context, policyName string, args *NetworkArgs, project string) (*compute.SecurityPolicy, error) {
 	// Every security policy must have a default rule at priority 2147483647 with match condition *.
 	// See:
 	// https://cloud.google.com/armor/docs/waf-rules
@@ -30,8 +30,8 @@ func newCloudArmorPolicy(args *NetworkArgs, serviceName string, ctx *pulumi.Cont
 	// TODO add rate limiting rules
 	// TODO add named IP preconfigured rules
 
-	policy, err := compute.NewSecurityPolicy(ctx, fmt.Sprintf("%s-default", serviceName), &compute.SecurityPolicyArgs{
-		Description: pulumi.String(fmt.Sprintf("Cloud Armor security policy for %s", serviceName)),
+	policy, err := compute.NewSecurityPolicy(ctx, fmt.Sprintf("%s-default", policyName), &compute.SecurityPolicyArgs{
+		Description: pulumi.String(fmt.Sprintf("Cloud Armor security policy for %s", policyName)),
 		Project:     pulumi.String(project),
 		Rules:       rules,
 		Type:        pulumi.String("CLOUD_ARMOR"),
