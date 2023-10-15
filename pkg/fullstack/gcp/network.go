@@ -50,6 +50,8 @@ func newHTTPSProxy(ctx *pulumi.Context, serviceName, domainName, project string,
 	if err != nil {
 		return err
 	}
+	ctx.Export("load_balancer_https_certificate_id", certificate.ID())
+	ctx.Export("load_balancer_https_certificate_uri", certificate.SelfLink)
 
 	httpsProxy, err := compute.NewTargetHttpsProxy(ctx, fmt.Sprintf("%s-https", serviceName), &compute.TargetHttpsProxyArgs{
 		Description: pulumi.String(fmt.Sprintf("proxy to LB traffic for %s", serviceName)),
@@ -62,10 +64,12 @@ func newHTTPSProxy(ctx *pulumi.Context, serviceName, domainName, project string,
 	if err != nil {
 		return err
 	}
+	ctx.Export("load_balancer_https_proxy_id", httpsProxy.ID())
+	ctx.Export("load_balancer_https_proxy_uri", httpsProxy.SelfLink)
 
 	if !privateTraffic {
 		// https://cloud.google.com/load-balancing/docs/https#forwarding-rule
-		_, err = compute.NewGlobalForwardingRule(ctx, fmt.Sprintf("%s-https", serviceName), &compute.GlobalForwardingRuleArgs{
+		trafficRule, err := compute.NewGlobalForwardingRule(ctx, fmt.Sprintf("%s-https", serviceName), &compute.GlobalForwardingRuleArgs{
 			Description:         pulumi.String(fmt.Sprintf("HTTPS forwarding rule to LB traffic for %s", serviceName)),
 			Project:             pulumi.String(project),
 			PortRange:           pulumi.String("443"),
@@ -75,6 +79,9 @@ func newHTTPSProxy(ctx *pulumi.Context, serviceName, domainName, project string,
 		if err != nil {
 			return err
 		}
+		ctx.Export("load_balancer_global_forwarding_rule_id", trafficRule.ID())
+		ctx.Export("load_balancer_global_forwarding_rule_uri", trafficRule.SelfLink)
+		ctx.Export("load_balancer_global_forwarding_rule_ip_address", trafficRule.IpAddress)
 	}
 
 	return nil
@@ -88,7 +95,7 @@ func newCloudRunNEG(ctx *pulumi.Context, policy *compute.SecurityPolicy, service
 	if trafficNetwork == "" {
 		trafficNetwork = "default"
 	}
-	_, err := compute.NewSubnetwork(ctx, fmt.Sprintf("%s-proxy-only", serviceName), &compute.SubnetworkArgs{
+	subnet, err := compute.NewSubnetwork(ctx, fmt.Sprintf("%s-proxy-only", serviceName), &compute.SubnetworkArgs{
 		Name:        pulumi.String(fmt.Sprintf("%s-proxy-only", serviceName)),
 		Description: pulumi.String(fmt.Sprintf("proxy-only subnet for cloud run traffic for %s", serviceName)),
 		Project:     pulumi.String(project),
@@ -102,6 +109,8 @@ func newCloudRunNEG(ctx *pulumi.Context, policy *compute.SecurityPolicy, service
 	if err != nil {
 		return nil, err
 	}
+	ctx.Export("load_balancer_proxy_subnet_id", subnet.ID())
+	ctx.Export("load_balancer_proxy_subnet_uri", subnet.SelfLink)
 
 	neg, err := compute.NewRegionNetworkEndpointGroup(ctx, fmt.Sprintf("%s-default", serviceName), &compute.RegionNetworkEndpointGroupArgs{
 		Description:         pulumi.String(fmt.Sprintf("NEG to route LB traffic to %s", serviceName)),
@@ -115,6 +124,8 @@ func newCloudRunNEG(ctx *pulumi.Context, policy *compute.SecurityPolicy, service
 	if err != nil {
 		return nil, err
 	}
+	ctx.Export("load_balancer_network_endpoint_group_id", neg.ID())
+	ctx.Export("load_balancer_network_endpoint_group_uri", neg.SelfLink)
 
 	serviceArgs := &compute.BackendServiceArgs{
 		Description:         pulumi.String(fmt.Sprintf("service backend for %s", serviceName)),
@@ -134,6 +145,8 @@ func newCloudRunNEG(ctx *pulumi.Context, policy *compute.SecurityPolicy, service
 	if err != nil {
 		return nil, err
 	}
+	ctx.Export("load_balancer_backend_service_id", neg.ID())
+	ctx.Export("load_balancer_backend_service_uri", neg.SelfLink)
 
 	// TODO create compute address if enabled
 	backendUrlMap, err := compute.NewURLMap(ctx, fmt.Sprintf("%s-default", serviceName), &compute.URLMapArgs{
@@ -144,5 +157,7 @@ func newCloudRunNEG(ctx *pulumi.Context, policy *compute.SecurityPolicy, service
 	if err != nil {
 		return nil, err
 	}
+	ctx.Export("load_balancer_url_map_id", backendUrlMap.ID())
+	ctx.Export("load_balancer_url_map_uri", backendUrlMap.SelfLink)
 	return backendUrlMap, nil
 }

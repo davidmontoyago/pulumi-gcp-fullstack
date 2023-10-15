@@ -36,7 +36,12 @@ func newCloudArmorPolicy(ctx *pulumi.Context, policyName string, args *NetworkAr
 		Rules:       rules,
 		Type:        pulumi.String("CLOUD_ARMOR"),
 	})
-	return policy, err
+	if err != nil {
+		return nil, err
+	}
+	ctx.Export("cloud_armor_security_policy_id", policy.ID())
+	ctx.Export("cloud_armor_security_policy_uri", policy.SelfLink)
+	return policy, nil
 }
 
 func newDefaultRule() compute.SecurityPolicyRuleArray {
