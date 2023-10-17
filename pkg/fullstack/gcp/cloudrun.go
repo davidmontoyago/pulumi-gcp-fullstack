@@ -34,7 +34,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 	}
 
 	backendName := f.BackendName
-	accountName := fmt.Sprintf("%s-identity", backendName)
+	accountName := f.newResourceName(backendName, 28)
 	serviceAccount, err := serviceAccount.NewAccount(ctx, accountName, &serviceAccount.AccountArgs{
 		AccountId:   pulumi.String(accountName),
 		DisplayName: pulumi.String(fmt.Sprintf("Backend service account (%s)", backendName)),
@@ -93,13 +93,12 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 		args.ResourceLimits = defaultFrontendResourceLimits
 	}
 
-	serviceName := f.FrontendName
 	frontendImage := f.FrontendImage
 	project := f.Project
 	region := f.Region
 
-	// TODO concat frontend name
-	accountName := "frontend-identity"
+	serviceName := f.FrontendName
+	accountName := f.newResourceName(serviceName, 28)
 	serviceAccount, err := serviceAccount.NewAccount(ctx, accountName, &serviceAccount.AccountArgs{
 		AccountId:   pulumi.String(accountName),
 		DisplayName: pulumi.String(fmt.Sprintf("Frontend service account (%s)", serviceName)),

@@ -2,6 +2,8 @@ package gcp
 
 import (
 	"fmt"
+	"math"
+	"strings"
 
 	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v6/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -10,13 +12,14 @@ import (
 type FullStack struct {
 	pulumi.ResourceState
 
-	Name          string
 	Project       string
 	Region        string
 	BackendName   string
 	BackendImage  string
 	FrontendName  string
 	FrontendImage string
+
+	prefix string
 }
 
 type FullStackArgs struct {
@@ -65,13 +68,14 @@ type NetworkArgs struct {
 
 func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ...pulumi.ResourceOption) (*FullStack, error) {
 	f := &FullStack{
-		Name:          name,
 		Project:       args.Project,
 		Region:        args.Region,
 		BackendImage:  args.BackendImage,
 		FrontendImage: args.FrontendImage,
 		BackendName:   args.BackendName,
 		FrontendName:  args.FrontendName,
+
+		prefix: name,
 	}
 	err := ctx.RegisterComponentResource("pulumi-fullstack:gcp:FullStack", name, f, opts...)
 	if err != nil {
@@ -118,4 +122,24 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 	// create an external load balancer with a NEG for the frontend
 	err = f.deployExternalLoadBalancer(ctx, args.FrontendName, args.Network)
 	return err
+}
+
+func (f *FullStack) newResourceName(name string, max int) string {
+	resourceName := fmt.Sprintf("%s-%s", f.prefix, name)
+	if len(resourceName) > max {
+		// if too big, cut back
+		surplus := len(resourceName) - max
+
+		prefixSurplus := int(math.Ceil(float64(surplus) / 2))
+		shortPrefix := f.prefix[:len(f.prefix)-prefixSurplus]
+
+		nameSurplus := surplus - prefixSurplus
+		shortName := name[:len(name)-nameSurplus]
+
+		resourceName = fmt.Sprintf("%s-%s",
+			strings.TrimSuffix(shortPrefix, "-"),
+			strings.TrimSuffix(shortName, "-"),
+		)
+	}
+	return resourceName
 }
