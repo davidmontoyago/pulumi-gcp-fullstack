@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	compute "github.com/pulumi/pulumi-gcp/sdk/v6/go/gcp/compute"
+	"github.com/pulumi/pulumi-gcp/sdk/v6/go/gcp/projects"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -21,11 +22,66 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, serviceName 
 	var cloudArmorPolicy *compute.SecurityPolicy
 	var err error
 	if args.EnableCloudArmor {
-		policyName := fmt.Sprintf("%s-%s", f.prefix, serviceName)
+		policyName := f.newResourceName(serviceName, 100)
 		cloudArmorPolicy, err = newCloudArmorPolicy(ctx, policyName, args, f.Project)
 		if err != nil {
 			return err
 		}
+	}
+
+	if args.EnableIAP {
+		// identity platform can't be fully enabled programatically yet.
+		// make sure to enable in marketplace console.
+		//
+		// See:
+		// https://issuetracker.google.com/issues/194945691?pli=1
+		// https://stackoverflow.com/questions/67778417/enable-google-cloud-identity-platform-programmatically-no-ui
+		identityPlatformName := f.newResourceName(fmt.Sprintf("%s-%s", serviceName, "cloudidentity"), 100)
+		_, err := projects.NewService(ctx, identityPlatformName, &projects.ServiceArgs{
+			Project: pulumi.String(f.Project),
+			Service: pulumi.String("cloudidentity.googleapis.com"),
+		})
+		if err != nil {
+			return err
+		}
+
+		idToolkitName := f.newResourceName(fmt.Sprintf("%s-%s", serviceName, "identitytoolkit"), 100)
+		_, err = projects.NewService(ctx, idToolkitName, &projects.ServiceArgs{
+			Project: pulumi.String(f.Project),
+			Service: pulumi.String("identitytoolkit.googleapis.com"),
+		})
+		if err != nil {
+			return err
+		}
+
+		// Enabling IAP requires Google project to be under an organization.
+		// This is a requirement for OAuth Brands which are created as Internal
+		// by default. To allow for external users it needs to be set to Public
+		// via the UI.
+		// An organization can be created via either Cloud Identity or Workspaces (GSuite).
+		// If using Cloud Identity, Google will require you to verify the domain provided
+		// with TXT record.
+		//
+		// See:
+		// https://cloud.google.com/iap/docs/programmatic-oauth-clients#branding
+		// https://support.google.com/cloud/answer/10311615#user-type&zippy=%2Cinternal
+		// https://cloud.google.com/resource-manager/docs/cloud-platform-resource-hierarchy#organizations
+		// iapBrandName := f.newResourceName(fmt.Sprintf("%s-%s", serviceName, "iap-auth"), 100)
+		// _, err = projects.NewService(ctx, iapBrandName, &projects.ServiceArgs{
+		// 	Project: pulumi.String(f.Project),
+		// 	Service: pulumi.String("iap.googleapis.com"),
+		// })
+		// if err != nil {
+		// 	return err
+		// }
+		// _, err = iap.NewBrand(ctx, iapBrandName, &iap.BrandArgs{
+		// 	SupportEmail:     pulumi.String(args.IAPSupportEmail),
+		// 	ApplicationTitle: pulumi.String("Cloud IAP protected Application"),
+		// 	Project:          projectService.Project,
+		// })
+		// if err != nil {
+		// 	return err
+		// }
 	}
 
 	backendUrlMap, err := newCloudRunNEG(ctx, cloudArmorPolicy, serviceName, args.ProxyNetworkName, f.Project, f.Region)
