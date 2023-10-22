@@ -60,6 +60,10 @@ type NetworkArgs struct {
 	ProxyNetworkName string
 	// Whether to apply best-practice Cloud Armor policies to the load balancer. Defaults to false.
 	EnableCloudArmor bool
+	// Whether to enable Identity Aware Proxy for authentication. Defaults to false.
+	EnableIAP bool
+	// Support email for IAP's OAuth consent screen. Required if EnableIAP=true.
+	IAPSupportEmail string
 	// Whether to restrict access to the given list of client IPs. Valid only when EnableCloudArmor=true.
 	ClientIPAllowlist []string
 	// Whether to disable public internet access. Useful during development. Defaults to false.
