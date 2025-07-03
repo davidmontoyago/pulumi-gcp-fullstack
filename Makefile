@@ -9,7 +9,7 @@ test: build
 clean:
 	go mod tidy
 
-lint:
+lint_local:
 	docker run --rm -it -v $$(PWD):/app \
 	-v $$(go env GOCACHE):/.cache/go-build -e GOCACHE=/.cache/go-build \
 	-v $$(go env GOMODCACHE):/.cache/mod -e GOMODCACHE=/.cache/mod \
