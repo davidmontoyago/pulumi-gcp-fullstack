@@ -3,7 +3,7 @@ package gcp
 import (
 	"fmt"
 
-	compute "github.com/pulumi/pulumi-gcp/sdk/v6/go/gcp/compute"
+	compute "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/compute"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -44,9 +44,9 @@ func newCloudArmorPolicy(ctx *pulumi.Context, policyName string, args *NetworkAr
 	return policy, nil
 }
 
-func newDefaultRule() compute.SecurityPolicyRuleArray {
-	var defaultRules compute.SecurityPolicyRuleArray
-	defaultRules = append(defaultRules, &compute.SecurityPolicyRuleArgs{
+func newDefaultRule() compute.SecurityPolicyRuleTypeArray {
+	var defaultRules compute.SecurityPolicyRuleTypeArray
+	defaultRules = append(defaultRules, &compute.SecurityPolicyRuleTypeArgs{
 		Action:      pulumi.String("allow"),
 		Description: pulumi.String("Default allow rule"),
 		Priority:    pulumi.Int(2147483647),
@@ -62,15 +62,15 @@ func newDefaultRule() compute.SecurityPolicyRuleArray {
 	return defaultRules
 }
 
-func newIPAllowlistRules(clientIPAllowlist []string) compute.SecurityPolicyRuleArray {
+func newIPAllowlistRules(clientIPAllowlist []string) compute.SecurityPolicyRuleTypeArray {
 	ipRanges := pulumi.StringArray{}
 	for _, ip := range clientIPAllowlist {
 		ipRanges = append(ipRanges, pulumi.String(ip))
 	}
 
-	var ipAllowlistRules compute.SecurityPolicyRuleArray
+	var ipAllowlistRules compute.SecurityPolicyRuleTypeArray
 	ipAllowlistRules = append(ipAllowlistRules,
-		&compute.SecurityPolicyRuleArgs{
+		&compute.SecurityPolicyRuleTypeArgs{
 			Action:      pulumi.String("allow"),
 			Priority:    pulumi.Int(1),
 			Description: pulumi.String("IPs allowlist rule"),
@@ -80,7 +80,7 @@ func newIPAllowlistRules(clientIPAllowlist []string) compute.SecurityPolicyRuleA
 					SrcIpRanges: ipRanges,
 				},
 			},
-		}, &compute.SecurityPolicyRuleArgs{
+		}, &compute.SecurityPolicyRuleTypeArgs{
 			Action:      pulumi.String("deny(403)"),
 			Description: pulumi.String("Default IP fallback deny rule"),
 			Priority:    pulumi.Int(2),
@@ -97,8 +97,8 @@ func newIPAllowlistRules(clientIPAllowlist []string) compute.SecurityPolicyRuleA
 }
 
 // newPreconfiguredRules returns a list of best-practice rules to deny traffic
-func newPreconfiguredRules() compute.SecurityPolicyRuleArray {
-	var preconfiguredRules compute.SecurityPolicyRuleArray
+func newPreconfiguredRules() compute.SecurityPolicyRuleTypeArray {
+	var preconfiguredRules compute.SecurityPolicyRuleTypeArray
 	for i, rule := range []string{
 		"sqli-v33-stable",
 		"xss-v33-stable",
@@ -112,7 +112,7 @@ func newPreconfiguredRules() compute.SecurityPolicyRuleArray {
 		"nodejs-v33-stable",
 	} {
 		preconfiguredWafRule := fmt.Sprintf("evaluatePreconfiguredWaf('%s', {'sensitivity': 1})", rule)
-		preconfiguredRules = append(preconfiguredRules, &compute.SecurityPolicyRuleArgs{
+		preconfiguredRules = append(preconfiguredRules, &compute.SecurityPolicyRuleTypeArgs{
 			Action:      pulumi.String("deny(502)"),
 			Description: pulumi.String(fmt.Sprintf("preconfigured waf rule %s", rule)),
 			Priority:    pulumi.Int(20 + i),
