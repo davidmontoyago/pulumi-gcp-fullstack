@@ -3,12 +3,12 @@ package gcp
 import (
 	"fmt"
 
-	secretmanager "github.com/pulumi/pulumi-gcp/sdk/v6/go/gcp/secretmanager"
-	serviceAccount "github.com/pulumi/pulumi-gcp/sdk/v6/go/gcp/serviceaccount"
+	secretmanager "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/secretmanager"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-func newEnvConfigSecret(ctx *pulumi.Context, serviceName, region, project string, serviceAccount *serviceAccount.Account) (*secretmanager.Secret, error) {
+func newEnvConfigSecret(ctx *pulumi.Context, serviceName, region, project string, serviceAccount *serviceaccount.Account) (*secretmanager.Secret, error) {
 	secretID := fmt.Sprintf("%s-config", serviceName)
 
 	configSecret, err := secretmanager.NewSecret(ctx, secretID, &secretmanager.SecretArgs{

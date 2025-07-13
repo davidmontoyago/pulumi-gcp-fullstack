@@ -3,8 +3,8 @@ package gcp
 import (
 	"fmt"
 
-	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v6/go/gcp/cloudrunv2"
-	serviceAccount "github.com/pulumi/pulumi-gcp/sdk/v6/go/gcp/serviceaccount"
+	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -19,7 +19,7 @@ var (
 	}
 )
 
-func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *BackendArgs) (*cloudrunv2.Service, *serviceAccount.Account, error) {
+func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *BackendArgs) (*cloudrunv2.Service, *serviceaccount.Account, error) {
 	if args == nil {
 		args = &BackendArgs{
 			&InstanceArgs{
@@ -35,7 +35,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 
 	backendName := f.BackendName
 	accountName := f.newResourceName(backendName, 28)
-	serviceAccount, err := serviceAccount.NewAccount(ctx, accountName, &serviceAccount.AccountArgs{
+	serviceAccount, err := serviceaccount.NewAccount(ctx, accountName, &serviceaccount.AccountArgs{
 		AccountId:   pulumi.String(accountName),
 		DisplayName: pulumi.String(fmt.Sprintf("Backend service account (%s)", backendName)),
 		Project:     pulumi.String(f.Project),
@@ -77,7 +77,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 	return backendService, serviceAccount, nil
 }
 
-func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *FrontendArgs, backendURL pulumi.StringOutput) (*serviceAccount.Account, error) {
+func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *FrontendArgs, backendURL pulumi.StringOutput) (*serviceaccount.Account, error) {
 	if args == nil {
 		args = &FrontendArgs{}
 	}
@@ -99,7 +99,7 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 
 	serviceName := f.FrontendName
 	accountName := f.newResourceName(serviceName, 28)
-	serviceAccount, err := serviceAccount.NewAccount(ctx, accountName, &serviceAccount.AccountArgs{
+	serviceAccount, err := serviceaccount.NewAccount(ctx, accountName, &serviceaccount.AccountArgs{
 		AccountId:   pulumi.String(accountName),
 		DisplayName: pulumi.String(fmt.Sprintf("Frontend service account (%s)", serviceName)),
 		Project:     pulumi.String(project),
@@ -136,10 +136,8 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 					Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
 						Limits: args.ResourceLimits,
 					},
-					Ports: cloudrunv2.ServiceTemplateContainerPortArray{
-						cloudrunv2.ServiceTemplateContainerPortArgs{
-							ContainerPort: pulumi.Int(3000),
-						},
+					Ports: cloudrunv2.ServiceTemplateContainerPortsArgs{
+						ContainerPort: pulumi.Int(3000),
 					},
 					Envs: newFrontendEnvVars(args, backendURL),
 					VolumeMounts: &cloudrunv2.ServiceTemplateContainerVolumeMountArray{
