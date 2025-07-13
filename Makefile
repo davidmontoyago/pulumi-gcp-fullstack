@@ -8,10 +8,14 @@ test: build
 
 clean:
 	go mod tidy
+	go mod verify
 
-lint_local:
+lint:
 	docker run --rm -it -v $$(PWD):/app \
 	-v $$(go env GOCACHE):/.cache/go-build -e GOCACHE=/.cache/go-build \
 	-v $$(go env GOMODCACHE):/.cache/mod -e GOMODCACHE=/.cache/mod \
 	-w /app golangci/golangci-lint:latest \
 	golangci-lint run --verbose --color=always
+
+upgrade:
+	go get -u ./...
