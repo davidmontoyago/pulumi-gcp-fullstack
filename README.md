@@ -48,7 +48,7 @@ mystack, err = gcp.NewFullStack(ctx, "my-gcp-stack", &gcp.FullStackArgs{
         DomainURL:        "myapp.example.org",
         EnableCloudArmor: true,
         APIGateway: &gcp.APIGatewayArgs{
-            Enabled: true,
+            Disabled: false,
             Regions: []string{"us-central1", "us-east1"},
             Config: &gcp.APIConfigArgs{
                 EnableCORS:      true,
@@ -99,9 +99,19 @@ The API Gateway uses a Serverless NEG (Network Endpoint Group) to integrate with
 
 ### Configuration Options
 
-- **Enabled**: Boolean to enable/disable API Gateway deployment
-- **Regions**: List of regions where to deploy API Gateway instances
+#### APIGatewayArgs
+- **Disabled**: Boolean to enable/disable API Gateway deployment (defaults to false)
+- **Regions**: List of regions where to deploy API Gateway instances (defaults to the project region)
 - **Config**: API configuration including CORS settings and backend routing
+
+#### APIConfigArgs
+- **OpenAPISpecPath**: Path to OpenAPI specification file (defaults to "/openapi.yaml")
+- **BackendServiceURL**: Cloud Run backend service URL (automatically configured)
+- **FrontendServiceURL**: Cloud Run frontend service URL (automatically configured)
+- **EnableCORS**: Whether to enable CORS support (defaults to true)
+- **CORSAllowedOrigins**: List of allowed origins for CORS (defaults to ["*"])
+- **CORSAllowedMethods**: List of allowed HTTP methods for CORS (defaults to ["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+- **CORSAllowedHeaders**: List of allowed headers for CORS (defaults to ["*"])
 
 Resource names are automatically generated using the backend service name as a base, ensuring proper prefixing and length limits.
 
