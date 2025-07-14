@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	apigateway "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/apigateway"
-	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -109,22 +108,23 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 		return err
 	}
 
-	frontendAccount, err := f.deployFrontendCloudRunInstance(ctx, args.Frontend, backendService.Uri)
+	frontendService, _, err := f.deployFrontendCloudRunInstance(ctx, args.Frontend, backendService.Uri)
 	if err != nil {
 		return err
 	}
 
+	// TODO should be removed as we want the frontend to not bypass the API gateway
 	// allow backend to be invoked from frontend
-	_, err = cloudrunv2.NewServiceIamMember(ctx, fmt.Sprintf("%s-%s-invoker", f.BackendName, f.FrontendName), &cloudrunv2.ServiceIamMemberArgs{
-		Name:     backendService.Name,
-		Project:  pulumi.String(f.Project),
-		Location: pulumi.String(f.Region),
-		Role:     pulumi.String("roles/run.invoker"),
-		Member:   pulumi.Sprintf("serviceAccount:%s", frontendAccount.Email),
-	})
-	if err != nil {
-		return err
-	}
+	// _, err = cloudrunv2.NewServiceIamMember(ctx, fmt.Sprintf("%s-%s-invoker", f.BackendName, f.FrontendName), &cloudrunv2.ServiceIamMemberArgs{
+	// 	Name:     backendService.Name,
+	// 	Project:  pulumi.String(f.Project),
+	// 	Location: pulumi.String(f.Region),
+	// 	Role:     pulumi.String("roles/run.invoker"),
+	// 	Member:   pulumi.Sprintf("serviceAccount:%s", frontendAccount.Email),
+	// })
+	// if err != nil {
+	// 	return err
+	// }
 
 	// Deploy API Gateway if configured
 	var apiGateway *apigateway.Gateway
@@ -133,7 +133,9 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 		if args.Network.APIGateway.Config == nil {
 			args.Network.APIGateway.Config = &APIConfigArgs{}
 		}
+		// Have the API gateway route to the backend and frontend
 		args.Network.APIGateway.Config.BackendServiceURL = backendService.Uri
+		args.Network.APIGateway.Config.FrontendServiceURL = frontendService.Uri
 
 		apiGateway, err = f.deployAPIGateway(ctx, args.Network.APIGateway)
 		if err != nil {

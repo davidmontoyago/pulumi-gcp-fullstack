@@ -81,4 +81,5 @@ The API Gateway uses a Serverless NEG (Network Endpoint Group) to integrate with
 
 Resource names are automatically generated using the backend service name as a base, ensuring proper prefixing and length limits.
 
-See [Google Cloud API Gateway documentation](https://cloud.google.com/api-gateway/docs/gateway-serverless-neg) for more details.
+See:
+- https://cloud.google.com/api-gateway/docs/gateway-serverless-neg
