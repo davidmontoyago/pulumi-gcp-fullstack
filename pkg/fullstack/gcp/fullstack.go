@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 
+	apigateway "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/apigateway"
 	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -68,6 +69,8 @@ type NetworkArgs struct {
 	ClientIPAllowlist []string
 	// Whether to disable public internet access. Useful during development. Defaults to false.
 	EnablePrivateTrafficOnly bool
+	// API Gateway configuration. If provided, traffic will be routed through API Gateway.
+	APIGateway *APIGatewayArgs
 }
 
 func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ...pulumi.ResourceOption) (*FullStack, error) {
@@ -123,8 +126,23 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 		return err
 	}
 
-	// create an external load balancer with a NEG for the frontend
-	err = f.deployExternalLoadBalancer(ctx, args.FrontendName, args.Network)
+	// Deploy API Gateway if configured
+	var apiGateway *apigateway.Gateway
+	if args.Network != nil && args.Network.APIGateway != nil && args.Network.APIGateway.Enabled {
+		// Set the backend service URL for API Gateway
+		if args.Network.APIGateway.Config == nil {
+			args.Network.APIGateway.Config = &APIConfigArgs{}
+		}
+		args.Network.APIGateway.Config.BackendServiceURL = backendService.Uri
+
+		apiGateway, err = f.deployAPIGateway(ctx, args.Network.APIGateway)
+		if err != nil {
+			return err
+		}
+	}
+
+	// create an external load balancer and point to a serverless NEG (API gateway or Cloud run)
+	err = f.deployExternalLoadBalancer(ctx, args.FrontendName, args.Network, apiGateway)
 	return err
 }
 
