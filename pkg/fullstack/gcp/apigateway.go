@@ -23,6 +23,8 @@ type APIConfigArgs struct {
 	OpenAPISpecPath string
 	// Backend service URL (Cloud Run service URL). Required.
 	BackendServiceURL pulumi.StringOutput
+	// Frontend service URL (Cloud Run service URL). Required for dual routing.
+	FrontendServiceURL pulumi.StringOutput
 	// Whether to enable CORS. Defaults to true.
 	EnableCORS bool
 	// CORS allowed origins. Defaults to ["*"].
@@ -170,23 +172,23 @@ func (f *FullStack) generateOpenAPISpec(configArgs *APIConfigArgs) pulumi.String
 		corsAllowedHeaders = []string{"*"}
 	}
 
-	// Generate OpenAPI spec with backend routing to Cloud Run
-	openAPISpec := pulumi.All(configArgs.BackendServiceURL).ApplyT(func(args []interface{}) (string, error) {
+	openAPISpec := pulumi.All(configArgs.BackendServiceURL, configArgs.FrontendServiceURL).ApplyT(func(args []interface{}) (string, error) {
 		backendURL := args[0].(string)
+		frontendURL := args[1].(string)
 
 		spec := fmt.Sprintf(`openapi: 3.0.1
 info:
   title: API Gateway for Cloud Run
-  description: API Gateway routing to Cloud Run backend
+  description: API Gateway routing to Cloud Run backend and frontend
   version: 1.0.0
 servers:
   - url: https://{gateway_host}
 paths:
-  /{proxy+}:
+  /api/{proxy+}:
     x-google-backend:
       address: %s/{proxy}
     get:
-      operationId: proxyGet
+      operationId: apiProxyGet
       parameters:
         - name: proxy
           in: path
@@ -203,7 +205,7 @@ paths:
         '404':
           description: Not found
     post:
-      operationId: proxyPost
+      operationId: apiProxyPost
       parameters:
         - name: proxy
           in: path
@@ -226,7 +228,7 @@ paths:
         '404':
           description: Not found
     put:
-      operationId: proxyPut
+      operationId: apiProxyPut
       parameters:
         - name: proxy
           in: path
@@ -249,7 +251,7 @@ paths:
         '404':
           description: Not found
     delete:
-      operationId: proxyDelete
+      operationId: apiProxyDelete
       parameters:
         - name: proxy
           in: path
@@ -266,7 +268,7 @@ paths:
         '404':
           description: Not found
     options:
-      operationId: proxyOptions
+      operationId: apiProxyOptions
       parameters:
         - name: proxy
           in: path
@@ -286,7 +288,48 @@ paths:
             Access-Control-Allow-Headers:
               schema:
                 type: string
-`, backendURL)
+  /{proxy+}:
+    x-google-backend:
+      address: %s/{proxy}
+    get:
+      operationId: frontendProxyGet
+      parameters:
+        - name: proxy
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          description: Not found
+    options:
+      operationId: frontendProxyOptions
+      parameters:
+        - name: proxy
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+`, backendURL, frontendURL)
 
 		// Add CORS configuration if enabled
 		if configArgs.EnableCORS {

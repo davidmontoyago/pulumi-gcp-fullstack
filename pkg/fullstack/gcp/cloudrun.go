@@ -9,6 +9,7 @@ import (
 )
 
 var (
+	// Resource "requests" do not apply to Cloud Run as in k8s
 	defaultBackendResourceLimits = pulumi.StringMap{
 		"memory": pulumi.String("1Gi"),
 		"cpu":    pulumi.String("1000m"),
@@ -48,10 +49,14 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 	// TODO add default secret
 
 	backendService, err := cloudrunv2.NewService(ctx, backendName, &cloudrunv2.ServiceArgs{
-		Ingress:     pulumi.String("INGRESS_TRAFFIC_INTERNAL_ONLY"),
+		Name:        pulumi.String(backendName),
+		Ingress:     pulumi.String("INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"),
 		Description: pulumi.String(fmt.Sprintf("Serverless instance (%s)", backendName)),
 		Location:    pulumi.String(f.Region),
 		Project:     pulumi.String(f.Project),
+		Labels: pulumi.StringMap{
+			"backend": pulumi.String("true"),
+		},
 		Template: &cloudrunv2.ServiceTemplateArgs{
 			Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
 				MaxInstanceCount: pulumi.Int(args.MaxInstanceCount),
@@ -61,6 +66,10 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 					Image: pulumi.String(f.BackendImage),
 					Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
 						Limits: args.ResourceLimits,
+					},
+					Ports: cloudrunv2.ServiceTemplateContainerPortsArgs{
+						// TODO make configurable
+						ContainerPort: pulumi.Int(4001),
 					},
 					// TODO read config from secret
 				},
@@ -77,7 +86,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 	return backendService, serviceAccount, nil
 }
 
-func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *FrontendArgs, backendURL pulumi.StringOutput) (*serviceaccount.Account, error) {
+func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *FrontendArgs, backendURL pulumi.StringOutput) (*cloudrunv2.Service, *serviceaccount.Account, error) {
 	if args == nil {
 		args = &FrontendArgs{}
 	}
@@ -105,14 +114,14 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 		Project:     pulumi.String(project),
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ctx.Export("cloud_run_service_frontend_account_id", serviceAccount.ID())
 
 	// create a secret to hold env vars for the cloud run instance
 	configSecret, err := newEnvConfigSecret(ctx, serviceName, region, project, serviceAccount)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	frontendService, err := cloudrunv2.NewService(ctx, serviceName, &cloudrunv2.ServiceArgs{
@@ -123,8 +132,6 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 		Project:     pulumi.String(project),
 		Labels: pulumi.StringMap{
 			"frontend": pulumi.String("true"),
-			// TODO make optional
-			// "gcb-trigger-id": buildTriggerID,
 		},
 		Template: &cloudrunv2.ServiceTemplateArgs{
 			Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
@@ -137,6 +144,7 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 						Limits: args.ResourceLimits,
 					},
 					Ports: cloudrunv2.ServiceTemplateContainerPortsArgs{
+						// TODO make configurable
 						ContainerPort: pulumi.Int(3000),
 					},
 					Envs: newFrontendEnvVars(args, backendURL),
@@ -168,7 +176,7 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 		},
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ctx.Export("cloud_run_service_frontend_id", frontendService.ID())
 	ctx.Export("cloud_run_service_frontend_uri", frontendService.Uri)
@@ -182,11 +190,11 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 			Member:   pulumi.Sprintf("allUsers"),
 		})
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
-	return serviceAccount, nil
+	return frontendService, serviceAccount, nil
 }
 
 func newFrontendEnvVars(args *FrontendArgs, backendURL pulumi.StringOutput) cloudrunv2.ServiceTemplateContainerEnvArray {
