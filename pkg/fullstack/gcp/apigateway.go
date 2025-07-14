@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	apigateway "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/apigateway"
+	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -37,10 +39,12 @@ type APIConfigArgs struct {
 
 // deployAPIGateway sets up Google API Gateway with the following features:
 //
+// - Dedicated service account for API Gateway
 // - API definition with OpenAPI spec
 // - API Config with backend routing to Cloud Run
 // - Regional gateways for external access
 // - CORS support for web applications
+// - Proper IAM permissions for API Gateway to invoke Cloud Run services
 //
 // See:
 // https://cloud.google.com/api-gateway/docs/gateway-serverless-neg
@@ -53,6 +57,19 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 	if args.Config == nil {
 		return nil, fmt.Errorf("APIConfigArgs is required when API Gateway is enabled")
 	}
+
+	// Create dedicated service account for API Gateway
+	apiGatewayAccountName := f.newResourceName(fmt.Sprintf("%s-gateway", f.BackendName), 28)
+	apiGatewayServiceAccount, err := serviceaccount.NewAccount(ctx, apiGatewayAccountName, &serviceaccount.AccountArgs{
+		AccountId:   pulumi.String(apiGatewayAccountName),
+		DisplayName: pulumi.String(fmt.Sprintf("API Gateway service account (%s)", f.BackendName)),
+		Project:     pulumi.String(f.Project),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create API Gateway service account: %w", err)
+	}
+	ctx.Export("api_gateway_service_account_id", apiGatewayServiceAccount.ID())
+	ctx.Export("api_gateway_service_account_email", apiGatewayServiceAccount.Email)
 
 	// Use backend name as base for API ID
 	apiID := f.newResourceName(f.BackendName, 50)
@@ -70,8 +87,7 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 	ctx.Export("api_gateway_api_id", api.ApiId)
 	ctx.Export("api_gateway_api_name", api.Name)
 
-	// Create API Config
-	apiConfig, err := f.createAPIConfig(ctx, apiID, args.Config, api)
+	apiConfig, err := f.createAPIConfig(ctx, apiID, args.Config, api, apiGatewayServiceAccount.Email)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +103,6 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 	gatewayID := f.newResourceName(fmt.Sprintf("%s-%s", f.BackendName, region), 50)
 	gatewayDisplayName := f.newResourceName(fmt.Sprintf("%s-%s", f.BackendName, region), 100)
 
-	// Create Gateway
 	gateway, err := apigateway.NewGateway(ctx, gatewayID, &apigateway.GatewayArgs{
 		GatewayId:   pulumi.String(gatewayID),
 		DisplayName: pulumi.String(gatewayDisplayName),
@@ -102,10 +117,57 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 	ctx.Export("api_gateway_gateway_name", gateway.Name)
 	ctx.Export("api_gateway_gateway_default_hostname", gateway.DefaultHostname)
 
+	// Grant API Gateway service account permission to invoke Cloud Run services
+	err = f.grantAPIGatewayInvokerPermissions(ctx, apiGatewayServiceAccount.Email)
+	if err != nil {
+		return nil, err
+	}
+
 	return gateway, nil
 }
 
-func (f *FullStack) createAPIConfig(ctx *pulumi.Context, apiID string, configArgs *APIConfigArgs, api *apigateway.Api) (*apigateway.ApiConfig, error) {
+// grantAPIGatewayInvokerPermissions grants the API Gateway service account
+// permission to invoke both backend and frontend Cloud Run services.
+//
+// This function ensures that the dedicated API Gateway service account can
+// properly route traffic to the Cloud Run services.
+func (f *FullStack) grantAPIGatewayInvokerPermissions(ctx *pulumi.Context, apiGatewayServiceAccountEmail pulumi.StringOutput) error {
+	// Grant API Gateway permission to invoke backend service
+	_, err := cloudrunv2.NewServiceIamMember(ctx, fmt.Sprintf("%s-api-gateway-backend-invoker", f.BackendName), &cloudrunv2.ServiceIamMemberArgs{
+		Name:     pulumi.String(f.BackendName),
+		Project:  pulumi.String(f.Project),
+		Location: pulumi.String(f.Region),
+		Role:     pulumi.String("roles/run.invoker"),
+		Member: apiGatewayServiceAccountEmail.ApplyT(func(email string) string {
+			return fmt.Sprintf("serviceAccount:%s", email)
+		}).(pulumi.StringOutput),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to grant API Gateway backend invoker permissions: %w", err)
+	}
+
+	// Grant API Gateway permission to invoke frontend service
+	_, err = cloudrunv2.NewServiceIamMember(ctx, fmt.Sprintf("%s-api-gateway-frontend-invoker", f.FrontendName), &cloudrunv2.ServiceIamMemberArgs{
+		Name:     pulumi.String(f.FrontendName),
+		Project:  pulumi.String(f.Project),
+		Location: pulumi.String(f.Region),
+		Role:     pulumi.String("roles/run.invoker"),
+		Member: apiGatewayServiceAccountEmail.ApplyT(func(email string) string {
+			return fmt.Sprintf("serviceAccount:%s", email)
+		}).(pulumi.StringOutput),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to grant API Gateway frontend invoker permissions: %w", err)
+	}
+
+	return nil
+}
+
+// createAPIConfig configures the API gateway, and sets the
+// Gateway service account email used to invoke the backend and frontend.
+// The OpenAPI spec document is responsible for mapping paths to the backend and
+// frontend services URLs. See BackendServiceURL and FrontendServiceURL.
+func (f *FullStack) createAPIConfig(ctx *pulumi.Context, apiID string, configArgs *APIConfigArgs, api *apigateway.Api, gatewayServiceAccountEmail pulumi.StringOutput) (*apigateway.ApiConfig, error) {
 	if configArgs == nil {
 		return nil, fmt.Errorf("APIConfigArgs is required")
 	}
@@ -133,6 +195,11 @@ func (f *FullStack) createAPIConfig(ctx *pulumi.Context, apiID string, configArg
 						return args[0].(string), nil
 					}).(pulumi.StringOutput),
 				},
+			},
+		},
+		GatewayConfig: &apigateway.ApiConfigGatewayConfigArgs{
+			BackendConfig: &apigateway.ApiConfigGatewayConfigBackendConfigArgs{
+				GoogleServiceAccount: gatewayServiceAccountEmail,
 			},
 		},
 	})

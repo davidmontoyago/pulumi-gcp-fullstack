@@ -181,18 +181,19 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 	ctx.Export("cloud_run_service_frontend_id", frontendService.ID())
 	ctx.Export("cloud_run_service_frontend_uri", frontendService.Uri)
 
-	if args.EnableUnauthenticated {
-		_, err = cloudrunv2.NewServiceIamMember(ctx, fmt.Sprintf("%s-allow-unauthenticated", f.FrontendName), &cloudrunv2.ServiceIamMemberArgs{
-			Name:     frontendService.Name,
-			Project:  pulumi.String(project),
-			Location: pulumi.String(region),
-			Role:     pulumi.String("roles/run.invoker"),
-			Member:   pulumi.Sprintf("allUsers"),
-		})
-		if err != nil {
-			return nil, nil, err
-		}
-	}
+	// TODO remove. we shouldn't need this as all traffic goes through the API gateway
+	// if args.EnableUnauthenticated {
+	// 	_, err = cloudrunv2.NewServiceIamMember(ctx, fmt.Sprintf("%s-allow-unauthenticated", f.FrontendName), &cloudrunv2.ServiceIamMemberArgs{
+	// 		Name:     frontendService.Name,
+	// 		Project:  pulumi.String(project),
+	// 		Location: pulumi.String(region),
+	// 		Role:     pulumi.String("roles/run.invoker"),
+	// 		Member:   pulumi.Sprintf("allUsers"),
+	// 	})
+	// 	if err != nil {
+	// 		return nil, nil, err
+	// 	}
+	// }
 
 	return frontendService, serviceAccount, nil
 }
