@@ -3,6 +3,7 @@ package gcp
 import (
 	"fmt"
 
+	apigateway "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/apigateway"
 	compute "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/compute"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/projects"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -13,12 +14,14 @@ import (
 //
 // - HTTPS by default with GCP managed certificate
 // - HTTP forward & redirect to HTTPs
+// - Optional API Gateway integration for backend traffic wrangling
 //
 // See:
 // https://cloud.google.com/load-balancing/docs/https/setting-up-https-serverless
 // https://cloud.google.com/load-balancing/docs/negs/serverless-neg-concepts#and
 // https://cloud.google.com/load-balancing/docs/https#global-classic-connections
-func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, serviceName string, args *NetworkArgs) error {
+// https://cloud.google.com/api-gateway/docs/gateway-serverless-neg
+func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, serviceName string, args *NetworkArgs, apiGateway *apigateway.Gateway) error {
 	var cloudArmorPolicy *compute.SecurityPolicy
 	var err error
 	if args.EnableCloudArmor {
@@ -84,7 +87,8 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, serviceName 
 		// }
 	}
 
-	backendUrlMap, err := newCloudRunNEG(ctx, cloudArmorPolicy, serviceName, args.ProxyNetworkName, f.Project, f.Region)
+	// Create NEG for either Cloud Run or API Gateway
+	backendUrlMap, err := newServerlessNEG(ctx, cloudArmorPolicy, serviceName, args.ProxyNetworkName, f.Project, f.Region, apiGateway)
 	if err != nil {
 		return err
 	}
@@ -143,7 +147,7 @@ func newHTTPSProxy(ctx *pulumi.Context, serviceName, domainName, project string,
 	return nil
 }
 
-func newCloudRunNEG(ctx *pulumi.Context, policy *compute.SecurityPolicy, serviceName, network, project, region string) (*compute.URLMap, error) {
+func newServerlessNEG(ctx *pulumi.Context, policy *compute.SecurityPolicy, serviceName, network, project, region string, apiGateway *apigateway.Gateway) (*compute.URLMap, error) {
 	// create proxy-only subnet required by Cloud Run to get traffic from the LB
 	// See:
 	// https://cloud.google.com/load-balancing/docs/https#proxy-only-subnet
@@ -153,7 +157,7 @@ func newCloudRunNEG(ctx *pulumi.Context, policy *compute.SecurityPolicy, service
 	}
 	subnet, err := compute.NewSubnetwork(ctx, fmt.Sprintf("%s-proxy-only", serviceName), &compute.SubnetworkArgs{
 		Name:        pulumi.String(fmt.Sprintf("%s-proxy-only", serviceName)),
-		Description: pulumi.String(fmt.Sprintf("proxy-only subnet for cloud run traffic for %s", serviceName)),
+		Description: pulumi.String(fmt.Sprintf("proxy-only subnet for %s traffic", serviceName)),
 		Project:     pulumi.String(project),
 		Region:      pulumi.String(region),
 		Purpose:     pulumi.String("REGIONAL_MANAGED_PROXY"),
@@ -168,15 +172,32 @@ func newCloudRunNEG(ctx *pulumi.Context, policy *compute.SecurityPolicy, service
 	ctx.Export("load_balancer_proxy_subnet_id", subnet.ID())
 	ctx.Export("load_balancer_proxy_subnet_uri", subnet.SelfLink)
 
-	neg, err := compute.NewRegionNetworkEndpointGroup(ctx, fmt.Sprintf("%s-default", serviceName), &compute.RegionNetworkEndpointGroupArgs{
-		Description:         pulumi.String(fmt.Sprintf("NEG to route LB traffic to %s", serviceName)),
-		Project:             pulumi.String(project),
-		Region:              pulumi.String(region),
-		NetworkEndpointType: pulumi.String("SERVERLESS"),
-		CloudRun: &compute.RegionNetworkEndpointGroupCloudRunArgs{
-			Service: pulumi.String(serviceName),
-		},
-	})
+	// Create NEG - either for Cloud Run or API Gateway
+	var neg *compute.RegionNetworkEndpointGroup
+	if apiGateway != nil {
+		// Create NEG for API Gateway
+		neg, err = compute.NewRegionNetworkEndpointGroup(ctx, fmt.Sprintf("%s-default", serviceName), &compute.RegionNetworkEndpointGroupArgs{
+			Description:         pulumi.String(fmt.Sprintf("NEG to route LB traffic to API Gateway for %s", serviceName)),
+			Project:             pulumi.String(project),
+			Region:              pulumi.String(region),
+			NetworkEndpointType: pulumi.String("SERVERLESS"),
+			ServerlessDeployment: &compute.RegionNetworkEndpointGroupServerlessDeploymentArgs{
+				Platform: pulumi.String("API_GATEWAY"),
+				Resource: apiGateway.Name,
+			},
+		})
+	} else {
+		// Create NEG for Cloud Run
+		neg, err = compute.NewRegionNetworkEndpointGroup(ctx, fmt.Sprintf("%s-default", serviceName), &compute.RegionNetworkEndpointGroupArgs{
+			Description:         pulumi.String(fmt.Sprintf("NEG to route LB traffic to %s", serviceName)),
+			Project:             pulumi.String(project),
+			Region:              pulumi.String(region),
+			NetworkEndpointType: pulumi.String("SERVERLESS"),
+			CloudRun: &compute.RegionNetworkEndpointGroupCloudRunArgs{
+				Service: pulumi.String(serviceName),
+			},
+		})
+	}
 	if err != nil {
 		return nil, err
 	}
