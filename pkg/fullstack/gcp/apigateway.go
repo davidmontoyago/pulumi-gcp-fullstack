@@ -13,8 +13,8 @@ import (
 type APIGatewayArgs struct {
 	// API Gateway configuration. Required when enabled.
 	Config *APIConfigArgs
-	// Whether to enable API Gateway. Defaults to false.
-	Enabled bool
+	// Whether to disable API Gateway. Defaults to false.
+	Disabled bool
 	// List of regions where to deploy API Gateway instances.
 	Regions []string
 }
@@ -50,7 +50,7 @@ type APIConfigArgs struct {
 // https://cloud.google.com/api-gateway/docs/gateway-serverless-neg
 // https://cloud.google.com/api-gateway/docs/gateway-load-balancing
 func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) (*apigateway.Gateway, error) {
-	if args == nil || !args.Enabled {
+	if args == nil || args.Disabled {
 		return nil, nil
 	}
 

@@ -2,6 +2,7 @@ package gcp
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"strings"
 
@@ -126,18 +127,14 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 	// 	return err
 	// }
 
-	// Deploy API Gateway if configured
-	var apiGateway *apigateway.Gateway
-	if args.Network != nil && args.Network.APIGateway != nil && args.Network.APIGateway.Enabled {
-		// Set the backend service URL for API Gateway
-		if args.Network.APIGateway.Config == nil {
-			args.Network.APIGateway.Config = &APIConfigArgs{}
-		}
-		// Have the API gateway route to the backend and frontend
-		args.Network.APIGateway.Config.BackendServiceURL = backendService.Uri
-		args.Network.APIGateway.Config.FrontendServiceURL = frontendService.Uri
+	// Deploy API Gateway (enabled by default, can be disabled)
 
-		apiGateway, err = f.deployAPIGateway(ctx, args.Network.APIGateway)
+	var apiGateway *apigateway.Gateway
+	var gatewayArgs *APIGatewayArgs
+	if args.Network != nil {
+		gatewayArgs = applyDefaultGatewayArgs(args.Network.APIGateway, backendService.Uri, frontendService.Uri)
+
+		apiGateway, err = f.deployAPIGateway(ctx, gatewayArgs)
 		if err != nil {
 			return err
 		}
@@ -166,4 +163,31 @@ func (f *FullStack) newResourceName(name string, max int) string {
 		)
 	}
 	return resourceName
+}
+
+// applyDefaultGatewayArgs applies default API Gateway configuration to the provided args.
+// If the provided args is nil, it returns a new instance with default config.
+// If the provided args has a nil Config, it applies the default config.
+func applyDefaultGatewayArgs(existingArgs *APIGatewayArgs, backendServiceURL, frontendServiceURL pulumi.StringOutput) *APIGatewayArgs {
+	defaultGatewayArgs := &APIGatewayArgs{
+		Config: &APIConfigArgs{
+			BackendServiceURL:  backendServiceURL,
+			FrontendServiceURL: frontendServiceURL,
+		},
+	}
+
+	var gatewayArgs *APIGatewayArgs
+	if existingArgs == nil {
+		gatewayArgs = defaultGatewayArgs
+	} else {
+		gatewayArgs = existingArgs
+	}
+
+	if existingArgs.Config == nil {
+		gatewayArgs.Config = defaultGatewayArgs.Config
+	}
+
+	log.Printf("Using API Gateway args: %+v", gatewayArgs)
+
+	return gatewayArgs
 }
