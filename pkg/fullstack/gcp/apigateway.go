@@ -11,6 +11,8 @@ import (
 
 // APIGatewayArgs contains configuration for Google API Gateway
 type APIGatewayArgs struct {
+	// Name of the API Gateway and its resources. Defaults to "gateway".
+	Name string
 	// API Gateway configuration. Required when enabled.
 	Config *APIConfigArgs
 	// Whether to disable API Gateway. Defaults to false.
@@ -59,10 +61,10 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 	}
 
 	// Create dedicated service account for API Gateway
-	apiGatewayAccountName := f.newResourceName(f.BackendName, "gateway-account", 28)
+	apiGatewayAccountName := f.newResourceName(args.Name, "account", 28)
 	apiGatewayServiceAccount, err := serviceaccount.NewAccount(ctx, apiGatewayAccountName, &serviceaccount.AccountArgs{
 		AccountId:   pulumi.String(apiGatewayAccountName),
-		DisplayName: pulumi.String(fmt.Sprintf("API Gateway service account (%s)", f.BackendName)),
+		DisplayName: pulumi.String(fmt.Sprintf("API Gateway service account (%s)", args.Name)),
 		Project:     pulumi.String(f.Project),
 	})
 	if err != nil {
@@ -72,8 +74,8 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 	ctx.Export("api_gateway_service_account_email", apiGatewayServiceAccount.Email)
 
 	// Use backend name as base for API ID
-	apiID := f.newResourceName(f.BackendName, "api", 50)
-	displayName := f.newResourceName(f.BackendName, "api", 100)
+	apiID := f.newResourceName(args.Name, "api", 50)
+	displayName := f.newResourceName(args.Name, "api", 100)
 
 	// Create the API
 	api, err := apigateway.NewApi(ctx, apiID, &apigateway.ApiArgs{
@@ -100,8 +102,8 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 		region = args.Regions[0]
 	}
 
-	gatewayID := f.newResourceName(f.BackendName, "gateway", 50)
-	gatewayDisplayName := f.newResourceName(f.BackendName, "gateway", 100)
+	gatewayID := f.newResourceName(args.Name, "", 50)
+	gatewayDisplayName := f.newResourceName(args.Name, "", 100)
 
 	gateway, err := apigateway.NewGateway(ctx, gatewayID, &apigateway.GatewayArgs{
 		GatewayId:   pulumi.String(gatewayID),
@@ -118,7 +120,7 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 	ctx.Export("api_gateway_gateway_default_hostname", gateway.DefaultHostname)
 
 	// Grant API Gateway service account permission to invoke Cloud Run services
-	err = f.grantAPIGatewayInvokerPermissions(ctx, apiGatewayServiceAccount.Email)
+	err = f.grantAPIGatewayInvokerPermissions(ctx, apiGatewayServiceAccount.Email, args.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -131,11 +133,11 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 //
 // This function ensures that the dedicated API Gateway service account can
 // properly route traffic to the Cloud Run services.
-func (f *FullStack) grantAPIGatewayInvokerPermissions(ctx *pulumi.Context, apiGatewayServiceAccountEmail pulumi.StringOutput) error {
+func (f *FullStack) grantAPIGatewayInvokerPermissions(ctx *pulumi.Context, apiGatewayServiceAccountEmail pulumi.StringOutput, gatewayName string) error {
 	// Grant API Gateway permission to invoke backend service
-	backendInvokerName := f.newResourceName(f.BackendName, "gateway-backend-invoker", 100)
+	backendInvokerName := f.newResourceName(gatewayName, "backend-invoker", 100)
 	_, err := cloudrunv2.NewServiceIamMember(ctx, backendInvokerName, &cloudrunv2.ServiceIamMemberArgs{
-		Name:     pulumi.String(f.BackendName),
+		Name:     pulumi.String(gatewayName),
 		Project:  pulumi.String(f.Project),
 		Location: pulumi.String(f.Region),
 		Role:     pulumi.String("roles/run.invoker"),
@@ -148,7 +150,7 @@ func (f *FullStack) grantAPIGatewayInvokerPermissions(ctx *pulumi.Context, apiGa
 	}
 
 	// Grant API Gateway permission to invoke frontend service
-	frontendInvokerName := f.newResourceName(f.FrontendName, "gateway-frontend-invoker", 100)
+	frontendInvokerName := f.newResourceName(f.FrontendName, "frontend-invoker", 100)
 	_, err = cloudrunv2.NewServiceIamMember(ctx, frontendInvokerName, &cloudrunv2.ServiceIamMemberArgs{
 		Name:     pulumi.String(f.FrontendName),
 		Project:  pulumi.String(f.Project),
