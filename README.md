@@ -115,5 +115,30 @@ The API Gateway uses a Serverless NEG (Network Endpoint Group) to integrate with
 
 Resource names are automatically generated using the backend service name as a base, ensuring proper prefixing and length limits.
 
+## Resource Naming Convention
+
+The component automatically generates resource names following a consistent pattern to ensure uniqueness and compliance with GCP naming requirements:
+
+### Base Naming Pattern
+- **Prefix**: Uses the stack name (e.g., my-gcp-stack") as the base prefix
+- **Service Suffix**: Appends service-specific suffixes like `-backend`, `-frontend`, `-gateway`
+- **Length Limits**: Automatically truncates names to comply with GCP resource name length limits
+
+### Examples
+For a stack named `my-gcp-stack"`:
+- Cloud Run Backend: `my-gcp-stack-backend`
+- Cloud Run Frontend: `my-gcp-stack-frontend`
+- API Gateway: `my-gcp-stack-gateway`
+- Load Balancer: `my-gcp-stack-lb`
+- Secret Manager: `my-gcp-stack-secrets`
+
+### Network Resources
+Network-related resources follow the same pattern:
+- Firewall Rules: `my-gcp-stack-fw-*`
+- Cloud Armor Policy: `my-gcp-stack-armor`
+
+### Customization
+Resource names can be customized by modifying the stack name parameter in `NewFullStack()`. The component ensures all generated names are unique within the project and region.
+
 See:
 - https://cloud.google.com/api-gateway/docs/gateway-serverless-neg

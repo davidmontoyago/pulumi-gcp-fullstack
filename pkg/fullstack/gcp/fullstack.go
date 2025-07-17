@@ -20,7 +20,7 @@ type FullStack struct {
 	FrontendName  string
 	FrontendImage string
 
-	prefix string
+	name string
 }
 
 type FullStackArgs struct {
@@ -74,15 +74,26 @@ type NetworkArgs struct {
 }
 
 func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ...pulumi.ResourceOption) (*FullStack, error) {
+	// Set default values for BackendName and FrontendName if not provided
+	backendName := args.BackendName
+	if backendName == "" {
+		backendName = "backend"
+	}
+
+	frontendName := args.FrontendName
+	if frontendName == "" {
+		frontendName = "frontend"
+	}
+
 	f := &FullStack{
 		Project:       args.Project,
 		Region:        args.Region,
 		BackendImage:  args.BackendImage,
 		FrontendImage: args.FrontendImage,
-		BackendName:   args.BackendName,
-		FrontendName:  args.FrontendName,
+		BackendName:   backendName,
+		FrontendName:  frontendName,
 
-		prefix: name,
+		name: name,
 	}
 	err := ctx.RegisterComponentResource("pulumi-fullstack:gcp:FullStack", name, f, opts...)
 	if err != nil {
@@ -145,21 +156,65 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 	return err
 }
 
-func (f *FullStack) newResourceName(name string, max int) string {
-	resourceName := fmt.Sprintf("%s-%s", f.prefix, name)
-	if len(resourceName) > max {
-		// if too big, cut back
-		surplus := len(resourceName) - max
+func (f *FullStack) newResourceName(serviceName, resourceType string, max int) string {
+	var resourceName string
+	if resourceType == "" {
+		resourceName = fmt.Sprintf("%s-%s", f.name, serviceName)
+	} else {
+		resourceName = fmt.Sprintf("%s-%s-%s", f.name, serviceName, resourceType)
+	}
 
-		prefixSurplus := int(math.Ceil(float64(surplus) / 2))
-		shortPrefix := f.prefix[:len(f.prefix)-prefixSurplus]
+	if len(resourceName) <= max {
+		return resourceName
+	}
 
-		nameSurplus := surplus - prefixSurplus
-		shortName := name[:len(name)-nameSurplus]
+	surplus := len(resourceName) - max
 
+	// Calculate how much to truncate from each part
+	var prefixSurplus, serviceSurplus, typeSurplus int
+	if resourceType == "" {
+		// Only two parts to truncate
+		prefixSurplus = int(math.Ceil(float64(surplus) / 2))
+		serviceSurplus = surplus - prefixSurplus
+		typeSurplus = 0
+	} else {
+		prefixSurplus = int(math.Ceil(float64(surplus) / 3))
+		serviceSurplus = int(math.Ceil(float64(surplus-prefixSurplus) / 2))
+		typeSurplus = surplus - prefixSurplus - serviceSurplus
+	}
+
+	// Truncate each part, ensuring we don't truncate more than the part's length
+	// and we keep at least one character to avoid leading dashes
+	var shortPrefix string
+	if prefixSurplus < len(f.name) {
+		shortPrefix = f.name[:len(f.name)-prefixSurplus]
+	} else {
+		shortPrefix = f.name[:1]
+	}
+
+	shortServiceName := serviceName
+	if serviceSurplus < len(serviceName) {
+		shortServiceName = serviceName[:len(serviceName)-serviceSurplus]
+	} else {
+		shortServiceName = serviceName[:1]
+	}
+
+	if resourceType == "" {
 		resourceName = fmt.Sprintf("%s-%s",
 			strings.TrimSuffix(shortPrefix, "-"),
-			strings.TrimSuffix(shortName, "-"),
+			strings.TrimSuffix(shortServiceName, "-"),
+		)
+	} else {
+		shortResourceType := resourceType
+		if typeSurplus < len(resourceType) {
+			shortResourceType = resourceType[:len(resourceType)-typeSurplus]
+		} else {
+			shortResourceType = resourceType[:1]
+		}
+		resourceName = fmt.Sprintf("%s-%s-%s",
+			strings.TrimSuffix(shortPrefix, "-"),
+			strings.TrimSuffix(shortServiceName, "-"),
+			strings.TrimSuffix(shortResourceType, "-"),
 		)
 	}
 	return resourceName

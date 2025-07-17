@@ -1,15 +1,13 @@
 package gcp
 
 import (
-	"fmt"
-
 	secretmanager "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/secretmanager"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-func newEnvConfigSecret(ctx *pulumi.Context, serviceName, region, project string, serviceAccount *serviceaccount.Account) (*secretmanager.Secret, error) {
-	secretID := fmt.Sprintf("%s-config", serviceName)
+func (f *FullStack) newEnvConfigSecret(ctx *pulumi.Context, serviceName, region, project string, serviceAccount *serviceaccount.Account) (*secretmanager.Secret, error) {
+	secretID := f.newResourceName(serviceName, "config-secret", 100)
 
 	configSecret, err := secretmanager.NewSecret(ctx, secretID, &secretmanager.SecretArgs{
 		Labels: pulumi.StringMap{
@@ -31,7 +29,8 @@ func newEnvConfigSecret(ctx *pulumi.Context, serviceName, region, project string
 	}
 
 	// allow the instance GSA to access the secret
-	_, err = secretmanager.NewSecretIamMember(ctx, secretID, &secretmanager.SecretIamMemberArgs{
+	secretAccessorName := f.newResourceName(serviceName, "secret-accessor", 100)
+	_, err = secretmanager.NewSecretIamMember(ctx, secretAccessorName, &secretmanager.SecretIamMemberArgs{
 		Project:  pulumi.String(project),
 		SecretId: configSecret.SecretId,
 		Role:     pulumi.String("roles/secretmanager.secretAccessor"),

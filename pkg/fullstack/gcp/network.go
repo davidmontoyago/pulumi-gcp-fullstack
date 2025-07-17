@@ -25,8 +25,7 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, serviceName 
 	var cloudArmorPolicy *compute.SecurityPolicy
 	var err error
 	if args.EnableCloudArmor {
-		policyName := f.newResourceName(serviceName, 100)
-		cloudArmorPolicy, err = newCloudArmorPolicy(ctx, policyName, args, f.Project)
+		cloudArmorPolicy, err = f.newCloudArmorPolicy(ctx, serviceName, args, f.Project)
 		if err != nil {
 			return err
 		}
@@ -39,7 +38,7 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, serviceName 
 		// See:
 		// https://issuetracker.google.com/issues/194945691?pli=1
 		// https://stackoverflow.com/questions/67778417/enable-google-cloud-identity-platform-programmatically-no-ui
-		identityPlatformName := f.newResourceName(fmt.Sprintf("%s-%s", serviceName, "cloudidentity"), 100)
+		identityPlatformName := f.newResourceName(serviceName, "cloudidentity", 100)
 		_, err := projects.NewService(ctx, identityPlatformName, &projects.ServiceArgs{
 			Project: pulumi.String(f.Project),
 			Service: pulumi.String("cloudidentity.googleapis.com"),
@@ -48,7 +47,7 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, serviceName 
 			return err
 		}
 
-		idToolkitName := f.newResourceName(fmt.Sprintf("%s-%s", serviceName, "identitytoolkit"), 100)
+		idToolkitName := f.newResourceName(serviceName, "idtoolkit", 100)
 		_, err = projects.NewService(ctx, idToolkitName, &projects.ServiceArgs{
 			Project: pulumi.String(f.Project),
 			Service: pulumi.String("identitytoolkit.googleapis.com"),
@@ -69,7 +68,7 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, serviceName 
 		// https://cloud.google.com/iap/docs/programmatic-oauth-clients#branding
 		// https://support.google.com/cloud/answer/10311615#user-type&zippy=%2Cinternal
 		// https://cloud.google.com/resource-manager/docs/cloud-platform-resource-hierarchy#organizations
-		// iapBrandName := f.newResourceName(fmt.Sprintf("%s-%s", serviceName, "iap-auth"), 100)
+		// iapBrandName := f.newResourceName(serviceName, "iap-auth", 100)
 		// _, err = projects.NewService(ctx, iapBrandName, &projects.ServiceArgs{
 		// 	Project: pulumi.String(f.Project),
 		// 	Service: pulumi.String("iap.googleapis.com"),
@@ -88,17 +87,18 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, serviceName 
 	}
 
 	// Create NEG for either Cloud Run or API Gateway
-	backendUrlMap, err := newServerlessNEG(ctx, cloudArmorPolicy, serviceName, args.ProxyNetworkName, f.Project, f.Region, apiGateway)
+	backendUrlMap, err := f.newServerlessNEG(ctx, cloudArmorPolicy, serviceName, args.ProxyNetworkName, f.Project, f.Region, apiGateway)
 	if err != nil {
 		return err
 	}
 
-	err = newHTTPSProxy(ctx, serviceName, args.DomainURL, f.Project, args.EnablePrivateTrafficOnly, backendUrlMap)
+	err = f.newHTTPSProxy(ctx, serviceName, args.DomainURL, f.Project, args.EnablePrivateTrafficOnly, backendUrlMap)
 	return err
 }
 
-func newHTTPSProxy(ctx *pulumi.Context, serviceName, domainName, project string, privateTraffic bool, backendUrlMap *compute.URLMap) error {
-	certificate, err := compute.NewManagedSslCertificate(ctx, fmt.Sprintf("%s-tls", serviceName), &compute.ManagedSslCertificateArgs{
+func (f *FullStack) newHTTPSProxy(ctx *pulumi.Context, serviceName, domainName, project string, privateTraffic bool, backendUrlMap *compute.URLMap) error {
+	tlsCertName := f.newResourceName(serviceName, "tls-cert", 100)
+	certificate, err := compute.NewManagedSslCertificate(ctx, tlsCertName, &compute.ManagedSslCertificateArgs{
 		Description: pulumi.String(fmt.Sprintf("TLS cert for %s", serviceName)),
 		Project:     pulumi.String(project),
 		Managed: &compute.ManagedSslCertificateManagedArgs{
@@ -113,7 +113,8 @@ func newHTTPSProxy(ctx *pulumi.Context, serviceName, domainName, project string,
 	ctx.Export("load_balancer_https_certificate_id", certificate.ID())
 	ctx.Export("load_balancer_https_certificate_uri", certificate.SelfLink)
 
-	httpsProxy, err := compute.NewTargetHttpsProxy(ctx, fmt.Sprintf("%s-https", serviceName), &compute.TargetHttpsProxyArgs{
+	httpsProxyName := f.newResourceName(serviceName, "https-proxy", 100)
+	httpsProxy, err := compute.NewTargetHttpsProxy(ctx, httpsProxyName, &compute.TargetHttpsProxyArgs{
 		Description: pulumi.String(fmt.Sprintf("proxy to LB traffic for %s", serviceName)),
 		Project:     pulumi.String(project),
 		UrlMap:      backendUrlMap.SelfLink,
@@ -129,7 +130,8 @@ func newHTTPSProxy(ctx *pulumi.Context, serviceName, domainName, project string,
 
 	if !privateTraffic {
 		// https://cloud.google.com/load-balancing/docs/https#forwarding-rule
-		trafficRule, err := compute.NewGlobalForwardingRule(ctx, fmt.Sprintf("%s-https", serviceName), &compute.GlobalForwardingRuleArgs{
+		forwardingRuleName := f.newResourceName(serviceName, "https-forwarding", 100)
+		trafficRule, err := compute.NewGlobalForwardingRule(ctx, forwardingRuleName, &compute.GlobalForwardingRuleArgs{
 			Description:         pulumi.String(fmt.Sprintf("HTTPS forwarding rule to LB traffic for %s", serviceName)),
 			Project:             pulumi.String(project),
 			PortRange:           pulumi.String("443"),
@@ -147,7 +149,7 @@ func newHTTPSProxy(ctx *pulumi.Context, serviceName, domainName, project string,
 	return nil
 }
 
-func newServerlessNEG(ctx *pulumi.Context, policy *compute.SecurityPolicy, serviceName, network, project, region string, apiGateway *apigateway.Gateway) (*compute.URLMap, error) {
+func (f *FullStack) newServerlessNEG(ctx *pulumi.Context, policy *compute.SecurityPolicy, serviceName, network, project, region string, apiGateway *apigateway.Gateway) (*compute.URLMap, error) {
 	// create proxy-only subnet required by Cloud Run to get traffic from the LB
 	// See:
 	// https://cloud.google.com/load-balancing/docs/https#proxy-only-subnet
@@ -155,8 +157,10 @@ func newServerlessNEG(ctx *pulumi.Context, policy *compute.SecurityPolicy, servi
 	if trafficNetwork == "" {
 		trafficNetwork = "default"
 	}
-	subnet, err := compute.NewSubnetwork(ctx, fmt.Sprintf("%s-proxy-only", serviceName), &compute.SubnetworkArgs{
-		Name:        pulumi.String(fmt.Sprintf("%s-proxy-only", serviceName)),
+
+	proxySubnetName := f.newResourceName(serviceName, "proxy-subnet", 100)
+	subnet, err := compute.NewSubnetwork(ctx, proxySubnetName, &compute.SubnetworkArgs{
+		Name:        pulumi.String(proxySubnetName),
 		Description: pulumi.String(fmt.Sprintf("proxy-only subnet for %s traffic", serviceName)),
 		Project:     pulumi.String(project),
 		Region:      pulumi.String(region),
@@ -176,7 +180,8 @@ func newServerlessNEG(ctx *pulumi.Context, policy *compute.SecurityPolicy, servi
 	var neg *compute.RegionNetworkEndpointGroup
 	if apiGateway != nil {
 		// Create NEG for API Gateway
-		neg, err = compute.NewRegionNetworkEndpointGroup(ctx, fmt.Sprintf("%s-default", serviceName), &compute.RegionNetworkEndpointGroupArgs{
+		gatewayNegName := f.newResourceName(serviceName, "gateway-neg", 100)
+		neg, err = compute.NewRegionNetworkEndpointGroup(ctx, gatewayNegName, &compute.RegionNetworkEndpointGroupArgs{
 			Description:         pulumi.String(fmt.Sprintf("NEG to route LB traffic to API Gateway for %s", serviceName)),
 			Project:             pulumi.String(project),
 			Region:              pulumi.String(region),
@@ -188,7 +193,8 @@ func newServerlessNEG(ctx *pulumi.Context, policy *compute.SecurityPolicy, servi
 		})
 	} else {
 		// Create NEG for Cloud Run
-		neg, err = compute.NewRegionNetworkEndpointGroup(ctx, fmt.Sprintf("%s-default", serviceName), &compute.RegionNetworkEndpointGroupArgs{
+		cloudrunNegName := f.newResourceName(serviceName, "cloudrun-neg", 100)
+		neg, err = compute.NewRegionNetworkEndpointGroup(ctx, cloudrunNegName, &compute.RegionNetworkEndpointGroupArgs{
 			Description:         pulumi.String(fmt.Sprintf("NEG to route LB traffic to %s", serviceName)),
 			Project:             pulumi.String(project),
 			Region:              pulumi.String(region),
@@ -218,7 +224,9 @@ func newServerlessNEG(ctx *pulumi.Context, policy *compute.SecurityPolicy, servi
 	if policy != nil {
 		serviceArgs.SecurityPolicy = policy.SelfLink
 	}
-	service, err := compute.NewBackendService(ctx, fmt.Sprintf("%s-default", serviceName), serviceArgs)
+
+	backendServiceName := f.newResourceName(serviceName, "backend-service", 100)
+	service, err := compute.NewBackendService(ctx, backendServiceName, serviceArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +234,8 @@ func newServerlessNEG(ctx *pulumi.Context, policy *compute.SecurityPolicy, servi
 	ctx.Export("load_balancer_backend_service_uri", neg.SelfLink)
 
 	// TODO create compute address if enabled
-	backendUrlMap, err := compute.NewURLMap(ctx, fmt.Sprintf("%s-default", serviceName), &compute.URLMapArgs{
+	urlMapName := f.newResourceName(serviceName, "url-map", 100)
+	backendUrlMap, err := compute.NewURLMap(ctx, urlMapName, &compute.URLMapArgs{
 		Description:    pulumi.String(fmt.Sprintf("URL map to LB traffic for %s", serviceName)),
 		Project:        pulumi.String(project),
 		DefaultService: service.SelfLink,

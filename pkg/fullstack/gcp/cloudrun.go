@@ -35,7 +35,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 	}
 
 	backendName := f.BackendName
-	accountName := f.newResourceName(backendName, 28)
+	accountName := f.newResourceName(backendName, "account", 28)
 	serviceAccount, err := serviceaccount.NewAccount(ctx, accountName, &serviceaccount.AccountArgs{
 		AccountId:   pulumi.String(accountName),
 		DisplayName: pulumi.String(fmt.Sprintf("Backend service account (%s)", backendName)),
@@ -48,8 +48,9 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 
 	// TODO add default secret
 
-	backendService, err := cloudrunv2.NewService(ctx, backendName, &cloudrunv2.ServiceArgs{
-		Name:        pulumi.String(backendName),
+	backendServiceName := f.newResourceName(backendName, "service", 100)
+	backendService, err := cloudrunv2.NewService(ctx, backendServiceName, &cloudrunv2.ServiceArgs{
+		Name:        pulumi.String(backendServiceName),
 		Ingress:     pulumi.String("INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"),
 		Description: pulumi.String(fmt.Sprintf("Serverless instance (%s)", backendName)),
 		Location:    pulumi.String(f.Region),
@@ -107,7 +108,7 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 	region := f.Region
 
 	serviceName := f.FrontendName
-	accountName := f.newResourceName(serviceName, 28)
+	accountName := f.newResourceName(serviceName, "account", 28)
 	serviceAccount, err := serviceaccount.NewAccount(ctx, accountName, &serviceaccount.AccountArgs{
 		AccountId:   pulumi.String(accountName),
 		DisplayName: pulumi.String(fmt.Sprintf("Frontend service account (%s)", serviceName)),
@@ -119,13 +120,14 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 	ctx.Export("cloud_run_service_frontend_account_id", serviceAccount.ID())
 
 	// create a secret to hold env vars for the cloud run instance
-	configSecret, err := newEnvConfigSecret(ctx, serviceName, region, project, serviceAccount)
+	configSecret, err := f.newEnvConfigSecret(ctx, serviceName, region, project, serviceAccount)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	frontendService, err := cloudrunv2.NewService(ctx, serviceName, &cloudrunv2.ServiceArgs{
-		Name:        pulumi.String(serviceName),
+	frontendServiceName := f.newResourceName(serviceName, "service", 100)
+	frontendService, err := cloudrunv2.NewService(ctx, frontendServiceName, &cloudrunv2.ServiceArgs{
+		Name:        pulumi.String(frontendServiceName),
 		Ingress:     pulumi.String("INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"),
 		Description: pulumi.String(fmt.Sprintf("Serverless instance (%s)", serviceName)),
 		Location:    pulumi.String(region),
