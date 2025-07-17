@@ -242,6 +242,10 @@ func applyDefaultGatewayArgs(existingArgs *APIGatewayArgs, backendServiceURL, fr
 		gatewayArgs.Config = defaultGatewayArgs.Config
 	}
 
+	if gatewayArgs.Name == "" {
+		gatewayArgs.Name = "gateway"
+	}
+
 	log.Printf("Using API Gateway args: %+v", gatewayArgs)
 
 	return gatewayArgs
