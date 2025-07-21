@@ -27,6 +27,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 				SecretConfigFileName: ".env",
 				SecretConfigFilePath: "/app/config/",
 				MaxInstanceCount:     3,
+				DeletionProtection:   false,
 			},
 		}
 	}
@@ -77,6 +78,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 			},
 			ServiceAccount: serviceAccount.Email,
 		},
+		DeletionProtection: pulumi.Bool(args.DeletionProtection),
 	})
 	if err != nil {
 		return nil, nil, err
@@ -97,6 +99,7 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 			SecretConfigFileName: ".env.production",
 			SecretConfigFilePath: "/app/.next/config/",
 			MaxInstanceCount:     3,
+			DeletionProtection:   false,
 		}
 	}
 	if args.ResourceLimits == nil {
@@ -176,6 +179,7 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 			},
 			// TODO setup liveness/readiness probes
 		},
+		DeletionProtection: pulumi.Bool(args.DeletionProtection),
 	})
 	if err != nil {
 		return nil, nil, err

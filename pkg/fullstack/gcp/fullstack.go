@@ -51,6 +51,7 @@ type InstanceArgs struct {
 	SecretConfigFilePath string
 	EnvVars              map[string]string
 	MaxInstanceCount     int
+	DeletionProtection   bool
 }
 
 type NetworkArgs struct {
