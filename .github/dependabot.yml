@@ -1,0 +1,32 @@
+# Dependabot configuration format
+# See:
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file#updates
+version: 2
+updates:
+  # Enable version updates for Go modules
+  - package-ecosystem: "gomod"
+    directory: "./"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    # Group all updates into a single PR
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
+    # Add labels and assignees
+    labels:
+      - "dependencies"
+      - "go"
+      - "automated"
+    assignees:
+      - "davidmontoyago"
+    # Commit message format
+    commit-message:
+      prefix: "auto-update"
+      include: "scope"
+    # Open PRs for security updates immediately
+    open-pull-requests-limit: 10
+    # Rebase strategy
+    rebase-strategy: "auto"

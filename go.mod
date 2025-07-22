@@ -3,7 +3,7 @@ module github.com/davidmontoyago/pulumi-gcp-fullstack
 go 1.24.0
 
 require (
-	github.com/pulumi/pulumi-gcp/sdk/v8 v8.36.0
+	github.com/pulumi/pulumi-gcp/sdk/v8 v8.38.0
 	github.com/pulumi/pulumi/sdk/v3 v3.181.0
 )
 
