@@ -131,7 +131,9 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 	ctx.Export("cloud_run_service_frontend_account_id", serviceAccount.ID())
 
 	// create a secret to hold env vars for the cloud run instance
-	configSecret, err := f.newEnvConfigSecret(ctx, serviceName, region, project, serviceAccount)
+	configSecret, err := f.newEnvConfigSecret(ctx, serviceName, serviceAccount, args.DeletionProtection, pulumi.StringMap{
+		"frontend": pulumi.String("true"),
+	})
 	if err != nil {
 		return nil, nil, err
 	}
