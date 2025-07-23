@@ -370,6 +370,30 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		})
 		assert.Equal(t, "us-central1", <-gatewayRegionCh, "API Gateway region should match the project region")
 
+		// Verify backend volume mount configuration
+		backendVolumeMountCh := make(chan cloudrunv2.ServiceTemplateContainerVolumeMount, 1)
+		defer close(backendVolumeMountCh)
+		backendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
+			if len(containers) > 0 && len(containers[0].VolumeMounts) > 0 {
+				backendVolumeMountCh <- containers[0].VolumeMounts[0]
+			}
+			return nil
+		})
+		backendVolumeMount := <-backendVolumeMountCh
+		assert.Equal(t, "/app/config/", backendVolumeMount.MountPath, "Backend volume mount path should be /app/config/")
+
+		// Verify frontend volume mount configuration
+		frontendVolumeMountCh := make(chan cloudrunv2.ServiceTemplateContainerVolumeMount, 1)
+		defer close(frontendVolumeMountCh)
+		frontendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
+			if len(containers) > 0 && len(containers[0].VolumeMounts) > 0 {
+				frontendVolumeMountCh <- containers[0].VolumeMounts[0]
+			}
+			return nil
+		})
+		frontendVolumeMount := <-frontendVolumeMountCh
+		assert.Equal(t, "/app/.next/config/", frontendVolumeMount.MountPath, "Frontend volume mount path should be /app/.next/config/")
+
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
 

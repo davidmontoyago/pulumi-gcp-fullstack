@@ -51,7 +51,13 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 	}
 	ctx.Export("cloud_run_service_backend_account_id", serviceAccount.ID())
 
-	// TODO add default secret
+	// create a secret to hold env vars for the cloud run instance
+	configSecret, err := f.newEnvConfigSecret(ctx, backendName, serviceAccount, args.DeletionProtection, pulumi.StringMap{
+		"backend": pulumi.String("true"),
+	})
+	if err != nil {
+		return nil, nil, err
+	}
 
 	backendServiceName := f.newResourceName(backendName, "service", 100)
 	backendService, err := cloudrunv2.NewService(ctx, backendServiceName, &cloudrunv2.ServiceArgs{
@@ -77,10 +83,30 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 					Ports: cloudrunv2.ServiceTemplateContainerPortsArgs{
 						ContainerPort: pulumi.Int(args.ContainerPort),
 					},
-					// TODO read config from secret
+					VolumeMounts: &cloudrunv2.ServiceTemplateContainerVolumeMountArray{
+						cloudrunv2.ServiceTemplateContainerVolumeMountArgs{
+							MountPath: pulumi.String(args.SecretConfigFilePath),
+							Name:      pulumi.String("envconfig"),
+						},
+					},
 				},
 			},
 			ServiceAccount: serviceAccount.Email,
+			Volumes: &cloudrunv2.ServiceTemplateVolumeArray{
+				&cloudrunv2.ServiceTemplateVolumeArgs{
+					Name: pulumi.String("envconfig"),
+					Secret: &cloudrunv2.ServiceTemplateVolumeSecretArgs{
+						Secret: configSecret.SecretId,
+						Items: cloudrunv2.ServiceTemplateVolumeSecretItemArray{
+							&cloudrunv2.ServiceTemplateVolumeSecretItemArgs{
+								Path:    pulumi.String(args.SecretConfigFileName),
+								Version: pulumi.String("latest"),
+								Mode:    pulumi.IntPtr(0500),
+							},
+						},
+					},
+				},
+			},
 		},
 		DeletionProtection: pulumi.Bool(args.DeletionProtection),
 	})
