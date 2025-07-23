@@ -52,6 +52,7 @@ type InstanceArgs struct {
 	EnvVars              map[string]string
 	MaxInstanceCount     int
 	DeletionProtection   bool
+	ContainerPort        int
 }
 
 type NetworkArgs struct {
