@@ -8,6 +8,8 @@ import (
 
 	apigateway "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/apigateway"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+
+	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
 )
 
 type FullStack struct {
@@ -21,6 +23,10 @@ type FullStack struct {
 	FrontendImage string
 
 	name string
+
+	backendService  *cloudrunv2.Service
+	frontendService *cloudrunv2.Service
+	apiGateway      *apigateway.Gateway
 }
 
 type FullStackArgs struct {
@@ -121,11 +127,13 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 	if err != nil {
 		return err
 	}
+	f.backendService = backendService
 
 	frontendService, _, err := f.deployFrontendCloudRunInstance(ctx, args.Frontend, backendService.Uri)
 	if err != nil {
 		return err
 	}
+	f.frontendService = frontendService
 
 	// TODO should be removed as we want the frontend to not bypass the API gateway
 	// allow backend to be invoked from frontend
@@ -151,6 +159,7 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 		if err != nil {
 			return err
 		}
+		f.apiGateway = apiGateway
 	}
 
 	// create an external load balancer and point to a serverless NEG (API gateway or Cloud run)
@@ -242,6 +251,9 @@ func applyDefaultGatewayArgs(existingArgs *APIGatewayArgs, backendServiceURL, fr
 
 	if existingArgs.Config == nil {
 		gatewayArgs.Config = defaultGatewayArgs.Config
+	} else {
+		gatewayArgs.Config.BackendServiceURL = backendServiceURL
+		gatewayArgs.Config.FrontendServiceURL = frontendServiceURL
 	}
 
 	if gatewayArgs.Name == "" {
@@ -251,4 +263,16 @@ func applyDefaultGatewayArgs(existingArgs *APIGatewayArgs, backendServiceURL, fr
 	log.Printf("Using API Gateway args: %+v", gatewayArgs)
 
 	return gatewayArgs
+}
+
+func (f *FullStack) GetBackendService() *cloudrunv2.Service {
+	return f.backendService
+}
+
+func (f *FullStack) GetFrontendService() *cloudrunv2.Service {
+	return f.frontendService
+}
+
+func (f *FullStack) GetAPIGateway() *apigateway.Gateway {
+	return f.apiGateway
 }
