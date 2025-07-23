@@ -203,7 +203,7 @@ func (f *FullStack) newResourceName(serviceName, resourceType string, max int) s
 		shortPrefix = f.name[:1]
 	}
 
-	shortServiceName := serviceName
+	var shortServiceName string
 	if serviceSurplus < len(serviceName) {
 		shortServiceName = serviceName[:len(serviceName)-serviceSurplus]
 	} else {
@@ -216,7 +216,7 @@ func (f *FullStack) newResourceName(serviceName, resourceType string, max int) s
 			strings.TrimSuffix(shortServiceName, "-"),
 		)
 	} else {
-		shortResourceType := resourceType
+		var shortResourceType string
 		if typeSurplus < len(resourceType) {
 			shortResourceType = resourceType[:len(resourceType)-typeSurplus]
 		} else {
