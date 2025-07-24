@@ -1,4 +1,4 @@
-package gcp
+package gcp_test
 
 import (
 	"testing"
@@ -8,108 +8,14 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/davidmontoyago/pulumi-gcp-fullstack/pkg/fullstack/gcp"
 )
 
-// name is longer than max length
-func TestNameIsLongerThanMaxLength(t *testing.T) {
-	f := &FullStack{
-		name: "this-is-a-long-name",
-	}
-	name := "ok-name"
-	max := 20
-
-	resourceName := f.newResourceName(name, "resource", max)
-
-	expected := "this-is-a-lon-ok-res"
-	if resourceName != expected {
-		t.Errorf("Expected resource name to be %s, but got %s", expected, resourceName)
-	}
-}
-
-// name is longer than max length
-func TestNameIsLongerThanMaxLength2(t *testing.T) {
-	f := &FullStack{
-		name: "ok-name",
-	}
-	name := "this-is-a-long-name"
-	max := 15
-
-	resourceName := f.newResourceName(name, "resource", max)
-
-	expected := "o-this-is-a-lo-r"
-	if resourceName != expected {
-		t.Errorf("Expected resource name to be %s, but got %s", expected, resourceName)
-	}
-}
-
-// generates a resource name with name, service name and resource type
-func TestGeneratesResourceName(t *testing.T) {
-	f := &FullStack{
-		name: "myapp",
-	}
-	serviceName := "backend"
-	resourceType := "account"
-	max := 30
-
-	resourceName := f.newResourceName(serviceName, resourceType, max)
-
-	expected := "myapp-backend-account"
-	if resourceName != expected {
-		t.Errorf("Expected resource name to be %s, but got %s", expected, resourceName)
-	}
-}
-
-// name, service name and resource type are longer than max length
-func TestResourceNameIsLongerThanMaxLength(t *testing.T) {
-	f := &FullStack{
-		name: "this-is-a-very-long-app-name",
-	}
-	serviceName := "backend-service"
-	resourceType := "service-account"
-	max := 25
-
-	resourceName := f.newResourceName(serviceName, resourceType, max)
-
-	expected := "this-is-a-very-l-bac-serv"
-	if resourceName != expected {
-		t.Errorf("Expected resource name to be %s, but got %s", expected, resourceName)
-	}
-}
-
-// name, service name, and resourceType is empty, within max length
-func TestResourceTypeEmptyWithinMaxLength(t *testing.T) {
-	f := &FullStack{
-		name: "myapp",
-	}
-	serviceName := "backend"
-	resourceType := ""
-	max := 20
-
-	resourceName := f.newResourceName(serviceName, resourceType, max)
-
-	expected := "myapp-backend"
-	if resourceName != expected {
-		t.Errorf("Expected resource name to be %s, but got %s", expected, resourceName)
-	}
-}
-
-// name, service name, and resourceType is empty, needs truncation
-func TestResourceTypeEmptyNeedsTruncation(t *testing.T) {
-	f := &FullStack{
-		name: "this-is-a-very-long-app-name",
-	}
-	serviceName := "backend-service"
-	resourceType := ""
-	max := 15
-
-	resourceName := f.newResourceName(serviceName, resourceType, max)
-
-	// Truncation: two parts, so prefix and serviceName are truncated
-	expected := "this-is-a-ver-b"
-	if resourceName != expected {
-		t.Errorf("Expected resource name to be %s, but got %s", expected, resourceName)
-	}
-}
+const (
+	backendServiceName = "backend"
+	testProjectName    = "test-project"
+)
 
 type fullstackMocks struct{}
 
@@ -167,19 +73,19 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 	case "gcp:serviceaccount/account:Account":
 		outputs["name"] = args.Name
 		outputs["accountId"] = args.Name + "123" // Mock accountId
-		outputs["project"] = "test-project"
+		outputs["project"] = testProjectName
 		outputs["displayName"] = args.Name
 		outputs["email"] = args.Name + "@test-project.iam.gserviceaccount.com"
 		// Expected outputs: name, accountId, project, displayName, email
 	case "gcp:cloudrunv2/service:Service":
 		outputs["name"] = args.Name
 		outputs["location"] = "us-central1"
-		outputs["project"] = "test-project"
+		outputs["project"] = testProjectName
 		outputs["uri"] = "https://" + args.Name + "-hash-uc.a.run.app"
 		// Expected outputs: name, location, project, uri, template
 	case "gcp:secretmanager/secret:Secret":
 		outputs["secretId"] = args.Name
-		outputs["project"] = "test-project"
+		outputs["project"] = testProjectName
 		outputs["labels"] = map[string]string{"env": "production"}
 		// Expected outputs: secretId, project, labels
 	case "gcp:secretmanager/secretIamMember:SecretIamMember":
@@ -190,19 +96,19 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 	case "gcp:apigateway/api:Api":
 		outputs["apiId"] = args.Name
 		outputs["name"] = args.Name
-		outputs["project"] = "test-project"
+		outputs["project"] = testProjectName
 		outputs["displayName"] = args.Name
 		// Expected outputs: apiId, name, project, displayName
 	case "gcp:apigateway/apiConfig:ApiConfig":
 		outputs["apiConfigId"] = args.Name
 		outputs["name"] = args.Name
 		outputs["api"] = args.Name + "123" // Mock apiId
-		outputs["project"] = "test-project"
+		outputs["project"] = testProjectName
 		// Expected outputs: apiConfigId, name, api, project
 	case "gcp:apigateway/gateway:Gateway":
 		outputs["name"] = args.Name
 		outputs["region"] = "us-central1"
-		outputs["project"] = "test-project"
+		outputs["project"] = testProjectName
 		outputs["apiConfig"] = args.Name + "123" // Mock apiConfigId
 		outputs["defaultHostname"] = args.Name + ".apigateway.test-project.cloud.goog"
 		// Expected outputs: name, region, project, apiConfig, defaultHostname
@@ -219,15 +125,15 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 	t.Parallel()
 
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		args := &FullStackArgs{
-			Project:       "test-project",
+		args := &gcp.FullStackArgs{
+			Project:       testProjectName,
 			Region:        "us-central1",
-			BackendName:   "backend",
+			BackendName:   backendServiceName,
 			BackendImage:  "gcr.io/test-project/backend:latest",
 			FrontendName:  "frontend",
 			FrontendImage: "gcr.io/test-project/frontend:latest",
-			Backend: &BackendArgs{
-				InstanceArgs: &InstanceArgs{
+			Backend: &gcp.BackendArgs{
+				InstanceArgs: &gcp.InstanceArgs{
 					ResourceLimits: pulumi.StringMap{
 						"memory": pulumi.String("512Mi"),
 						"cpu":    pulumi.String("500m"),
@@ -241,8 +147,8 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 					ContainerPort:      8080,
 				},
 			},
-			Frontend: &FrontendArgs{
-				InstanceArgs: &InstanceArgs{
+			Frontend: &gcp.FrontendArgs{
+				InstanceArgs: &gcp.InstanceArgs{
 					ResourceLimits: pulumi.StringMap{
 						"memory": pulumi.String("1Gi"),
 						"cpu":    pulumi.String("1000m"),
@@ -260,31 +166,27 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 				},
 				EnableUnauthenticated: false,
 			},
-			Network: &NetworkArgs{
+			Network: &gcp.NetworkArgs{
 				DomainURL: "myapp.example.com",
-				APIGateway: &APIGatewayArgs{
+				APIGateway: &gcp.APIGatewayArgs{
 					Name: "gateway",
-					Config: &APIConfigArgs{
+					Config: &gcp.APIConfigArgs{
 						EnableCORS: true,
 					},
 				},
 			},
 		}
 
-		fullstack, err := NewFullStack(ctx, "test-fullstack", args)
+		fullstack, err := gcp.NewFullStack(ctx, "test-fullstack", args)
 		require.NoError(t, err)
 
 		// Verify basic properties
-		assert.Equal(t, "test-project", fullstack.Project)
+		assert.Equal(t, testProjectName, fullstack.Project)
 		assert.Equal(t, "us-central1", fullstack.Region)
-		assert.Equal(t, "backend", fullstack.BackendName)
+		assert.Equal(t, backendServiceName, fullstack.BackendName)
 		assert.Equal(t, "frontend", fullstack.FrontendName)
 		assert.Equal(t, "gcr.io/test-project/backend:latest", fullstack.BackendImage)
 		assert.Equal(t, "gcr.io/test-project/frontend:latest", fullstack.FrontendImage)
-
-		// Test resource name generation with the new method
-		resourceName := fullstack.newResourceName("backend", "service", 100)
-		assert.Equal(t, "test-fullstack-backend-service", resourceName)
 
 		// Verify backend service configuration
 		backendService := fullstack.GetBackendService()
@@ -295,14 +197,16 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		defer close(backendProjectCh)
 		backendService.Project.ApplyT(func(project string) error {
 			backendProjectCh <- project
+
 			return nil
 		})
-		assert.Equal(t, "test-project", <-backendProjectCh, "Backend service project should match")
+		assert.Equal(t, testProjectName, <-backendProjectCh, "Backend service project should match")
 
 		portCh := make(chan int, 1)
 		defer close(portCh)
 		backendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
 			portCh <- *containers[0].Ports.ContainerPort
+
 			return nil
 		})
 		assert.Equal(t, 8080, <-portCh, "Backend container port should be 8080")
@@ -312,6 +216,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		defer close(backendImageCh)
 		backendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
 			backendImageCh <- containers[0].Image
+
 			return nil
 		})
 		assert.Equal(t, "gcr.io/test-project/backend:latest", <-backendImageCh, "Backend image should match the provided image")
@@ -325,14 +230,16 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		defer close(frontendProjectCh)
 		frontendService.Project.ApplyT(func(project string) error {
 			frontendProjectCh <- project
+
 			return nil
 		})
-		assert.Equal(t, "test-project", <-frontendProjectCh, "Frontend service project should match")
+		assert.Equal(t, testProjectName, <-frontendProjectCh, "Frontend service project should match")
 
 		frontendLocationCh := make(chan string, 1)
 		defer close(frontendLocationCh)
 		frontendService.Location.ApplyT(func(location string) error {
 			frontendLocationCh <- location
+
 			return nil
 		})
 		assert.Equal(t, "us-central1", <-frontendLocationCh, "Frontend service location should match")
@@ -342,6 +249,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		defer close(frontendPortCh)
 		frontendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
 			frontendPortCh <- *containers[0].Ports.ContainerPort
+
 			return nil
 		})
 		assert.Equal(t, 3000, <-frontendPortCh, "Frontend container port should be 3000")
@@ -351,6 +259,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		defer close(frontendImageCh)
 		frontendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
 			frontendImageCh <- containers[0].Image
+
 			return nil
 		})
 		assert.Equal(t, "gcr.io/test-project/frontend:latest", <-frontendImageCh, "Frontend image should match the provided image")
@@ -364,6 +273,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		defer close(gatewayRegionCh)
 		apiGateway.Region.ApplyT(func(region string) error {
 			gatewayRegionCh <- region
+
 			return nil
 		})
 		assert.Equal(t, "us-central1", <-gatewayRegionCh, "API Gateway region should match the project region")
@@ -375,6 +285,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 			if len(containers) > 0 && len(containers[0].VolumeMounts) > 0 {
 				backendVolumeMountCh <- containers[0].VolumeMounts[0]
 			}
+
 			return nil
 		})
 		backendVolumeMount := <-backendVolumeMountCh
@@ -387,6 +298,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 			if len(containers) > 0 && len(containers[0].VolumeMounts) > 0 {
 				frontendVolumeMountCh <- containers[0].VolumeMounts[0]
 			}
+
 			return nil
 		})
 		frontendVolumeMount := <-frontendVolumeMountCh

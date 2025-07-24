@@ -38,5 +38,6 @@ func (f *FullStack) newEnvConfigSecret(ctx *pulumi.Context, serviceName string, 
 	if err != nil {
 		return nil, err
 	}
+
 	return configSecret, nil
 }

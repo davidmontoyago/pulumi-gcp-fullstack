@@ -11,11 +11,11 @@ clean:
 	go mod verify
 
 lint:
-	docker run --rm -it -v $$(PWD):/app \
-	-v $$(go env GOCACHE):/.cache/go-build -e GOCACHE=/.cache/go-build \
-	-v $$(go env GOMODCACHE):/.cache/mod -e GOMODCACHE=/.cache/mod \
-	-w /app golangci/golangci-lint:latest \
-	golangci-lint run --verbose --color=always
+	docker run --rm -v $$(pwd):/app \
+		-v $$(go env GOCACHE):/.cache/go-build -e GOCACHE=/.cache/go-build \
+		-v $$(go env GOMODCACHE):/.cache/mod -e GOMODCACHE=/.cache/mod \
+		-w /app golangci/golangci-lint:v2.1.6 \
+		golangci-lint run --fix --verbose --output.text.colors
 
 upgrade:
 	go get -u ./...

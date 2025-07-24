@@ -87,16 +87,17 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, serviceName 
 	}
 
 	// Create NEG for either Cloud Run or API Gateway
-	backendUrlMap, err := f.newServerlessNEG(ctx, cloudArmorPolicy, serviceName, args.ProxyNetworkName, f.Project, f.Region, apiGateway)
+	backendURLMap, err := f.newServerlessNEG(ctx, cloudArmorPolicy, serviceName, args.ProxyNetworkName, f.Project, f.Region, apiGateway)
 	if err != nil {
 		return err
 	}
 
-	err = f.newHTTPSProxy(ctx, serviceName, args.DomainURL, f.Project, args.EnablePrivateTrafficOnly, backendUrlMap)
+	err = f.newHTTPSProxy(ctx, serviceName, args.DomainURL, f.Project, args.EnablePrivateTrafficOnly, backendURLMap)
+
 	return err
 }
 
-func (f *FullStack) newHTTPSProxy(ctx *pulumi.Context, serviceName, domainName, project string, privateTraffic bool, backendUrlMap *compute.URLMap) error {
+func (f *FullStack) newHTTPSProxy(ctx *pulumi.Context, serviceName, domainName, project string, privateTraffic bool, backendURLMap *compute.URLMap) error {
 	tlsCertName := f.newResourceName(serviceName, "tls-cert", 100)
 	certificate, err := compute.NewManagedSslCertificate(ctx, tlsCertName, &compute.ManagedSslCertificateArgs{
 		Description: pulumi.String(fmt.Sprintf("TLS cert for %s", serviceName)),
@@ -117,7 +118,7 @@ func (f *FullStack) newHTTPSProxy(ctx *pulumi.Context, serviceName, domainName, 
 	httpsProxy, err := compute.NewTargetHttpsProxy(ctx, httpsProxyName, &compute.TargetHttpsProxyArgs{
 		Description: pulumi.String(fmt.Sprintf("proxy to LB traffic for %s", serviceName)),
 		Project:     pulumi.String(project),
-		UrlMap:      backendUrlMap.SelfLink,
+		UrlMap:      backendURLMap.SelfLink,
 		SslCertificates: pulumi.StringArray{
 			certificate.SelfLink,
 		},
@@ -235,7 +236,7 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context, policy *compute.Securi
 
 	// TODO create compute address if enabled
 	urlMapName := f.newResourceName(serviceName, "url-map", 100)
-	backendUrlMap, err := compute.NewURLMap(ctx, urlMapName, &compute.URLMapArgs{
+	backendURLMap, err := compute.NewURLMap(ctx, urlMapName, &compute.URLMapArgs{
 		Description:    pulumi.String(fmt.Sprintf("URL map to LB traffic for %s", serviceName)),
 		Project:        pulumi.String(project),
 		DefaultService: service.SelfLink,
@@ -243,7 +244,8 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context, policy *compute.Securi
 	if err != nil {
 		return nil, err
 	}
-	ctx.Export("load_balancer_url_map_id", backendUrlMap.ID())
-	ctx.Export("load_balancer_url_map_uri", backendUrlMap.SelfLink)
-	return backendUrlMap, nil
+	ctx.Export("load_balancer_url_map_id", backendURLMap.ID())
+	ctx.Export("load_balancer_url_map_uri", backendURLMap.SelfLink)
+
+	return backendURLMap, nil
 }

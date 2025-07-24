@@ -1,0 +1,75 @@
+version: "2"
+
+run:
+  timeout: 5m
+  go: "1.24.0"
+
+linters:
+  enable:
+    - errcheck
+    - gosec
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - prealloc
+    - gocritic
+    - revive
+    - gomodguard
+    - forbidigo
+    - goconst
+    - grouper
+    - importas
+    - ireturn
+    - makezero
+    - nestif
+    - nilerr
+    - nlreturn
+    - paralleltest
+    - tagliatelle
+    - testpackage
+    - thelper
+    - tparallel
+    - unconvert
+    - usestdlibvars
+    - varnamelen
+    - wastedassign
+
+  disable:
+    # Magic number detection - too strict for configuration values and resource IDs
+    - mnd
+    # Cyclomatic complexity - infrastructure code often has complex resource creation
+    - gocyclo
+    # Cognitive complexity - similar to cyclomatic, too strict for infrastructure
+    - gocognit
+    # Function length - infrastructure functions can be long due to resource setup
+    - funlen
+    # Line length - long URLs and configuration strings are common
+    - lll
+    # Duplicate code - similar resource creation patterns are expected
+    - dupl
+    # Cyclomatic complexity (alternative) - same reason as gocyclo
+    - cyclop
+    # Error wrapping - Pulumi errors are handled differently
+    - wrapcheck
+    # Context handling - Pulumi context is different from standard Go context
+    - contextcheck
+    # HTTP context - not applicable for Pulumi infrastructure code
+    - noctx
+    # HTTP body close - not applicable for Pulumi infrastructure code
+    - bodyclose
+    # SQL close check - not applicable for infrastructure code
+    - sqlclosecheck
+    # TODO comments - not needed for production infrastructure code
+    - godox
+    # Comment formatting - too strict for infrastructure documentation
+    - godot
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  new: false
+  new-from-rev: ""
+  new-from-patch: ""
+  fix: false

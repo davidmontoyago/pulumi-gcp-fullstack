@@ -37,8 +37,5 @@ jobs:
           cache: true
           cache-dependency-path: go.sum
 
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v4
-        with:
-          version: latest
-          args: --verbose --color=always
+      - name: Lint Go code
+        run: make lint
