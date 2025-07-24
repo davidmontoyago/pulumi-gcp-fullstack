@@ -32,6 +32,12 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 			},
 		}
 	}
+	if args.SecretConfigFileName == "" {
+		args.SecretConfigFileName = ".env"
+	}
+	if args.SecretConfigFilePath == "" {
+		args.SecretConfigFilePath = "/app/config/"
+	}
 	if args.ResourceLimits == nil {
 		args.ResourceLimits = defaultBackendResourceLimits
 	}
