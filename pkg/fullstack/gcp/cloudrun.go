@@ -278,6 +278,7 @@ func newFrontendEnvVars(args *FrontendArgs, backendURL pulumi.StringOutput) clou
 			Value: pulumi.String(envVarValue),
 		})
 	}
+
 	return envVars
 }
 
@@ -294,5 +295,6 @@ func newBackendEnvVars(args *BackendArgs) cloudrunv2.ServiceTemplateContainerEnv
 			Value: pulumi.String(envVarValue),
 		})
 	}
+
 	return envVars
 }

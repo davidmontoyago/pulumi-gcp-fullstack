@@ -18,7 +18,9 @@ func (f *FullStack) newCloudArmorPolicy(ctx *pulumi.Context, policyName string, 
 
 	preconfiguredRules := newPreconfiguredRules()
 
-	rules := append(defaultRules, preconfiguredRules...)
+	rules := make(compute.SecurityPolicyRuleTypeArray, 0, len(defaultRules)+len(preconfiguredRules))
+	rules = append(rules, defaultRules...)
+	rules = append(rules, preconfiguredRules...)
 
 	if len(args.ClientIPAllowlist) > 0 {
 		// IP allowlist rule to restrict access to a handful of IPs... not for the enterprise
@@ -42,6 +44,7 @@ func (f *FullStack) newCloudArmorPolicy(ctx *pulumi.Context, policyName string, 
 	}
 	ctx.Export("cloud_armor_security_policy_id", policy.ID())
 	ctx.Export("cloud_armor_security_policy_uri", policy.SelfLink)
+
 	return policy, nil
 }
 
@@ -60,6 +63,7 @@ func newDefaultRule() compute.SecurityPolicyRuleTypeArray {
 			},
 		},
 	})
+
 	return defaultRules
 }
 
@@ -94,13 +98,14 @@ func newIPAllowlistRules(clientIPAllowlist []string) compute.SecurityPolicyRuleT
 				},
 			},
 		})
+
 	return ipAllowlistRules
 }
 
 // newPreconfiguredRules returns a list of best-practice rules to deny traffic
 func newPreconfiguredRules() compute.SecurityPolicyRuleTypeArray {
 	var preconfiguredRules compute.SecurityPolicyRuleTypeArray
-	for i, rule := range []string{
+	for index, rule := range []string{
 		"sqli-v33-stable",
 		"xss-v33-stable",
 		"lfi-v33-stable",
@@ -116,7 +121,7 @@ func newPreconfiguredRules() compute.SecurityPolicyRuleTypeArray {
 		preconfiguredRules = append(preconfiguredRules, &compute.SecurityPolicyRuleTypeArgs{
 			Action:      pulumi.String("deny(502)"),
 			Description: pulumi.String(fmt.Sprintf("preconfigured waf rule %s", rule)),
-			Priority:    pulumi.Int(20 + i),
+			Priority:    pulumi.Int(20 + index),
 			Match: &compute.SecurityPolicyRuleMatchArgs{
 				Expr: &compute.SecurityPolicyRuleMatchExprArgs{
 					Expression: pulumi.String(preconfiguredWafRule),
@@ -124,5 +129,6 @@ func newPreconfiguredRules() compute.SecurityPolicyRuleTypeArray {
 			},
 		})
 	}
+
 	return preconfiguredRules
 }

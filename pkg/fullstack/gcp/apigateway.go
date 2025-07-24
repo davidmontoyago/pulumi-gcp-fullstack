@@ -1,3 +1,4 @@
+// Package gcp provides Google Cloud Platform infrastructure components for fullstack applications.
 package gcp
 
 import (

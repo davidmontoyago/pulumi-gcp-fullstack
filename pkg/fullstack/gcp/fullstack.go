@@ -1,3 +1,4 @@
+// Package gcp provides Google Cloud Platform infrastructure components for fullstack applications.
 package gcp
 
 import (
@@ -12,6 +13,7 @@ import (
 	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
 )
 
+// FullStack represents a complete fullstack application infrastructure on Google Cloud Platform.
 type FullStack struct {
 	pulumi.ResourceState
 
@@ -29,6 +31,7 @@ type FullStack struct {
 	apiGateway      *apigateway.Gateway
 }
 
+// FullStackArgs contains configuration arguments for creating a FullStack instance.
 type FullStackArgs struct {
 	Project       string
 	Region        string
@@ -42,15 +45,18 @@ type FullStackArgs struct {
 	Network  *NetworkArgs
 }
 
+// BackendArgs contains configuration for the backend service.
 type BackendArgs struct {
 	*InstanceArgs
 }
 
+// FrontendArgs contains configuration for the frontend service.
 type FrontendArgs struct {
 	*InstanceArgs
 	EnableUnauthenticated bool
 }
 
+// InstanceArgs contains configuration for Cloud Run service instances.
 type InstanceArgs struct {
 	ResourceLimits       pulumi.StringMap
 	SecretConfigFileName string
@@ -61,6 +67,7 @@ type InstanceArgs struct {
 	ContainerPort        int
 }
 
+// NetworkArgs contains configuration for network infrastructure including load balancers and API Gateway.
 type NetworkArgs struct {
 	// Domain name for the internet-facing certificate. Required.
 	// E.g.: "myapp.path2prod.dev"
@@ -81,6 +88,7 @@ type NetworkArgs struct {
 	APIGateway *APIGatewayArgs
 }
 
+// NewFullStack creates a new FullStack instance with the provided configuration.
 func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ...pulumi.ResourceOption) (*FullStack, error) {
 	// Set default values for BackendName and FrontendName if not provided
 	backendName := args.BackendName
@@ -93,7 +101,7 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 		frontendName = "frontend"
 	}
 
-	f := &FullStack{
+	fullStack := &FullStack{
 		Project:       args.Project,
 		Region:        args.Region,
 		BackendImage:  args.BackendImage,
@@ -103,23 +111,23 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 
 		name: name,
 	}
-	err := ctx.RegisterComponentResource("pulumi-fullstack:gcp:FullStack", name, f, opts...)
+	err := ctx.RegisterComponentResource("pulumi-fullstack:gcp:FullStack", name, fullStack, opts...)
 	if err != nil {
 		return nil, err
 	}
 
 	// proceed to provision
-	err = f.deploy(ctx, args)
+	err = fullStack.deploy(ctx, args)
 	if err != nil {
 		return nil, err
 	}
 
-	err = ctx.RegisterResourceOutputs(f, pulumi.Map{})
+	err = ctx.RegisterResourceOutputs(fullStack, pulumi.Map{})
 	if err != nil {
 		return nil, err
 	}
 
-	return f, nil
+	return fullStack, nil
 }
 
 func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
@@ -127,12 +135,14 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 	if err != nil {
 		return err
 	}
+
 	f.backendService = backendService
 
 	frontendService, _, err := f.deployFrontendCloudRunInstance(ctx, args.Frontend, backendService.Uri)
 	if err != nil {
 		return err
 	}
+
 	f.frontendService = frontendService
 
 	// TODO should be removed as we want the frontend to not bypass the API gateway
@@ -152,6 +162,7 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 
 	var apiGateway *apigateway.Gateway
 	var gatewayArgs *APIGatewayArgs
+
 	if args.Network != nil {
 		gatewayArgs = applyDefaultGatewayArgs(args.Network.APIGateway, backendService.Uri, frontendService.Uri)
 
@@ -159,15 +170,17 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 		if err != nil {
 			return err
 		}
+
 		f.apiGateway = apiGateway
 	}
 
 	// create an external load balancer and point to a serverless NEG (API gateway or Cloud run)
 	err = f.deployExternalLoadBalancer(ctx, args.FrontendName, args.Network, apiGateway)
+
 	return err
 }
 
-func (f *FullStack) newResourceName(serviceName, resourceType string, max int) string {
+func (f *FullStack) newResourceName(serviceName, resourceType string, maxLength int) string {
 	var resourceName string
 	if resourceType == "" {
 		resourceName = fmt.Sprintf("%s-%s", f.name, serviceName)
@@ -175,11 +188,11 @@ func (f *FullStack) newResourceName(serviceName, resourceType string, max int) s
 		resourceName = fmt.Sprintf("%s-%s-%s", f.name, serviceName, resourceType)
 	}
 
-	if len(resourceName) <= max {
+	if len(resourceName) <= maxLength {
 		return resourceName
 	}
 
-	surplus := len(resourceName) - max
+	surplus := len(resourceName) - maxLength
 
 	// Calculate how much to truncate from each part
 	var prefixSurplus, serviceSurplus, typeSurplus int
@@ -222,12 +235,14 @@ func (f *FullStack) newResourceName(serviceName, resourceType string, max int) s
 		} else {
 			shortResourceType = resourceType[:1]
 		}
+
 		resourceName = fmt.Sprintf("%s-%s-%s",
 			strings.TrimSuffix(shortPrefix, "-"),
 			strings.TrimSuffix(shortServiceName, "-"),
 			strings.TrimSuffix(shortResourceType, "-"),
 		)
 	}
+
 	return resourceName
 }
 
@@ -265,14 +280,17 @@ func applyDefaultGatewayArgs(existingArgs *APIGatewayArgs, backendServiceURL, fr
 	return gatewayArgs
 }
 
+// GetBackendService returns the backend Cloud Run service.
 func (f *FullStack) GetBackendService() *cloudrunv2.Service {
 	return f.backendService
 }
 
+// GetFrontendService returns the frontend Cloud Run service.
 func (f *FullStack) GetFrontendService() *cloudrunv2.Service {
 	return f.frontendService
 }
 
+// GetAPIGateway returns the API Gateway instance.
 func (f *FullStack) GetAPIGateway() *apigateway.Gateway {
 	return f.apiGateway
 }
