@@ -20,30 +20,53 @@ var (
 	}
 )
 
-func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *BackendArgs) (*cloudrunv2.Service, *serviceaccount.Account, error) {
+// InstanceDefaults contains the default values for different service types
+type InstanceDefaults struct {
+	SecretConfigFileName string
+	SecretConfigFilePath string
+	ContainerPort        int
+	ResourceLimits       pulumi.StringMap
+}
+
+// setInstanceDefaults takes an existing InstanceArgs (or nil) and returns a new one with safe defaults.
+// The defaults are customized based on the service type (backend vs frontend).
+func setInstanceDefaults(args *InstanceArgs, defaults InstanceDefaults) *InstanceArgs {
 	if args == nil {
-		args = &BackendArgs{
-			&InstanceArgs{
-				SecretConfigFileName: ".env",
-				SecretConfigFilePath: "/app/config/",
-				MaxInstanceCount:     3,
-				DeletionProtection:   false,
-				ContainerPort:        4001,
-			},
-		}
+		args = &InstanceArgs{}
 	}
+
 	if args.SecretConfigFileName == "" {
-		args.SecretConfigFileName = ".env"
+		args.SecretConfigFileName = defaults.SecretConfigFileName
 	}
 	if args.SecretConfigFilePath == "" {
-		args.SecretConfigFilePath = "/app/config/"
+		args.SecretConfigFilePath = defaults.SecretConfigFilePath
 	}
 	if args.ResourceLimits == nil {
-		args.ResourceLimits = defaultBackendResourceLimits
+		args.ResourceLimits = defaults.ResourceLimits
 	}
 	if args.ContainerPort == 0 {
-		args.ContainerPort = 4001
+		args.ContainerPort = defaults.ContainerPort
 	}
+	if args.MaxInstanceCount == 0 {
+		args.MaxInstanceCount = 3
+	}
+
+	return args
+}
+
+func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *BackendArgs) (*cloudrunv2.Service, *serviceaccount.Account, error) {
+	// Set defaults for backend
+	backendDefaults := InstanceDefaults{
+		SecretConfigFileName: ".env",
+		SecretConfigFilePath: "/app/config/",
+		ContainerPort:        4001,
+		ResourceLimits:       defaultBackendResourceLimits,
+	}
+
+	if args == nil {
+		args = &BackendArgs{}
+	}
+	args.InstanceArgs = setInstanceDefaults(args.InstanceArgs, backendDefaults)
 
 	backendName := f.BackendName
 	accountName := f.newResourceName(backendName, "account", 28)
@@ -126,25 +149,18 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 }
 
 func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *FrontendArgs, backendURL pulumi.StringOutput) (*cloudrunv2.Service, *serviceaccount.Account, error) {
+	// Set defaults for frontend
+	frontendDefaults := InstanceDefaults{
+		SecretConfigFileName: ".env.production",
+		SecretConfigFilePath: "/app/.next/config/",
+		ContainerPort:        3000,
+		ResourceLimits:       defaultFrontendResourceLimits,
+	}
+
 	if args == nil {
 		args = &FrontendArgs{}
 	}
-	if args.InstanceArgs == nil {
-		args.InstanceArgs = &InstanceArgs{
-			// default to a NextJs app
-			SecretConfigFileName: ".env.production",
-			SecretConfigFilePath: "/app/.next/config/",
-			MaxInstanceCount:     3,
-			DeletionProtection:   false,
-			ContainerPort:        3000,
-		}
-	}
-	if args.ResourceLimits == nil {
-		args.ResourceLimits = defaultFrontendResourceLimits
-	}
-	if args.ContainerPort == 0 {
-		args.ContainerPort = 3000
-	}
+	args.InstanceArgs = setInstanceDefaults(args.InstanceArgs, frontendDefaults)
 
 	frontendImage := f.FrontendImage
 	project := f.Project
