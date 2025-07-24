@@ -13,11 +13,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: go.mod
           cache: true
-          cache-dependency-path: backend/go.sum
+          cache-dependency-path: go.sum
 
       - name: Build and test
         run: make test
