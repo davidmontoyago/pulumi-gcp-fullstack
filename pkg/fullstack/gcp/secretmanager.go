@@ -1,6 +1,8 @@
 package gcp
 
 import (
+	"fmt"
+
 	secretmanager "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/secretmanager"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -37,6 +39,18 @@ func (f *FullStack) newEnvConfigSecret(ctx *pulumi.Context, serviceName string, 
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// Create initial empty secret version
+	_, versionErr := secretmanager.NewSecretVersion(ctx, fmt.Sprintf("%s-secret-seed", secretID), &secretmanager.SecretVersionArgs{
+		Secret:     configSecret.ID(),
+		SecretData: pulumi.String(fmt.Sprintf("SERVICE_NAME=%s", serviceName)),
+	},
+		pulumi.IgnoreChanges([]string{"secretData"}),
+	)
+
+	if versionErr != nil {
+		return nil, fmt.Errorf("failed to create secret version: %w", versionErr)
 	}
 
 	return configSecret, nil

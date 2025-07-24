@@ -93,6 +93,12 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 		outputs["role"] = "roles/secretmanager.secretAccessor"
 		outputs["member"] = "user:test-user@example.com"
 		// Expected outputs: secretId, role, member
+	case "gcp:secretmanager/secretVersion:SecretVersion":
+		outputs["name"] = args.Name
+		outputs["secret"] = args.Name + "-secret-id"
+		outputs["version"] = "1"
+		outputs["createTime"] = "2023-01-01T00:00:00Z"
+		// Expected outputs: name, secret, version, createTime
 	case "gcp:apigateway/api:Api":
 		outputs["apiId"] = args.Name
 		outputs["name"] = args.Name
