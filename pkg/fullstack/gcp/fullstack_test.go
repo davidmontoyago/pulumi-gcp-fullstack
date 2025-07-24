@@ -317,3 +317,168 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		t.Fatalf("Pulumi WithMocks failed: %v", err)
 	}
 }
+
+func TestNewFullStack_WithDefaults(t *testing.T) {
+	t.Parallel()
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		args := &gcp.FullStackArgs{
+			Project:       testProjectName,
+			Region:        "us-central1",
+			BackendName:   backendServiceName,
+			BackendImage:  "gcr.io/test-project/backend:latest",
+			FrontendName:  "frontend",
+			FrontendImage: "gcr.io/test-project/frontend:latest",
+			Backend: &gcp.BackendArgs{
+				InstanceArgs: &gcp.InstanceArgs{
+					// ResourceLimits: pulumi.StringMap{
+					// 	"memory": pulumi.String("512Mi"),
+					// 	"cpu":    pulumi.String("500m"),
+					// },
+					// EnvVars: map[string]string{
+					// 	"LOG_LEVEL":    "info",
+					// 	"DATABASE_URL": "postgresql://localhost:5432/testdb",
+					// },
+					// MaxInstanceCount:   5,
+					// DeletionProtection: true,
+					// ContainerPort:      8080,
+				},
+			},
+			Frontend: &gcp.FrontendArgs{
+				InstanceArgs: &gcp.InstanceArgs{
+					// ResourceLimits: pulumi.StringMap{
+					// 	"memory": pulumi.String("1Gi"),
+					// 	"cpu":    pulumi.String("1000m"),
+					// },
+					// SecretConfigFileName: ".env.production",
+					// SecretConfigFilePath: "/app/.next/config/",
+					// EnvVars: map[string]string{
+					// 	"NODE_ENV":            "production",
+					// 	"NEXT_PUBLIC_API_URL": "https://api.example.com",
+					// 	"ANALYTICS_ID":        "GA-123456789",
+					// },
+					// MaxInstanceCount:   3,
+					// DeletionProtection: false,
+					// ContainerPort:      3000,
+				},
+				EnableUnauthenticated: false,
+			},
+			Network: &gcp.NetworkArgs{
+				DomainURL: "myapp.example.com",
+				// APIGateway: &gcp.APIGatewayArgs{
+				// 	Name: "gateway",
+				// 	Config: &gcp.APIConfigArgs{
+				// 		EnableCORS: true,
+				// 	},
+				// },
+			},
+		}
+
+		fullstack, err := gcp.NewFullStack(ctx, "test-fullstack", args)
+		require.NoError(t, err)
+
+		// Verify basic properties
+		assert.Equal(t, testProjectName, fullstack.Project)
+		assert.Equal(t, "us-central1", fullstack.Region)
+		assert.Equal(t, backendServiceName, fullstack.BackendName)
+		assert.Equal(t, "frontend", fullstack.FrontendName)
+		assert.Equal(t, "gcr.io/test-project/backend:latest", fullstack.BackendImage)
+		assert.Equal(t, "gcr.io/test-project/frontend:latest", fullstack.FrontendImage)
+
+		// Verify backend service configuration
+		backendService := fullstack.GetBackendService()
+		require.NotNil(t, backendService, "Backend service should not be nil")
+
+		// Verify backend service basic properties
+		backendProjectCh := make(chan string, 1)
+		defer close(backendProjectCh)
+		backendService.Project.ApplyT(func(project string) error {
+			backendProjectCh <- project
+
+			return nil
+		})
+		assert.Equal(t, testProjectName, <-backendProjectCh, "Backend service project should match")
+
+		portCh := make(chan int, 1)
+		defer close(portCh)
+		backendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
+			portCh <- *containers[0].Ports.ContainerPort
+
+			return nil
+		})
+		assert.Equal(t, 4001, <-portCh, "Backend container port should be 4001")
+
+		// Assert backend image is set correctly
+		backendImageCh := make(chan string, 1)
+		defer close(backendImageCh)
+		backendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
+			backendImageCh <- containers[0].Image
+
+			return nil
+		})
+		assert.Equal(t, "gcr.io/test-project/backend:latest", <-backendImageCh, "Backend image should match the provided image")
+
+		// Verify frontend service configuration
+		frontendService := fullstack.GetFrontendService()
+		require.NotNil(t, frontendService, "Frontend service should not be nil")
+
+		// Verify frontend service basic properties
+		frontendProjectCh := make(chan string, 1)
+		defer close(frontendProjectCh)
+		frontendService.Project.ApplyT(func(project string) error {
+			frontendProjectCh <- project
+
+			return nil
+		})
+		assert.Equal(t, testProjectName, <-frontendProjectCh, "Frontend service project should match")
+
+		frontendLocationCh := make(chan string, 1)
+		defer close(frontendLocationCh)
+		frontendService.Location.ApplyT(func(location string) error {
+			frontendLocationCh <- location
+
+			return nil
+		})
+		assert.Equal(t, "us-central1", <-frontendLocationCh, "Frontend service location should match")
+
+		// Assert frontend container port is set correctly
+		frontendPortCh := make(chan int, 1)
+		defer close(frontendPortCh)
+		frontendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
+			frontendPortCh <- *containers[0].Ports.ContainerPort
+
+			return nil
+		})
+		assert.Equal(t, 3000, <-frontendPortCh, "Frontend container port should be 3000")
+
+		// Assert frontend image is set correctly
+		frontendImageCh := make(chan string, 1)
+		defer close(frontendImageCh)
+		frontendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
+			frontendImageCh <- containers[0].Image
+
+			return nil
+		})
+		assert.Equal(t, "gcr.io/test-project/frontend:latest", <-frontendImageCh, "Frontend image should match the provided image")
+
+		// Verify API Gateway configuration
+		apiGateway := fullstack.GetAPIGateway()
+		require.NotNil(t, apiGateway, "API Gateway should not be nil")
+
+		// Assert gateway region is set correctly
+		gatewayRegionCh := make(chan string, 1)
+		defer close(gatewayRegionCh)
+		apiGateway.Region.ApplyT(func(region string) error {
+			gatewayRegionCh <- region
+
+			return nil
+		})
+		assert.Equal(t, "us-central1", <-gatewayRegionCh, "API Gateway region should match the project region")
+
+		return nil
+	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
+
+	if err != nil {
+		t.Fatalf("Pulumi WithMocks failed: %v", err)
+	}
+}

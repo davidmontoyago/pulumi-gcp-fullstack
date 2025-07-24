@@ -264,7 +264,7 @@ func applyDefaultGatewayArgs(existingArgs *APIGatewayArgs, backendServiceURL, fr
 		gatewayArgs = existingArgs
 	}
 
-	if existingArgs.Config == nil {
+	if gatewayArgs.Config == nil {
 		gatewayArgs.Config = defaultGatewayArgs.Config
 	} else {
 		gatewayArgs.Config.BackendServiceURL = backendServiceURL
