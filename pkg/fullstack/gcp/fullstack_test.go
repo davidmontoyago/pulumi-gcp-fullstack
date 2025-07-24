@@ -232,8 +232,6 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 						"memory": pulumi.String("512Mi"),
 						"cpu":    pulumi.String("500m"),
 					},
-					SecretConfigFileName: ".env",
-					SecretConfigFilePath: "/app/config/",
 					EnvVars: map[string]string{
 						"LOG_LEVEL":    "info",
 						"DATABASE_URL": "postgresql://localhost:5432/testdb",
