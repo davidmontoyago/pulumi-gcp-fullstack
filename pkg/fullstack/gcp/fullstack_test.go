@@ -135,9 +135,9 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 			Project:       testProjectName,
 			Region:        "us-central1",
 			BackendName:   backendServiceName,
-			BackendImage:  "gcr.io/test-project/backend:latest",
+			BackendImage:  pulumi.String("gcr.io/test-project/backend:latest"),
 			FrontendName:  "frontend",
-			FrontendImage: "gcr.io/test-project/frontend:latest",
+			FrontendImage: pulumi.String("gcr.io/test-project/frontend:latest"),
 			Backend: &gcp.BackendArgs{
 				InstanceArgs: &gcp.InstanceArgs{
 					ResourceLimits: pulumi.StringMap{
@@ -191,8 +191,23 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		assert.Equal(t, "us-central1", fullstack.Region)
 		assert.Equal(t, backendServiceName, fullstack.BackendName)
 		assert.Equal(t, "frontend", fullstack.FrontendName)
-		assert.Equal(t, "gcr.io/test-project/backend:latest", fullstack.BackendImage)
-		assert.Equal(t, "gcr.io/test-project/frontend:latest", fullstack.FrontendImage)
+
+		// Verify backend and frontend images using async pattern
+		stackBackendImageCh := make(chan string, 1)
+		defer close(stackBackendImageCh)
+		fullstack.BackendImage.ApplyT(func(image string) error {
+			stackBackendImageCh <- image
+			return nil
+		})
+		assert.Equal(t, "gcr.io/test-project/backend:latest", <-stackBackendImageCh, "Backend image should match")
+
+		stackFrontendImageCh := make(chan string, 1)
+		defer close(stackFrontendImageCh)
+		fullstack.FrontendImage.ApplyT(func(image string) error {
+			stackFrontendImageCh <- image
+			return nil
+		})
+		assert.Equal(t, "gcr.io/test-project/frontend:latest", <-stackFrontendImageCh, "Frontend image should match")
 
 		// Verify backend service configuration
 		backendService := fullstack.GetBackendService()
@@ -326,9 +341,9 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 			Project:       testProjectName,
 			Region:        "us-central1",
 			BackendName:   backendServiceName,
-			BackendImage:  "gcr.io/test-project/backend:latest",
+			BackendImage:  pulumi.String("gcr.io/test-project/backend:latest"),
 			FrontendName:  "frontend",
-			FrontendImage: "gcr.io/test-project/frontend:latest",
+			FrontendImage: pulumi.String("gcr.io/test-project/frontend:latest"),
 			Backend: &gcp.BackendArgs{
 				InstanceArgs: &gcp.InstanceArgs{
 					// ResourceLimits: pulumi.StringMap{
@@ -382,8 +397,23 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 		assert.Equal(t, "us-central1", fullstack.Region)
 		assert.Equal(t, backendServiceName, fullstack.BackendName)
 		assert.Equal(t, "frontend", fullstack.FrontendName)
-		assert.Equal(t, "gcr.io/test-project/backend:latest", fullstack.BackendImage)
-		assert.Equal(t, "gcr.io/test-project/frontend:latest", fullstack.FrontendImage)
+
+		// Verify backend and frontend images using async pattern
+		stackBackendImageCh := make(chan string, 1)
+		defer close(stackBackendImageCh)
+		fullstack.BackendImage.ApplyT(func(image string) error {
+			stackBackendImageCh <- image
+			return nil
+		})
+		assert.Equal(t, "gcr.io/test-project/backend:latest", <-stackBackendImageCh, "Backend image should match")
+
+		stackFrontendImageCh := make(chan string, 1)
+		defer close(stackFrontendImageCh)
+		fullstack.FrontendImage.ApplyT(func(image string) error {
+			stackFrontendImageCh <- image
+			return nil
+		})
+		assert.Equal(t, "gcr.io/test-project/frontend:latest", <-stackFrontendImageCh, "Frontend image should match")
 
 		// Verify backend service configuration
 		backendService := fullstack.GetBackendService()

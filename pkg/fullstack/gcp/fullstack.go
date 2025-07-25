@@ -20,9 +20,9 @@ type FullStack struct {
 	Project       string
 	Region        string
 	BackendName   string
-	BackendImage  string
+	BackendImage  pulumi.StringOutput
 	FrontendName  string
-	FrontendImage string
+	FrontendImage pulumi.StringOutput
 
 	name string
 
@@ -36,9 +36,9 @@ type FullStackArgs struct {
 	Project       string
 	Region        string
 	BackendName   string
-	BackendImage  string
+	BackendImage  pulumi.StringInput
 	FrontendName  string
-	FrontendImage string
+	FrontendImage pulumi.StringInput
 	// Optional additional config
 	Backend  *BackendArgs
 	Frontend *FrontendArgs
@@ -104,8 +104,8 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 	fullStack := &FullStack{
 		Project:       args.Project,
 		Region:        args.Region,
-		BackendImage:  args.BackendImage,
-		FrontendImage: args.FrontendImage,
+		BackendImage:  args.BackendImage.ToStringOutput(),
+		FrontendImage: args.FrontendImage.ToStringOutput(),
 		BackendName:   backendName,
 		FrontendName:  frontendName,
 
