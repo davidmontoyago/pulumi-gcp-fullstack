@@ -104,7 +104,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 			},
 			Containers: cloudrunv2.ServiceTemplateContainerArray{
 				&cloudrunv2.ServiceTemplateContainerArgs{
-					Image: pulumi.String(f.BackendImage),
+					Image: f.BackendImage,
 					Envs:  newBackendEnvVars(args),
 					Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
 						Limits: args.ResourceLimits,
@@ -202,7 +202,7 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 			},
 			Containers: cloudrunv2.ServiceTemplateContainerArray{
 				&cloudrunv2.ServiceTemplateContainerArgs{
-					Image: pulumi.String(frontendImage),
+					Image: frontendImage,
 					Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
 						Limits: args.ResourceLimits,
 					},
