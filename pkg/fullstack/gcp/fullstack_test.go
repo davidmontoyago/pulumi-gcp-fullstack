@@ -287,6 +287,26 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		})
 		assert.Equal(t, "gcr.io/test-project/frontend:latest", <-frontendImageCh, "Frontend image should match the provided image")
 
+		// Assert frontend container probe configurations
+		frontendContainerCh := make(chan cloudrunv2.ServiceTemplateContainer, 1)
+		defer close(frontendContainerCh)
+		frontendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
+			frontendContainerCh <- containers[0]
+			return nil
+		})
+		frontendContainer := <-frontendContainerCh
+
+		// Assert StartupProbe is configured
+		assert.NotNil(t, frontendContainer.StartupProbe, "Frontend container should have StartupProbe configured")
+		assert.NotNil(t, frontendContainer.StartupProbe.TcpSocket, "Frontend container StartupProbe should have TcpSocket configured")
+		assert.Equal(t, 3000, *frontendContainer.StartupProbe.TcpSocket.Port, "Frontend container StartupProbe should use port 3000")
+
+		// Assert LivenessProbe is configured
+		assert.NotNil(t, frontendContainer.LivenessProbe, "Frontend container should have LivenessProbe configured")
+		assert.NotNil(t, frontendContainer.LivenessProbe.HttpGet, "Frontend container LivenessProbe should have HttpGet configured")
+		assert.Equal(t, "/healthz", *frontendContainer.LivenessProbe.HttpGet.Path, "Frontend container LivenessProbe should use /healthz path")
+		assert.Equal(t, 3000, *frontendContainer.LivenessProbe.HttpGet.Port, "Frontend container LivenessProbe should use port 3000")
+
 		// Verify API Gateway configuration
 		apiGateway := fullstack.GetAPIGateway()
 		require.NotNil(t, apiGateway, "API Gateway should not be nil")
