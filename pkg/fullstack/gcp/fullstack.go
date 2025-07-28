@@ -69,6 +69,7 @@ type InstanceArgs struct {
 	MaxInstanceCount     int
 	DeletionProtection   bool
 	ContainerPort        int
+	LivenessProbePath    string
 }
 
 // NetworkArgs contains configuration for network infrastructure including load balancers and API Gateway.

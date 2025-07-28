@@ -50,6 +50,9 @@ func setInstanceDefaults(args *InstanceArgs, defaults InstanceDefaults) *Instanc
 	if args.MaxInstanceCount == 0 {
 		args.MaxInstanceCount = 3
 	}
+	if args.LivenessProbePath == "" {
+		args.LivenessProbePath = "healthz"
+	}
 
 	return args
 }
@@ -111,6 +114,25 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 					},
 					Ports: cloudrunv2.ServiceTemplateContainerPortsArgs{
 						ContainerPort: pulumi.Int(args.ContainerPort),
+					},
+					StartupProbe: &cloudrunv2.ServiceTemplateContainerStartupProbeArgs{
+						TcpSocket: &cloudrunv2.ServiceTemplateContainerStartupProbeTcpSocketArgs{
+							Port: pulumi.Int(args.ContainerPort),
+						},
+						InitialDelaySeconds: pulumi.Int(15),
+						PeriodSeconds:       pulumi.Int(3),
+						TimeoutSeconds:      pulumi.Int(1),
+						FailureThreshold:    pulumi.Int(3),
+					},
+					LivenessProbe: &cloudrunv2.ServiceTemplateContainerLivenessProbeArgs{
+						HttpGet: &cloudrunv2.ServiceTemplateContainerLivenessProbeHttpGetArgs{
+							Path: pulumi.String(fmt.Sprintf("/%s", args.LivenessProbePath)),
+							Port: pulumi.Int(args.ContainerPort),
+						},
+						InitialDelaySeconds: pulumi.Int(30),
+						PeriodSeconds:       pulumi.Int(10),
+						TimeoutSeconds:      pulumi.Int(5),
+						FailureThreshold:    pulumi.Int(3),
 					},
 					VolumeMounts: &cloudrunv2.ServiceTemplateContainerVolumeMountArray{
 						cloudrunv2.ServiceTemplateContainerVolumeMountArgs{
