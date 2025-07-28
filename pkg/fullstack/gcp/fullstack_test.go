@@ -368,6 +368,29 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		frontendVolumeMount := <-frontendVolumeMountCh
 		assert.Equal(t, "/app/.next/config/", frontendVolumeMount.MountPath, "Frontend volume mount path should be /app/.next/config/")
 
+		// Verify backend service has StartupProbe and LivenessProbe configured
+		backendContainerCh := make(chan cloudrunv2.ServiceTemplateContainer, 1)
+		defer close(backendContainerCh)
+		backendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
+			if len(containers) > 0 {
+				backendContainerCh <- containers[0]
+			}
+
+			return nil
+		})
+		backendContainer := <-backendContainerCh
+
+		// Assert StartupProbe is configured
+		assert.NotNil(t, backendContainer.StartupProbe, "Backend container should have StartupProbe configured")
+		assert.NotNil(t, backendContainer.StartupProbe.TcpSocket, "Backend container StartupProbe should have TcpSocket configured")
+		assert.Equal(t, 8080, *backendContainer.StartupProbe.TcpSocket.Port, "Backend container StartupProbe should use port 8080")
+
+		// Assert LivenessProbe is configured
+		assert.NotNil(t, backendContainer.LivenessProbe, "Backend container should have LivenessProbe configured")
+		assert.NotNil(t, backendContainer.LivenessProbe.HttpGet, "Backend container LivenessProbe should have HttpGet configured")
+		assert.Equal(t, "/healthz", *backendContainer.LivenessProbe.HttpGet.Path, "Backend container LivenessProbe should use /healthz path")
+		assert.Equal(t, 8080, *backendContainer.LivenessProbe.HttpGet.Port, "Backend container LivenessProbe should use port 8080")
+
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
 
