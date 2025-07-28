@@ -137,8 +137,8 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 func (f *FullStack) grantAPIGatewayInvokerPermissions(ctx *pulumi.Context, apiGatewayServiceAccountEmail pulumi.StringOutput, gatewayName string) error {
 	// Grant API Gateway permission to invoke backend service
 	backendInvokerName := f.newResourceName(gatewayName, "backend-invoker", 100)
-	_, err := cloudrunv2.NewServiceIamMember(ctx, backendInvokerName, &cloudrunv2.ServiceIamMemberArgs{
-		Name:     pulumi.String(gatewayName),
+	backendIamMember, err := cloudrunv2.NewServiceIamMember(ctx, backendInvokerName, &cloudrunv2.ServiceIamMemberArgs{
+		Name:     f.backendService.Name,
 		Project:  pulumi.String(f.Project),
 		Location: pulumi.String(f.Region),
 		Role:     pulumi.String("roles/run.invoker"),
@@ -149,11 +149,12 @@ func (f *FullStack) grantAPIGatewayInvokerPermissions(ctx *pulumi.Context, apiGa
 	if err != nil {
 		return fmt.Errorf("failed to grant API Gateway backend invoker permissions: %w", err)
 	}
+	f.backendGatewayIamMember = backendIamMember
 
 	// Grant API Gateway permission to invoke frontend service
-	frontendInvokerName := f.newResourceName(f.FrontendName, "frontend-invoker", 100)
-	_, err = cloudrunv2.NewServiceIamMember(ctx, frontendInvokerName, &cloudrunv2.ServiceIamMemberArgs{
-		Name:     pulumi.String(f.FrontendName),
+	frontendInvokerName := f.newResourceName(gatewayName, "frontend-invoker", 100)
+	frontendIamMember, err := cloudrunv2.NewServiceIamMember(ctx, frontendInvokerName, &cloudrunv2.ServiceIamMemberArgs{
+		Name:     f.frontendService.Name,
 		Project:  pulumi.String(f.Project),
 		Location: pulumi.String(f.Region),
 		Role:     pulumi.String("roles/run.invoker"),
@@ -164,6 +165,7 @@ func (f *FullStack) grantAPIGatewayInvokerPermissions(ctx *pulumi.Context, apiGa
 	if err != nil {
 		return fmt.Errorf("failed to grant API Gateway frontend invoker permissions: %w", err)
 	}
+	f.frontendGatewayIamMember = frontendIamMember
 
 	return nil
 }

@@ -197,6 +197,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		defer close(stackBackendImageCh)
 		fullstack.BackendImage.ApplyT(func(image string) error {
 			stackBackendImageCh <- image
+
 			return nil
 		})
 		assert.Equal(t, "gcr.io/test-project/backend:latest", <-stackBackendImageCh, "Backend image should match")
@@ -205,6 +206,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		defer close(stackFrontendImageCh)
 		fullstack.FrontendImage.ApplyT(func(image string) error {
 			stackFrontendImageCh <- image
+
 			return nil
 		})
 		assert.Equal(t, "gcr.io/test-project/frontend:latest", <-stackFrontendImageCh, "Frontend image should match")
@@ -298,6 +300,47 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 			return nil
 		})
 		assert.Equal(t, "us-central1", <-gatewayRegionCh, "API Gateway region should match the project region")
+
+		// Verify IAM member configurations
+		backendIamMember := fullstack.GetBackendGatewayIamMember()
+		require.NotNil(t, backendIamMember, "Backend IAM member should not be nil")
+
+		// Assert backend IAM member Name matches the backend service name
+		backendIamMemberNameCh := make(chan string, 1)
+		defer close(backendIamMemberNameCh)
+		backendIamMember.Name.ApplyT(func(name string) error {
+			backendIamMemberNameCh <- name
+
+			return nil
+		})
+		backendServiceNameCh := make(chan string, 1)
+		defer close(backendServiceNameCh)
+		backendService.Name.ApplyT(func(name string) error {
+			backendServiceNameCh <- name
+
+			return nil
+		})
+		assert.Equal(t, <-backendServiceNameCh, <-backendIamMemberNameCh, "Backend IAM member Name should match the backend service name")
+
+		frontendIamMember := fullstack.GetFrontendGatewayIamMember()
+		require.NotNil(t, frontendIamMember, "Frontend IAM member should not be nil")
+
+		// Assert frontend IAM member Name matches the frontend service name
+		frontendIamMemberNameCh := make(chan string, 1)
+		defer close(frontendIamMemberNameCh)
+		frontendIamMember.Name.ApplyT(func(name string) error {
+			frontendIamMemberNameCh <- name
+
+			return nil
+		})
+		frontendServiceNameCh := make(chan string, 1)
+		defer close(frontendServiceNameCh)
+		frontendService.Name.ApplyT(func(name string) error {
+			frontendServiceNameCh <- name
+
+			return nil
+		})
+		assert.Equal(t, <-frontendServiceNameCh, <-frontendIamMemberNameCh, "Frontend IAM member Name should match the frontend service name")
 
 		// Verify backend volume mount configuration
 		backendVolumeMountCh := make(chan cloudrunv2.ServiceTemplateContainerVolumeMount, 1)
@@ -403,6 +446,7 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 		defer close(stackBackendImageCh)
 		fullstack.BackendImage.ApplyT(func(image string) error {
 			stackBackendImageCh <- image
+
 			return nil
 		})
 		assert.Equal(t, "gcr.io/test-project/backend:latest", <-stackBackendImageCh, "Backend image should match")
@@ -411,6 +455,7 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 		defer close(stackFrontendImageCh)
 		fullstack.FrontendImage.ApplyT(func(image string) error {
 			stackFrontendImageCh <- image
+
 			return nil
 		})
 		assert.Equal(t, "gcr.io/test-project/frontend:latest", <-stackFrontendImageCh, "Frontend image should match")
@@ -504,6 +549,47 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 			return nil
 		})
 		assert.Equal(t, "us-central1", <-gatewayRegionCh, "API Gateway region should match the project region")
+
+		// Verify IAM member configurations
+		backendIamMember := fullstack.GetBackendGatewayIamMember()
+		require.NotNil(t, backendIamMember, "Backend IAM member should not be nil")
+
+		// Assert backend IAM member Name matches the backend service name
+		backendIamMemberNameCh := make(chan string, 1)
+		defer close(backendIamMemberNameCh)
+		backendIamMember.Name.ApplyT(func(name string) error {
+			backendIamMemberNameCh <- name
+
+			return nil
+		})
+		backendServiceNameCh := make(chan string, 1)
+		defer close(backendServiceNameCh)
+		backendService.Name.ApplyT(func(name string) error {
+			backendServiceNameCh <- name
+
+			return nil
+		})
+		assert.Equal(t, <-backendServiceNameCh, <-backendIamMemberNameCh, "Backend IAM member Name should match the backend service name")
+
+		frontendIamMember := fullstack.GetFrontendGatewayIamMember()
+		require.NotNil(t, frontendIamMember, "Frontend IAM member should not be nil")
+
+		// Assert frontend IAM member Name matches the frontend service name
+		frontendIamMemberNameCh := make(chan string, 1)
+		defer close(frontendIamMemberNameCh)
+		frontendIamMember.Name.ApplyT(func(name string) error {
+			frontendIamMemberNameCh <- name
+
+			return nil
+		})
+		frontendServiceNameCh := make(chan string, 1)
+		defer close(frontendServiceNameCh)
+		frontendService.Name.ApplyT(func(name string) error {
+			frontendServiceNameCh <- name
+
+			return nil
+		})
+		assert.Equal(t, <-frontendServiceNameCh, <-frontendIamMemberNameCh, "Frontend IAM member Name should match the frontend service name")
 
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
