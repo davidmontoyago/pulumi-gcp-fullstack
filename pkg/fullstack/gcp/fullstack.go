@@ -60,6 +60,15 @@ type FrontendArgs struct {
 	EnableUnauthenticated bool
 }
 
+// Probe contains configuration for health check probes
+type Probe struct {
+	Path                string
+	InitialDelaySeconds int
+	PeriodSeconds       int
+	TimeoutSeconds      int
+	FailureThreshold    int
+}
+
 // InstanceArgs contains configuration for Cloud Run service instances.
 type InstanceArgs struct {
 	ResourceLimits       pulumi.StringMap
@@ -69,7 +78,8 @@ type InstanceArgs struct {
 	MaxInstanceCount     int
 	DeletionProtection   bool
 	ContainerPort        int
-	LivenessProbePath    string
+	StartupProbe         *Probe
+	LivenessProbe        *Probe
 }
 
 // NetworkArgs contains configuration for network infrastructure including load balancers and API Gateway.

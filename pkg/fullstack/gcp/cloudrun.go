@@ -50,8 +50,26 @@ func setInstanceDefaults(args *InstanceArgs, defaults InstanceDefaults) *Instanc
 	if args.MaxInstanceCount == 0 {
 		args.MaxInstanceCount = 3
 	}
-	if args.LivenessProbePath == "" {
-		args.LivenessProbePath = "healthz"
+
+	// Set default startup probe if not provided
+	if args.StartupProbe == nil {
+		args.StartupProbe = &Probe{
+			InitialDelaySeconds: 15,
+			PeriodSeconds:       3,
+			TimeoutSeconds:      1,
+			FailureThreshold:    3,
+		}
+	}
+
+	// Set default liveness probe if not provided
+	if args.LivenessProbe == nil {
+		args.LivenessProbe = &Probe{
+			Path:                "healthz",
+			InitialDelaySeconds: 30,
+			PeriodSeconds:       10,
+			TimeoutSeconds:      5,
+			FailureThreshold:    3,
+		}
 	}
 
 	return args
@@ -119,20 +137,20 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 						TcpSocket: &cloudrunv2.ServiceTemplateContainerStartupProbeTcpSocketArgs{
 							Port: pulumi.Int(args.ContainerPort),
 						},
-						InitialDelaySeconds: pulumi.Int(15),
-						PeriodSeconds:       pulumi.Int(3),
-						TimeoutSeconds:      pulumi.Int(1),
-						FailureThreshold:    pulumi.Int(3),
+						InitialDelaySeconds: pulumi.Int(args.StartupProbe.InitialDelaySeconds),
+						PeriodSeconds:       pulumi.Int(args.StartupProbe.PeriodSeconds),
+						TimeoutSeconds:      pulumi.Int(args.StartupProbe.TimeoutSeconds),
+						FailureThreshold:    pulumi.Int(args.StartupProbe.FailureThreshold),
 					},
 					LivenessProbe: &cloudrunv2.ServiceTemplateContainerLivenessProbeArgs{
 						HttpGet: &cloudrunv2.ServiceTemplateContainerLivenessProbeHttpGetArgs{
-							Path: pulumi.String(fmt.Sprintf("/%s", args.LivenessProbePath)),
+							Path: pulumi.String(fmt.Sprintf("/%s", args.LivenessProbe.Path)),
 							Port: pulumi.Int(args.ContainerPort),
 						},
-						InitialDelaySeconds: pulumi.Int(30),
-						PeriodSeconds:       pulumi.Int(10),
-						TimeoutSeconds:      pulumi.Int(5),
-						FailureThreshold:    pulumi.Int(3),
+						InitialDelaySeconds: pulumi.Int(args.LivenessProbe.InitialDelaySeconds),
+						PeriodSeconds:       pulumi.Int(args.LivenessProbe.PeriodSeconds),
+						TimeoutSeconds:      pulumi.Int(args.LivenessProbe.TimeoutSeconds),
+						FailureThreshold:    pulumi.Int(args.LivenessProbe.FailureThreshold),
 					},
 					VolumeMounts: &cloudrunv2.ServiceTemplateContainerVolumeMountArray{
 						cloudrunv2.ServiceTemplateContainerVolumeMountArgs{
@@ -232,6 +250,25 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 						ContainerPort: pulumi.Int(args.ContainerPort),
 					},
 					Envs: newFrontendEnvVars(args, backendURL),
+					StartupProbe: &cloudrunv2.ServiceTemplateContainerStartupProbeArgs{
+						TcpSocket: &cloudrunv2.ServiceTemplateContainerStartupProbeTcpSocketArgs{
+							Port: pulumi.Int(args.ContainerPort),
+						},
+						InitialDelaySeconds: pulumi.Int(args.StartupProbe.InitialDelaySeconds),
+						PeriodSeconds:       pulumi.Int(args.StartupProbe.PeriodSeconds),
+						TimeoutSeconds:      pulumi.Int(args.StartupProbe.TimeoutSeconds),
+						FailureThreshold:    pulumi.Int(args.StartupProbe.FailureThreshold),
+					},
+					LivenessProbe: &cloudrunv2.ServiceTemplateContainerLivenessProbeArgs{
+						HttpGet: &cloudrunv2.ServiceTemplateContainerLivenessProbeHttpGetArgs{
+							Path: pulumi.String(fmt.Sprintf("/%s", args.LivenessProbe.Path)),
+							Port: pulumi.Int(args.ContainerPort),
+						},
+						InitialDelaySeconds: pulumi.Int(args.LivenessProbe.InitialDelaySeconds),
+						PeriodSeconds:       pulumi.Int(args.LivenessProbe.PeriodSeconds),
+						TimeoutSeconds:      pulumi.Int(args.LivenessProbe.TimeoutSeconds),
+						FailureThreshold:    pulumi.Int(args.LivenessProbe.FailureThreshold),
+					},
 					VolumeMounts: &cloudrunv2.ServiceTemplateContainerVolumeMountArray{
 						cloudrunv2.ServiceTemplateContainerVolumeMountArgs{
 							MountPath: pulumi.String(args.SecretConfigFilePath),
@@ -256,7 +293,6 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 					},
 				},
 			},
-			// TODO setup liveness/readiness probes
 		},
 		DeletionProtection: pulumi.Bool(args.DeletionProtection),
 	})
