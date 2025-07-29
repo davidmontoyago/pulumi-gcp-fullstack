@@ -155,12 +155,3 @@ paths:
             Access-Control-Allow-Headers:
               schema:
                 type: string`
-
-// corsConfigTemplate is the CORS configuration template for the OpenAPI spec
-const corsConfigTemplate = `
-x-google-cors:
-  allowOrigin: %s
-  allowMethods: %s
-  allowHeaders: %s
-  exposeHeaders: "Content-Length"
-  maxAge: "3600"`
