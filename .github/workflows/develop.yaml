@@ -22,6 +22,14 @@ jobs:
       - name: Build and test
         run: make test
 
+      - name: Report test coverage
+        uses: ncruces/go-coverage-report@v0
+        with:
+          report: true
+          chart: true
+          amend: true
+        continue-on-error: true
+
   lint:
     runs-on: ubuntu-latest
     needs: build-and-test
