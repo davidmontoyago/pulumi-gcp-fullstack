@@ -1,8 +1,10 @@
 package gcp_test
 
 import (
+	"encoding/base64"
 	"testing"
 
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/apigateway"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/compute"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
@@ -606,6 +608,49 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 			return nil
 		})
 		assert.Equal(t, "us-central1", <-gatewayRegionCh, "API Gateway region should match the project region")
+
+		// Verify API Config properties
+		apiConfig := fullstack.GetApiConfig()
+		require.NotNil(t, apiConfig, "API Config should not be nil")
+
+		// Assert API Config has OpenAPI documents
+		openapiDocumentsCh := make(chan []apigateway.ApiConfigOpenapiDocument, 1)
+		defer close(openapiDocumentsCh)
+		apiConfig.OpenapiDocuments.ApplyT(func(documents []apigateway.ApiConfigOpenapiDocument) error {
+			openapiDocumentsCh <- documents
+			return nil
+		})
+		openapiDocuments := <-openapiDocumentsCh
+		require.NotNil(t, openapiDocuments, "OpenAPI documents should not be nil")
+		assert.Len(t, openapiDocuments, 1, "Should have exactly one OpenAPI document")
+
+		// Assert API Config has Gateway configuration
+		gatewayConfigCh := make(chan *apigateway.ApiConfigGatewayConfig, 1)
+		defer close(gatewayConfigCh)
+		apiConfig.GatewayConfig.ApplyT(func(config *apigateway.ApiConfigGatewayConfig) error {
+			gatewayConfigCh <- config
+			return nil
+		})
+		gatewayConfig := <-gatewayConfigCh
+		require.NotNil(t, gatewayConfig, "Gateway config should not be nil")
+		require.NotNil(t, gatewayConfig.BackendConfig, "Backend config should not be nil")
+
+		// Assert the OpenAPI document contents can be decoded from base64
+		document := openapiDocuments[0]
+		require.NotNil(t, document.Document, "Document should not be nil")
+
+		base64Contents := document.Document.Contents
+		require.NotEmpty(t, base64Contents, "Document contents should not be empty")
+
+		// Verify the contents can be decoded from base64
+		decodedBytes, err := base64.StdEncoding.DecodeString(base64Contents)
+		require.NoError(t, err, "Document contents should be valid base64")
+		require.NotEmpty(t, decodedBytes, "Decoded contents should not be empty")
+
+		// Verify the decoded content is valid YAML/OpenAPI spec
+		decodedContent := string(decodedBytes)
+		assert.Contains(t, decodedContent, "openapi: 3.0.1", "Decoded content should contain OpenAPI version")
+		assert.Contains(t, decodedContent, "paths:", "Decoded content should contain paths section")
 
 		// Verify IAM member configurations
 		backendIamMember := fullstack.GetBackendGatewayIamMember()
