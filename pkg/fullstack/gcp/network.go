@@ -21,11 +21,13 @@ import (
 // https://cloud.google.com/load-balancing/docs/negs/serverless-neg-concepts#and
 // https://cloud.google.com/load-balancing/docs/https#global-classic-connections
 // https://cloud.google.com/api-gateway/docs/gateway-serverless-neg
-func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, serviceName string, args *NetworkArgs, apiGateway *apigateway.Gateway) error {
+func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, args *NetworkArgs, apiGateway *apigateway.Gateway) error {
+	endpointName := "gcp-lb"
+
 	var cloudArmorPolicy *compute.SecurityPolicy
 	var err error
 	if args.EnableCloudArmor {
-		cloudArmorPolicy, err = f.newCloudArmorPolicy(ctx, serviceName, args, f.Project)
+		cloudArmorPolicy, err = f.newCloudArmorPolicy(ctx, endpointName, args, f.Project)
 		if err != nil {
 			return err
 		}
@@ -38,7 +40,7 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, serviceName 
 		// See:
 		// https://issuetracker.google.com/issues/194945691?pli=1
 		// https://stackoverflow.com/questions/67778417/enable-google-cloud-identity-platform-programmatically-no-ui
-		identityPlatformName := f.newResourceName(serviceName, "cloudidentity", 100)
+		identityPlatformName := f.newResourceName(endpointName, "cloudidentity", 100)
 		_, err := projects.NewService(ctx, identityPlatformName, &projects.ServiceArgs{
 			Project: pulumi.String(f.Project),
 			Service: pulumi.String("cloudidentity.googleapis.com"),
@@ -47,7 +49,7 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, serviceName 
 			return err
 		}
 
-		idToolkitName := f.newResourceName(serviceName, "idtoolkit", 100)
+		idToolkitName := f.newResourceName(endpointName, "idtoolkit", 100)
 		_, err = projects.NewService(ctx, idToolkitName, &projects.ServiceArgs{
 			Project: pulumi.String(f.Project),
 			Service: pulumi.String("identitytoolkit.googleapis.com"),
@@ -87,12 +89,12 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, serviceName 
 	}
 
 	// Create NEG for either Cloud Run or API Gateway
-	backendURLMap, err := f.newServerlessNEG(ctx, cloudArmorPolicy, serviceName, args.ProxyNetworkName, f.Project, f.Region, apiGateway)
+	backendURLMap, err := f.newServerlessNEG(ctx, cloudArmorPolicy, endpointName, args.ProxyNetworkName, f.Project, f.Region, apiGateway)
 	if err != nil {
 		return err
 	}
 
-	err = f.newHTTPSProxy(ctx, serviceName, args.DomainURL, f.Project, args.EnablePrivateTrafficOnly, backendURLMap)
+	err = f.newHTTPSProxy(ctx, endpointName, args.DomainURL, f.Project, args.EnablePrivateTrafficOnly, backendURLMap)
 
 	return err
 }
@@ -113,6 +115,7 @@ func (f *FullStack) newHTTPSProxy(ctx *pulumi.Context, serviceName, domainName, 
 	}
 	ctx.Export("load_balancer_https_certificate_id", certificate.ID())
 	ctx.Export("load_balancer_https_certificate_uri", certificate.SelfLink)
+	f.certificate = certificate
 
 	httpsProxyName := f.newResourceName(serviceName, "https-proxy", 100)
 	httpsProxy, err := compute.NewTargetHttpsProxy(ctx, httpsProxyName, &compute.TargetHttpsProxyArgs{
@@ -210,6 +213,7 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context, policy *compute.Securi
 	}
 	ctx.Export("load_balancer_network_endpoint_group_id", neg.ID())
 	ctx.Export("load_balancer_network_endpoint_group_uri", neg.SelfLink)
+	f.neg = neg
 
 	serviceArgs := &compute.BackendServiceArgs{
 		Description:         pulumi.String(fmt.Sprintf("service backend for %s", serviceName)),

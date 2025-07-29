@@ -11,6 +11,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 
 	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/compute"
 )
 
 // FullStack represents a complete fullstack application infrastructure on Google Cloud Platform.
@@ -33,6 +34,10 @@ type FullStack struct {
 	// IAM members for API Gateway invoker permissions
 	backendGatewayIamMember  *cloudrunv2.ServiceIamMember
 	frontendGatewayIamMember *cloudrunv2.ServiceIamMember
+
+	// Network infrastructure
+	certificate *compute.ManagedSslCertificate
+	neg         *compute.RegionNetworkEndpointGroup
 }
 
 // FullStackArgs contains configuration arguments for creating a FullStack instance.
@@ -190,7 +195,7 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 	}
 
 	// create an external load balancer and point to a serverless NEG (API gateway or Cloud run)
-	err = f.deployExternalLoadBalancer(ctx, args.FrontendName, args.Network, apiGateway)
+	err = f.deployExternalLoadBalancer(ctx, args.Network, apiGateway)
 
 	return err
 }
@@ -318,4 +323,12 @@ func (f *FullStack) GetBackendGatewayIamMember() *cloudrunv2.ServiceIamMember {
 // GetFrontendGatewayIamMember returns the frontend service IAM member for API Gateway invoker permissions.
 func (f *FullStack) GetFrontendGatewayIamMember() *cloudrunv2.ServiceIamMember {
 	return f.frontendGatewayIamMember
+}
+
+func (f *FullStack) GetCertificate() *compute.ManagedSslCertificate {
+	return f.certificate
+}
+
+func (f *FullStack) GetNEG() *compute.RegionNetworkEndpointGroup {
+	return f.neg
 }

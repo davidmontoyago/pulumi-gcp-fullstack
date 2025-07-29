@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/compute"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/assert"
@@ -118,6 +119,19 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 		outputs["apiConfig"] = args.Name + "123" // Mock apiConfigId
 		outputs["defaultHostname"] = args.Name + ".apigateway.test-project.cloud.goog"
 		// Expected outputs: name, region, project, apiConfig, defaultHostname
+	case "gcp:compute/managedSslCertificate:ManagedSslCertificate":
+		outputs["name"] = args.Name
+		outputs["project"] = testProjectName
+		outputs["managed"] = map[string]interface{}{
+			"domains": []string{"myapp.example.com"},
+		}
+		// Expected outputs: name, project, managed
+	case "gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup":
+		outputs["name"] = args.Name
+		outputs["project"] = testProjectName
+		outputs["region"] = "us-central1"
+		outputs["networkEndpointType"] = "SERVERLESS"
+		// Expected outputs: name, project, region, networkEndpointType
 	}
 
 	return args.Name + "_id", resource.NewPropertyMapFromMap(outputs), nil
@@ -633,6 +647,44 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 			return nil
 		})
 		assert.Equal(t, <-frontendServiceNameCh, <-frontendIamMemberNameCh, "Frontend IAM member Name should match the frontend service name")
+
+		// Verify certificate configuration
+		certificate := fullstack.GetCertificate()
+		require.NotNil(t, certificate, "Certificate should not be nil")
+
+		// Assert certificate name is set correctly
+		certificateNameCh := make(chan string, 1)
+		defer close(certificateNameCh)
+		certificate.Name.ApplyT(func(name string) error {
+			certificateNameCh <- name
+			return nil
+		})
+		assert.Contains(t, <-certificateNameCh, "gcp-lb-tls-cert", "Certificate name should contain expected pattern")
+
+		// Assert certificate domains match the provided domain
+		certificateDomainsCh := make(chan []string, 1)
+		defer close(certificateDomainsCh)
+		certificate.Managed.ApplyT(func(managed *compute.ManagedSslCertificateManaged) error {
+			certificateDomainsCh <- managed.Domains
+			return nil
+		})
+		domains := <-certificateDomainsCh
+		require.NotNil(t, domains, "Certificate domains should not be nil")
+		assert.Len(t, domains, 1, "Certificate should have exactly one domain")
+		assert.Equal(t, "myapp.example.com", domains[0], "Certificate domain should match the provided domain")
+
+		// Verify NEG configuration
+		neg := fullstack.GetNEG()
+		require.NotNil(t, neg, "NEG should not be nil")
+
+		// Assert NEG name is set correctly
+		negNameCh := make(chan string, 1)
+		defer close(negNameCh)
+		neg.Name.ApplyT(func(name string) error {
+			negNameCh <- name
+			return nil
+		})
+		assert.Equal(t, <-negNameCh, "test-fullstack-gcp-lb-gateway-neg", "NEG name should match convention")
 
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
