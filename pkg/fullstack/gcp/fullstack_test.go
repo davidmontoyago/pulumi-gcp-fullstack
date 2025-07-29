@@ -652,10 +652,11 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 		require.NoError(t, err, "Document contents should be valid base64")
 		require.NotEmpty(t, decodedBytes, "Decoded contents should not be empty")
 
-		// Verify the decoded content is valid YAML/OpenAPI spec
+		// Verify the decoded content is valid JSON/OpenAPI 2.0 spec
 		decodedContent := string(decodedBytes)
-		assert.Contains(t, decodedContent, "openapi: 3.0.1", "Decoded content should contain OpenAPI version")
-		assert.Contains(t, decodedContent, "paths:", "Decoded content should contain paths section")
+		assert.Contains(t, decodedContent, "\"swagger\":\"2.0\"", "Decoded content should contain OpenAPI 2.0 version")
+		assert.Contains(t, decodedContent, "\"paths\":", "Decoded content should contain paths section")
+		assert.Contains(t, decodedContent, "\"info\":", "Decoded content should contain info section")
 
 		// Verify IAM member configurations
 		backendIamMember := fullstack.GetBackendGatewayIamMember()

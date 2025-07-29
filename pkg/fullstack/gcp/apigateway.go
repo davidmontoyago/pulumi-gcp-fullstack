@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
+	"github.com/getkin/kin-openapi/openapi2conv"
 	apigateway "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/apigateway"
 	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/serviceaccount"
@@ -235,41 +236,28 @@ func (f *FullStack) createAPIConfig(ctx *pulumi.Context, apiID string, configArg
 // See:
 // https://cloud.google.com/api-gateway/docs/reference/rest/v1/projects.locations.apis.configs#OpenApiDocument
 func (f *FullStack) generateOpenAPISpec(configArgs *APIConfigArgs) pulumi.StringOutput {
-	// Set default CORS values
-	corsAllowedOrigins := configArgs.CORSAllowedOrigins
-	if len(corsAllowedOrigins) == 0 {
-		corsAllowedOrigins = []string{"*"}
-	}
-
-	corsAllowedMethods := configArgs.CORSAllowedMethods
-	if len(corsAllowedMethods) == 0 {
-		corsAllowedMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
-	}
-
-	corsAllowedHeaders := configArgs.CORSAllowedHeaders
-	if len(corsAllowedHeaders) == 0 {
-		corsAllowedHeaders = []string{"*"}
-	}
-
 	openAPISpec := pulumi.All(configArgs.BackendServiceURL, configArgs.FrontendServiceURL).ApplyT(func(args []interface{}) (string, error) {
+
 		backendURL := args[0].(string)
 		frontendURL := args[1].(string)
 
-		spec := fmt.Sprintf(openAPISpecTemplate, backendURL, frontendURL)
+		v3Spec := newOpenAPISpec(backendURL, frontendURL, configArgs)
 
-		// Add CORS configuration if enabled
-		if configArgs.EnableCORS {
-			spec += fmt.Sprintf(`
-x-google-cors:
-  allowOrigin: %s
-  allowMethods: %s
-  allowHeaders: %s
-  exposeHeaders: "Content-Length"
-  maxAge: "3600"
-`, corsAllowedOrigins[0], corsAllowedMethods[0], corsAllowedHeaders[0])
+		// Convert OpenAPI 3 to OpenAPI 2 spec as expected by Google API Gateway
+		// See:
+		// - https://cloud.google.com/endpoints/docs/openapi
+		// - https://github.com/cloudendpoints/esp/issues/446
+		v2Spec, err := openapi2conv.FromV3(v3Spec)
+		if err != nil {
+			return "", err
 		}
 
-		return spec, nil
+		doc, err := v2Spec.MarshalJSON()
+		if err != nil {
+			return "", err
+		}
+
+		return string(doc), nil
 	}).(pulumi.StringOutput)
 
 	return openAPISpec
