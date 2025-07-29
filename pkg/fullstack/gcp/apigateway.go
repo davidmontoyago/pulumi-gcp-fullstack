@@ -2,6 +2,7 @@
 package gcp
 
 import (
+	"encoding/base64"
 	"fmt"
 
 	apigateway "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/apigateway"
@@ -188,6 +189,11 @@ func (f *FullStack) createAPIConfig(ctx *pulumi.Context, apiID string, configArg
 	// Generate OpenAPI spec with backend routing
 	openAPISpec := f.generateOpenAPISpec(configArgs)
 
+	// Convert OpenAPI spec to base64 encoding
+	base64OpenAPISpec := openAPISpec.ApplyT(func(spec string) string {
+		return base64.StdEncoding.EncodeToString([]byte(spec))
+	}).(pulumi.StringOutput)
+
 	// Create API Config
 	apiConfig, err := apigateway.NewApiConfig(ctx, fmt.Sprintf("%s-config", apiID), &apigateway.ApiConfigArgs{
 		Api:         api.ApiId,
@@ -197,10 +203,8 @@ func (f *FullStack) createAPIConfig(ctx *pulumi.Context, apiID string, configArg
 		OpenapiDocuments: apigateway.ApiConfigOpenapiDocumentArray{
 			&apigateway.ApiConfigOpenapiDocumentArgs{
 				Document: &apigateway.ApiConfigOpenapiDocumentDocumentArgs{
-					Path: pulumi.String(openAPISpecPath),
-					Contents: pulumi.All(openAPISpec).ApplyT(func(args []interface{}) (string, error) {
-						return args[0].(string), nil
-					}).(pulumi.StringOutput),
+					Path:     pulumi.String(openAPISpecPath),
+					Contents: base64OpenAPISpec,
 				},
 			},
 		},
@@ -213,6 +217,7 @@ func (f *FullStack) createAPIConfig(ctx *pulumi.Context, apiID string, configArg
 	if err != nil {
 		return nil, err
 	}
+	f.apiConfig = apiConfig
 
 	return apiConfig, nil
 }
@@ -250,160 +255,7 @@ func (f *FullStack) generateOpenAPISpec(configArgs *APIConfigArgs) pulumi.String
 		backendURL := args[0].(string)
 		frontendURL := args[1].(string)
 
-		spec := fmt.Sprintf(`openapi: 3.0.1
-info:
-  title: API Gateway for Cloud Run
-  description: API Gateway routing to Cloud Run backend and frontend
-  version: 1.0.0
-servers:
-  - url: https://{gateway_host}
-paths:
-  /api/{proxy+}:
-    x-google-backend:
-      address: %s/{proxy}
-    get:
-      operationId: apiProxyGet
-      parameters:
-        - name: proxy
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-        '404':
-          description: Not found
-    post:
-      operationId: apiProxyPost
-      parameters:
-        - name: proxy
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-        '404':
-          description: Not found
-    put:
-      operationId: apiProxyPut
-      parameters:
-        - name: proxy
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-        '404':
-          description: Not found
-    delete:
-      operationId: apiProxyDelete
-      parameters:
-        - name: proxy
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-        '404':
-          description: Not found
-    options:
-      operationId: apiProxyOptions
-      parameters:
-        - name: proxy
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: CORS preflight response
-          headers:
-            Access-Control-Allow-Origin:
-              schema:
-                type: string
-            Access-Control-Allow-Methods:
-              schema:
-                type: string
-            Access-Control-Allow-Headers:
-              schema:
-                type: string
-  /{proxy+}:
-    x-google-backend:
-      address: %s/{proxy}
-    get:
-      operationId: frontendProxyGet
-      parameters:
-        - name: proxy
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Successful response
-          content:
-            text/html:
-              schema:
-                type: string
-        '404':
-          description: Not found
-    options:
-      operationId: frontendProxyOptions
-      parameters:
-        - name: proxy
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: CORS preflight response
-          headers:
-            Access-Control-Allow-Origin:
-              schema:
-                type: string
-            Access-Control-Allow-Methods:
-              schema:
-                type: string
-            Access-Control-Allow-Headers:
-              schema:
-                type: string
-`, backendURL, frontendURL)
+		spec := fmt.Sprintf(openAPISpecTemplate, backendURL, frontendURL)
 
 		// Add CORS configuration if enabled
 		if configArgs.EnableCORS {

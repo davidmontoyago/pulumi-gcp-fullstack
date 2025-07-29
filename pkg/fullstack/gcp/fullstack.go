@@ -30,6 +30,7 @@ type FullStack struct {
 	backendService  *cloudrunv2.Service
 	frontendService *cloudrunv2.Service
 	apiGateway      *apigateway.Gateway
+	apiConfig       *apigateway.ApiConfig
 
 	// IAM members for API Gateway invoker permissions
 	backendGatewayIamMember  *cloudrunv2.ServiceIamMember
@@ -313,6 +314,11 @@ func (f *FullStack) GetFrontendService() *cloudrunv2.Service {
 // GetAPIGateway returns the API Gateway instance.
 func (f *FullStack) GetAPIGateway() *apigateway.Gateway {
 	return f.apiGateway
+}
+
+// GetApiConfig returns the API Gateway configuration.
+func (f *FullStack) GetApiConfig() *apigateway.ApiConfig {
+	return f.apiConfig
 }
 
 // GetBackendGatewayIamMember returns the backend service IAM member for API Gateway invoker permissions.
