@@ -316,8 +316,8 @@ func (f *FullStack) GetAPIGateway() *apigateway.Gateway {
 	return f.apiGateway
 }
 
-// GetApiConfig returns the API Gateway configuration.
-func (f *FullStack) GetApiConfig() *apigateway.ApiConfig {
+// GetAPIConfig returns the API Gateway configuration.
+func (f *FullStack) GetAPIConfig() *apigateway.ApiConfig {
 	return f.apiConfig
 }
 
@@ -331,10 +331,12 @@ func (f *FullStack) GetFrontendGatewayIamMember() *cloudrunv2.ServiceIamMember {
 	return f.frontendGatewayIamMember
 }
 
+// GetCertificate returns the managed SSL certificate for the domain.
 func (f *FullStack) GetCertificate() *compute.ManagedSslCertificate {
 	return f.certificate
 }
 
+// GetNEG returns the region network endpoint group for the load balancer.
 func (f *FullStack) GetNEG() *compute.RegionNetworkEndpointGroup {
 	return f.neg
 }

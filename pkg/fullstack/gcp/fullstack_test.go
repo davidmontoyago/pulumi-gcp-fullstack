@@ -16,8 +16,10 @@ import (
 )
 
 const (
-	backendServiceName = "backend"
-	testProjectName    = "test-project"
+	testProjectName     = "test-project"
+	backendServiceName  = "backend"
+	frontendServiceName = "frontend"
+	testRegion          = "us-central1"
 )
 
 type fullstackMocks struct{}
@@ -82,7 +84,7 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 		// Expected outputs: name, accountId, project, displayName, email
 	case "gcp:cloudrunv2/service:Service":
 		outputs["name"] = args.Name
-		outputs["location"] = "us-central1"
+		outputs["location"] = testRegion
 		outputs["project"] = testProjectName
 		outputs["uri"] = "https://" + args.Name + "-hash-uc.a.run.app"
 		// Expected outputs: name, location, project, uri, template
@@ -116,7 +118,7 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 		// Expected outputs: apiConfigId, name, api, project
 	case "gcp:apigateway/gateway:Gateway":
 		outputs["name"] = args.Name
-		outputs["region"] = "us-central1"
+		outputs["region"] = testRegion
 		outputs["project"] = testProjectName
 		outputs["apiConfig"] = args.Name + "123" // Mock apiConfigId
 		outputs["defaultHostname"] = args.Name + ".apigateway.test-project.cloud.goog"
@@ -131,7 +133,7 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 	case "gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup":
 		outputs["name"] = args.Name
 		outputs["project"] = testProjectName
-		outputs["region"] = "us-central1"
+		outputs["region"] = testRegion
 		outputs["networkEndpointType"] = "SERVERLESS"
 		// Expected outputs: name, project, region, networkEndpointType
 	}
@@ -149,10 +151,10 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		args := &gcp.FullStackArgs{
 			Project:       testProjectName,
-			Region:        "us-central1",
+			Region:        testRegion,
 			BackendName:   backendServiceName,
 			BackendImage:  pulumi.String("gcr.io/test-project/backend:latest"),
-			FrontendName:  "frontend",
+			FrontendName:  frontendServiceName,
 			FrontendImage: pulumi.String("gcr.io/test-project/frontend:latest"),
 			Backend: &gcp.BackendArgs{
 				InstanceArgs: &gcp.InstanceArgs{
@@ -204,9 +206,9 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 
 		// Verify basic properties
 		assert.Equal(t, testProjectName, fullstack.Project)
-		assert.Equal(t, "us-central1", fullstack.Region)
+		assert.Equal(t, testRegion, fullstack.Region)
 		assert.Equal(t, backendServiceName, fullstack.BackendName)
-		assert.Equal(t, "frontend", fullstack.FrontendName)
+		assert.Equal(t, frontendServiceName, fullstack.FrontendName)
 
 		// Verify backend and frontend images using async pattern
 		stackBackendImageCh := make(chan string, 1)
@@ -281,7 +283,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 
 			return nil
 		})
-		assert.Equal(t, "us-central1", <-frontendLocationCh, "Frontend service location should match")
+		assert.Equal(t, testRegion, <-frontendLocationCh, "Frontend service location should match")
 
 		// Assert frontend container port is set correctly
 		frontendPortCh := make(chan int, 1)
@@ -308,6 +310,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		defer close(frontendContainerCh)
 		frontendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
 			frontendContainerCh <- containers[0]
+
 			return nil
 		})
 		frontendContainer := <-frontendContainerCh
@@ -335,7 +338,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 
 			return nil
 		})
-		assert.Equal(t, "us-central1", <-gatewayRegionCh, "API Gateway region should match the project region")
+		assert.Equal(t, testRegion, <-gatewayRegionCh, "API Gateway region should match the project region")
 
 		// Verify IAM member configurations
 		backendIamMember := fullstack.GetBackendGatewayIamMember()
@@ -441,10 +444,10 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		args := &gcp.FullStackArgs{
 			Project:       testProjectName,
-			Region:        "us-central1",
+			Region:        testRegion,
 			BackendName:   backendServiceName,
 			BackendImage:  pulumi.String("gcr.io/test-project/backend:latest"),
-			FrontendName:  "frontend",
+			FrontendName:  frontendServiceName,
 			FrontendImage: pulumi.String("gcr.io/test-project/frontend:latest"),
 			Backend: &gcp.BackendArgs{
 				InstanceArgs: &gcp.InstanceArgs{
@@ -496,9 +499,9 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 
 		// Verify basic properties
 		assert.Equal(t, testProjectName, fullstack.Project)
-		assert.Equal(t, "us-central1", fullstack.Region)
+		assert.Equal(t, testRegion, fullstack.Region)
 		assert.Equal(t, backendServiceName, fullstack.BackendName)
-		assert.Equal(t, "frontend", fullstack.FrontendName)
+		assert.Equal(t, frontendServiceName, fullstack.FrontendName)
 
 		// Verify backend and frontend images using async pattern
 		stackBackendImageCh := make(chan string, 1)
@@ -573,7 +576,7 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 
 			return nil
 		})
-		assert.Equal(t, "us-central1", <-frontendLocationCh, "Frontend service location should match")
+		assert.Equal(t, testRegion, <-frontendLocationCh, "Frontend service location should match")
 
 		// Assert frontend container port is set correctly
 		frontendPortCh := make(chan int, 1)
@@ -607,10 +610,10 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 
 			return nil
 		})
-		assert.Equal(t, "us-central1", <-gatewayRegionCh, "API Gateway region should match the project region")
+		assert.Equal(t, testRegion, <-gatewayRegionCh, "API Gateway region should match the project region")
 
 		// Verify API Config properties
-		apiConfig := fullstack.GetApiConfig()
+		apiConfig := fullstack.GetAPIConfig()
 		require.NotNil(t, apiConfig, "API Config should not be nil")
 
 		// Assert API Config has OpenAPI documents
@@ -618,6 +621,7 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 		defer close(openapiDocumentsCh)
 		apiConfig.OpenapiDocuments.ApplyT(func(documents []apigateway.ApiConfigOpenapiDocument) error {
 			openapiDocumentsCh <- documents
+
 			return nil
 		})
 		openapiDocuments := <-openapiDocumentsCh
@@ -629,6 +633,7 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 		defer close(gatewayConfigCh)
 		apiConfig.GatewayConfig.ApplyT(func(config *apigateway.ApiConfigGatewayConfig) error {
 			gatewayConfigCh <- config
+
 			return nil
 		})
 		gatewayConfig := <-gatewayConfigCh
@@ -702,6 +707,7 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 		defer close(certificateNameCh)
 		certificate.Name.ApplyT(func(name string) error {
 			certificateNameCh <- name
+
 			return nil
 		})
 		assert.Contains(t, <-certificateNameCh, "gcp-lb-tls-cert", "Certificate name should contain expected pattern")
@@ -711,6 +717,7 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 		defer close(certificateDomainsCh)
 		certificate.Managed.ApplyT(func(managed *compute.ManagedSslCertificateManaged) error {
 			certificateDomainsCh <- managed.Domains
+
 			return nil
 		})
 		domains := <-certificateDomainsCh
@@ -727,6 +734,7 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 		defer close(negNameCh)
 		neg.Name.ApplyT(func(name string) error {
 			negNameCh <- name
+
 			return nil
 		})
 		assert.Equal(t, <-negNameCh, "test-fullstack-gcp-lb-gateway-neg", "NEG name should match convention")
