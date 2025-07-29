@@ -63,7 +63,9 @@ mystack, err = gcp.NewFullStack(ctx, "my-gcp-stack", &gcp.FullStackArgs{
 })
 ```
 
-## Load Balancer Recipe
+## Architecture
+
+### Load Balancer Recipe
 
 ```
 [Forwarding Rule]
@@ -86,6 +88,24 @@ mystack, err = gcp.NewFullStack(ctx, "my-gcp-stack", &gcp.FullStackArgs{
         v
 [Cloud Run Service]
 
+```
+
+### Topology
+
+```
+     [Internet]
+          |
+          v
+[GCP HTTPS Load Balancer]
+          |
+          v
+      [Gateway]
+          |
+          v
+  [Frontend & Backend]
+          |
+          v
+   [Cloud Resources]
 ```
 
 ## API Gateway Integration
