@@ -28,10 +28,12 @@ jobs:
       - name: Report test coverage
         uses: ncruces/go-coverage-report@v0
         with:
-          report: true
+          coverage-file: coverage.out
           chart: true
           amend: true
         continue-on-error: true
+        if: |
+          github.event_name == 'push'
 
   lint:
     runs-on: ubuntu-latest
