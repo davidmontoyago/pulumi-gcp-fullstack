@@ -191,7 +191,7 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context, policy *compute.Securi
 			Region:              pulumi.String(region),
 			NetworkEndpointType: pulumi.String("SERVERLESS"),
 			ServerlessDeployment: &compute.RegionNetworkEndpointGroupServerlessDeploymentArgs{
-				Platform: pulumi.String("API_GATEWAY"),
+				Platform: pulumi.String("apigateway.googleapis.com"),
 				Resource: apiGateway.Name,
 			},
 		})
