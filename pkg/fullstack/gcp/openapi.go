@@ -12,6 +12,10 @@ func stringPtr(s string) *string {
 // newOpenAPISpec creates a new OpenAPI 3.0.1 specification for API Gateway
 // that routes traffic to Cloud Run backend and frontend services.
 func newOpenAPISpec(backendServiceURI, frontendServiceURI string, configArgs *APIConfigArgs) *openapi3.T {
+	paths := openapi3.Paths{}
+	paths["/api/{proxy+}"] = createAPIPathItem(backendServiceURI)
+	paths["/ui/{proxy+}"] = createUIPathItem(frontendServiceURI)
+
 	spec := &openapi3.T{
 		OpenAPI: "3.0.1",
 		Info: &openapi3.Info{
@@ -24,13 +28,7 @@ func newOpenAPISpec(backendServiceURI, frontendServiceURI string, configArgs *AP
 				URL: "https://{gateway_host}",
 			},
 		},
-		Paths: func() *openapi3.Paths {
-			paths := &openapi3.Paths{}
-			paths.Set("/api/{proxy+}", createAPIPathItem(backendServiceURI))
-			paths.Set("/ui/{proxy+}", createUIPathItem(frontendServiceURI))
-
-			return paths
-		}(),
+		Paths: paths,
 		Components: &openapi3.Components{
 			SecuritySchemes: make(openapi3.SecuritySchemes),
 		},
@@ -113,7 +111,7 @@ func createAPIOperation(operationID, method string) *openapi3.Operation {
 					Required: true,
 					Schema: &openapi3.SchemaRef{
 						Value: &openapi3.Schema{
-							Type: &openapi3.Types{"string"},
+							Type: openapi3.TypeString,
 						},
 					},
 				},
@@ -128,26 +126,26 @@ func createAPIOperation(operationID, method string) *openapi3.Operation {
 			Value: &openapi3.RequestBody{
 				Required: false,
 				Content: openapi3.NewContentWithJSONSchema(&openapi3.Schema{
-					Type: &openapi3.Types{"object"},
+					Type: openapi3.TypeObject,
 				}),
 			},
 		}
 	}
 
 	// Add responses
-	operation.Responses.Set("200", &openapi3.ResponseRef{
+	operation.Responses["200"] = &openapi3.ResponseRef{
 		Value: &openapi3.Response{
 			Description: stringPtr("Successful response"),
 			Content: openapi3.NewContentWithJSONSchema(&openapi3.Schema{
-				Type: &openapi3.Types{"object"},
+				Type: openapi3.TypeObject,
 			}),
 		},
-	})
-	operation.Responses.Set("404", &openapi3.ResponseRef{
+	}
+	operation.Responses["404"] = &openapi3.ResponseRef{
 		Value: &openapi3.Response{
 			Description: stringPtr("Not found"),
 		},
-	})
+	}
 
 	return operation
 }
@@ -164,7 +162,7 @@ func createUIOperation(operationID string) *openapi3.Operation {
 					Required: true,
 					Schema: &openapi3.SchemaRef{
 						Value: &openapi3.Schema{
-							Type: &openapi3.Types{"string"},
+							Type: openapi3.TypeString,
 						},
 					},
 				},
@@ -186,7 +184,7 @@ func createCORSOperation(operationID string) *openapi3.Operation {
 					Required: true,
 					Schema: &openapi3.SchemaRef{
 						Value: &openapi3.Schema{
-							Type: &openapi3.Types{"string"},
+							Type: openapi3.TypeString,
 						},
 					},
 				},
