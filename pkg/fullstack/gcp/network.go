@@ -192,7 +192,7 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context, policy *compute.Securi
 			NetworkEndpointType: pulumi.String("SERVERLESS"),
 			ServerlessDeployment: &compute.RegionNetworkEndpointGroupServerlessDeploymentArgs{
 				Platform: pulumi.String("apigateway.googleapis.com"),
-				Resource: apiGateway.Name,
+				Resource: apiGateway.GatewayId,
 			},
 		})
 	} else {
@@ -204,6 +204,7 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context, policy *compute.Securi
 			Region:              pulumi.String(region),
 			NetworkEndpointType: pulumi.String("SERVERLESS"),
 			CloudRun: &compute.RegionNetworkEndpointGroupCloudRunArgs{
+				// TODO fix. this should be neg per backend/frontend
 				Service: pulumi.String(serviceName),
 			},
 		})
