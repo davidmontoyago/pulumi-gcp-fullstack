@@ -188,7 +188,7 @@ func (f *FullStack) createAPIConfig(ctx *pulumi.Context, apiID string, configArg
 	}
 
 	// Generate OpenAPI spec with backend routing
-	openAPISpec := f.generateOpenAPISpec(configArgs)
+	openAPISpec := f.generateOpenAPISpec(ctx, configArgs)
 
 	// Convert OpenAPI spec to base64 encoding
 	base64OpenAPISpec := openAPISpec.ApplyT(func(spec string) string {
@@ -235,7 +235,7 @@ func (f *FullStack) createAPIConfig(ctx *pulumi.Context, apiID string, configArg
 //
 // See:
 // https://cloud.google.com/api-gateway/docs/reference/rest/v1/projects.locations.apis.configs#OpenApiDocument
-func (f *FullStack) generateOpenAPISpec(configArgs *APIConfigArgs) pulumi.StringOutput {
+func (f *FullStack) generateOpenAPISpec(ctx *pulumi.Context, configArgs *APIConfigArgs) pulumi.StringOutput {
 	openAPISpec := pulumi.All(configArgs.BackendServiceURL, configArgs.FrontendServiceURL).ApplyT(func(args []interface{}) (string, error) {
 
 		backendURL := args[0].(string)
@@ -243,21 +243,30 @@ func (f *FullStack) generateOpenAPISpec(configArgs *APIConfigArgs) pulumi.String
 
 		v3Spec := newOpenAPISpec(backendURL, frontendURL, configArgs)
 
+		// Debug: Print v3 spec
+		v3JSON, err := v3Spec.MarshalJSON()
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal v3 spec: %w", err)
+		}
+		ctx.Log.Debug(fmt.Sprintf("DEBUG: OpenAPI v3 spec:\n%s\n", string(v3JSON)), nil)
+
 		// Convert OpenAPI 3 to OpenAPI 2 spec as expected by Google API Gateway
 		// See:
 		// - https://cloud.google.com/endpoints/docs/openapi
 		// - https://github.com/cloudendpoints/esp/issues/446
 		v2Spec, err := openapi2conv.FromV3(v3Spec)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to convert v3 to v2: %w", err)
 		}
 
-		doc, err := v2Spec.MarshalJSON()
+		// Debug: Print v2 spec
+		v2JSON, err := v2Spec.MarshalJSON()
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to marshal v2 spec: %w", err)
 		}
+		ctx.Log.Debug(fmt.Sprintf("DEBUG: OpenAPI v2 spec:\n%s\n", string(v2JSON)), nil)
 
-		return string(doc), nil
+		return string(v2JSON), nil
 	}).(pulumi.StringOutput)
 
 	return openAPISpec
