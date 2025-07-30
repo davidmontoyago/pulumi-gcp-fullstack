@@ -36,8 +36,9 @@ type FullStack struct {
 	frontendGatewayIamMember *cloudrunv2.ServiceIamMember
 
 	// Network infrastructure
-	certificate *compute.ManagedSslCertificate
-	neg         *compute.RegionNetworkEndpointGroup
+	certificate          *compute.ManagedSslCertificate
+	neg                  *compute.RegionNetworkEndpointGroup
+	globalForwardingRule *compute.GlobalForwardingRule
 }
 
 // FullStackArgs contains configuration arguments for creating a FullStack instance.
@@ -340,4 +341,9 @@ func (f *FullStack) GetCertificate() *compute.ManagedSslCertificate {
 // GetNEG returns the region network endpoint group for the load balancer.
 func (f *FullStack) GetNEG() *compute.RegionNetworkEndpointGroup {
 	return f.neg
+}
+
+// GetGlobalForwardingRule returns the global forwarding rule for the load balancer.
+func (f *FullStack) GetGlobalForwardingRule() *compute.GlobalForwardingRule {
+	return f.globalForwardingRule
 }
