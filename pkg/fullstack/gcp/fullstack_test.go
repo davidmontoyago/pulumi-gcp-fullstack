@@ -147,7 +147,50 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 			cloudRunMap := cloudRun.ObjectValue()
 			outputs["cloudRun"] = cloudRunMap
 		}
-		// Expected outputs: name, project, region, networkEndpointType, serverlessDeployment/cloudRun
+	// Expected outputs: name, project, region, networkEndpointType, serverlessDeployment/cloudRun
+	case "gcp:compute/globalAddress:GlobalAddress":
+		// Pass through all input values
+		for k, v := range args.Inputs {
+			outputs[string(k)] = v
+		}
+		// Expected outputs: name, project, address, description, ipVersion
+	case "gcp:compute/globalForwardingRule:GlobalForwardingRule":
+		// Pass through all input values
+		for k, v := range args.Inputs {
+			outputs[string(k)] = v
+		}
+		outputs["ipAddress"] = "34.102.136.185"
+		// Expected outputs: name, project, description, portRange, loadBalancingScheme, ipAddress, target
+	case "gcp:compute/targetHttpsProxy:TargetHttpsProxy":
+		// Pass through all input values
+		for k, v := range args.Inputs {
+			outputs[string(k)] = v
+		}
+		// Expected outputs: name, project, description, urlMap, sslCertificates
+	case "gcp:compute/backendService:BackendService":
+		// Pass through all input values
+		for k, v := range args.Inputs {
+			outputs[string(k)] = v
+		}
+		// Expected outputs: name, project, description, protocol, portName, timeoutSec, healthChecks
+	case "gcp:compute/urlMap:URLMap":
+		// Pass through all input values
+		for k, v := range args.Inputs {
+			outputs[string(k)] = v
+		}
+		// Expected outputs: name, project, description, defaultService
+	case "gcp:compute/subnetwork:Subnetwork":
+		// Pass through all input values
+		for k, v := range args.Inputs {
+			outputs[string(k)] = v
+		}
+		// Expected outputs: name, project, region, description, purpose, network, ipCidrRange, role
+	case "gcp:compute/securityPolicy:SecurityPolicy":
+		// Pass through all input values
+		for k, v := range args.Inputs {
+			outputs[string(k)] = v
+		}
+		// Expected outputs: name, project, description, type
 	}
 
 	return args.Name + "_id", resource.NewPropertyMapFromMap(outputs), nil
@@ -771,6 +814,24 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 			return nil
 		})
 		assert.Equal(t, "test-fullstack-gateway", <-negResourceCh, "NEG resource should match the API Gateway ID")
+
+		// Verify global IP address configuration
+
+		// Verify global forwarding rule configuration
+		globalForwardingRule := fullstack.GetGlobalForwardingRule()
+		require.NotNil(t, globalForwardingRule, "Global forwarding rule should not be nil")
+
+		// Assert forwarding rule has a non-null IP address
+		forwardingRuleIPCh := make(chan string, 1)
+		defer close(forwardingRuleIPCh)
+		globalForwardingRule.IpAddress.ApplyT(func(ipAddress string) error {
+			forwardingRuleIPCh <- ipAddress
+
+			return nil
+		})
+		ipAddress := <-forwardingRuleIPCh
+		assert.NotEmpty(t, "Forwarding rule IP address should not be empty", ipAddress)
+		assert.NotEqual(t, ipAddress, "", "Forwarding rule IP address should not be null")
 
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
