@@ -63,22 +63,14 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 		return nil, fmt.Errorf("APIConfigArgs is required when API Gateway is enabled")
 	}
 
-	// Create dedicated service account for API Gateway
-	apiGatewayAccountName := f.newResourceName(args.Name, "account", 28)
-	apiGatewayServiceAccount, err := serviceaccount.NewAccount(ctx, apiGatewayAccountName, &serviceaccount.AccountArgs{
-		AccountId:   pulumi.String(apiGatewayAccountName),
-		DisplayName: pulumi.String(fmt.Sprintf("API Gateway service account (%s)", args.Name)),
-		Project:     pulumi.String(f.Project),
-	})
+	// Create API Gateway IAM resources (service account and permissions)
+	apiGatewayServiceAccountEmail, err := f.createAPIGatewayIAM(ctx, args.Name)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create API Gateway service account: %w", err)
+		return nil, err
 	}
-	ctx.Export("api_gateway_service_account_id", apiGatewayServiceAccount.ID())
-	ctx.Export("api_gateway_service_account_email", apiGatewayServiceAccount.Email)
 
-	// Use backend name as base for API ID
 	apiID := f.newResourceName(args.Name, "api", 50)
-	displayName := f.newResourceName(args.Name, "api", 100)
+	displayName := fmt.Sprintf("Gateway API (apiID: %s)", apiID)
 
 	// Create the API
 	api, err := apigateway.NewApi(ctx, apiID, &apigateway.ApiArgs{
@@ -92,7 +84,7 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 	ctx.Export("api_gateway_api_id", api.ApiId)
 	ctx.Export("api_gateway_api_name", api.Name)
 
-	apiConfig, err := f.createAPIConfig(ctx, apiID, args.Config, api, apiGatewayServiceAccount.Email)
+	apiConfig, err := f.createAPIConfig(ctx, apiID, args.Config, api, apiGatewayServiceAccountEmail)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +98,7 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 	}
 
 	gatewayID := f.newResourceName(args.Name, "", 50)
-	gatewayDisplayName := f.newResourceName(args.Name, "", 100)
+	gatewayDisplayName := fmt.Sprintf("Gateway (gatewayID: %s)", gatewayID)
 
 	gateway, err := apigateway.NewGateway(ctx, gatewayID, &apigateway.GatewayArgs{
 		GatewayId:   pulumi.String(gatewayID),
@@ -122,13 +114,35 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 	ctx.Export("api_gateway_gateway_name", gateway.Name)
 	ctx.Export("api_gateway_gateway_default_hostname", gateway.DefaultHostname)
 
-	// Grant API Gateway service account permission to invoke Cloud Run services
-	err = f.grantAPIGatewayInvokerPermissions(ctx, apiGatewayServiceAccount.Email, args.Name)
+	return gateway, nil
+}
+
+// createAPIGatewayIAM creates a dedicated service account for API Gateway and grants
+// it the necessary permissions to invoke Cloud Run services.
+//
+// This function ensures that the API Gateway has its own identity and can properly
+// route traffic to both backend and frontend Cloud Run services.
+func (f *FullStack) createAPIGatewayIAM(ctx *pulumi.Context, gatewayName string) (pulumi.StringOutput, error) {
+	// Create dedicated service account for API Gateway
+	apiGatewayAccountName := f.newResourceName(gatewayName, "account", 28)
+	apiGatewayServiceAccount, err := serviceaccount.NewAccount(ctx, apiGatewayAccountName, &serviceaccount.AccountArgs{
+		AccountId:   pulumi.String(apiGatewayAccountName),
+		DisplayName: pulumi.String(fmt.Sprintf("API Gateway service account (%s)", gatewayName)),
+		Project:     pulumi.String(f.Project),
+	})
 	if err != nil {
-		return nil, err
+		return pulumi.String("").ToStringOutput(), fmt.Errorf("failed to create API Gateway service account: %w", err)
+	}
+	ctx.Export("api_gateway_service_account_id", apiGatewayServiceAccount.ID())
+	ctx.Export("api_gateway_service_account_email", apiGatewayServiceAccount.Email)
+
+	// Grant API Gateway service account permission to invoke Cloud Run services
+	err = f.grantAPIGatewayInvokerPermissions(ctx, apiGatewayServiceAccount.Email, gatewayName)
+	if err != nil {
+		return pulumi.String("").ToStringOutput(), err
 	}
 
-	return gateway, nil
+	return apiGatewayServiceAccount.Email, nil
 }
 
 // grantAPIGatewayInvokerPermissions grants the API Gateway service account
