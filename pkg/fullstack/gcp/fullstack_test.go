@@ -135,7 +135,19 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 		outputs["project"] = testProjectName
 		outputs["region"] = testRegion
 		outputs["networkEndpointType"] = "SERVERLESS"
-		// Expected outputs: name, project, region, networkEndpointType
+
+		// Check if this is an API Gateway NEG (has serverlessDeployment) or
+		// Cloud Run NEG (has cloudRun) and pass values around.
+		if serverlessDeployment, ok := args.Inputs["serverlessDeployment"]; ok {
+			// API Gateway NEG
+			deploymentMap := serverlessDeployment.ObjectValue()
+			outputs["serverlessDeployment"] = deploymentMap
+		} else if cloudRun, ok := args.Inputs["cloudRun"]; ok && !cloudRun.IsNull() {
+			// Cloud Run NEG
+			cloudRunMap := cloudRun.ObjectValue()
+			outputs["cloudRun"] = cloudRunMap
+		}
+		// Expected outputs: name, project, region, networkEndpointType, serverlessDeployment/cloudRun
 	}
 
 	return args.Name + "_id", resource.NewPropertyMapFromMap(outputs), nil
@@ -739,6 +751,26 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 			return nil
 		})
 		assert.Equal(t, <-negNameCh, "test-fullstack-gcp-lb-gateway-neg", "NEG name should match convention")
+
+		// Assert NEG platform is set correctly for API Gateway
+		negPlatformCh := make(chan string, 1)
+		defer close(negPlatformCh)
+		neg.ServerlessDeployment.ApplyT(func(deployment *compute.RegionNetworkEndpointGroupServerlessDeployment) error {
+			negPlatformCh <- deployment.Platform
+
+			return nil
+		})
+		assert.Equal(t, <-negPlatformCh, "apigateway.googleapis.com", "NEG platform should be set to apigateway.googleapis.com for API Gateway")
+
+		// Assert NEG resource matches the API Gateway name
+		negResourceCh := make(chan string, 1)
+		defer close(negResourceCh)
+		neg.ServerlessDeployment.ApplyT(func(deployment *compute.RegionNetworkEndpointGroupServerlessDeployment) error {
+			negResourceCh <- *deployment.Resource
+
+			return nil
+		})
+		assert.Equal(t, "test-fullstack-gateway", <-negResourceCh, "NEG resource should match the API Gateway name")
 
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
