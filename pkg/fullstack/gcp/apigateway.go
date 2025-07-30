@@ -248,7 +248,9 @@ func (f *FullStack) generateOpenAPISpec(ctx *pulumi.Context, configArgs *APIConf
 		if err != nil {
 			return "", fmt.Errorf("failed to marshal v3 spec: %w", err)
 		}
-		ctx.Log.Debug(fmt.Sprintf("DEBUG: OpenAPI v3 spec:\n%s\n", string(v3JSON)), nil)
+		if err := ctx.Log.Debug(fmt.Sprintf("DEBUG: OpenAPI v3 spec:\n%s\n", string(v3JSON)), nil); err != nil {
+			return "", fmt.Errorf("failed to log v3 spec: %w", err)
+		}
 
 		// Convert OpenAPI 3 to OpenAPI 2 spec as expected by Google API Gateway
 		// See:
@@ -264,7 +266,9 @@ func (f *FullStack) generateOpenAPISpec(ctx *pulumi.Context, configArgs *APIConf
 		if err != nil {
 			return "", fmt.Errorf("failed to marshal v2 spec: %w", err)
 		}
-		ctx.Log.Debug(fmt.Sprintf("DEBUG: OpenAPI v2 spec:\n%s\n", string(v2JSON)), nil)
+		if err := ctx.Log.Debug(fmt.Sprintf("DEBUG: OpenAPI v2 spec:\n%s\n", string(v2JSON)), nil); err != nil {
+			return "", fmt.Errorf("failed to log v2 spec: %w", err)
+		}
 
 		return string(v2JSON), nil
 	}).(pulumi.StringOutput)

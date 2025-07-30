@@ -186,7 +186,9 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 	if args.Network != nil {
 		gatewayArgs = applyDefaultGatewayArgs(args.Network.APIGateway, backendService.Uri, frontendService.Uri)
 
-		ctx.Log.Info(fmt.Sprintf("Using API Gateway args: %+v", gatewayArgs), nil)
+		if err := ctx.Log.Info(fmt.Sprintf("Using API Gateway args: %+v", gatewayArgs), nil); err != nil {
+			return fmt.Errorf("failed to log API Gateway args: %w", err)
+		}
 
 		apiGateway, err = f.deployAPIGateway(ctx, gatewayArgs)
 		if err != nil {
