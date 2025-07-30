@@ -132,7 +132,72 @@ func createAPIOperation(operationID, method string) *openapi3.Operation {
 		}
 	}
 
-	// Add responses
+	// Add responses with proper descriptions for v2 compatibility
+	operation.Responses["200"] = &openapi3.ResponseRef{
+		Value: &openapi3.Response{
+			Description: stringPtr("Successful response"),
+			Content: openapi3.NewContentWithJSONSchema(&openapi3.Schema{
+				Type: openapi3.TypeObject,
+			}),
+		},
+	}
+	operation.Responses["400"] = &openapi3.ResponseRef{
+		Value: &openapi3.Response{
+			Description: stringPtr("Bad request"),
+		},
+	}
+	operation.Responses["401"] = &openapi3.ResponseRef{
+		Value: &openapi3.Response{
+			Description: stringPtr("Unauthorized"),
+		},
+	}
+	operation.Responses["403"] = &openapi3.ResponseRef{
+		Value: &openapi3.Response{
+			Description: stringPtr("Forbidden"),
+		},
+	}
+	operation.Responses["404"] = &openapi3.ResponseRef{
+		Value: &openapi3.Response{
+			Description: stringPtr("Not found"),
+		},
+	}
+	operation.Responses["500"] = &openapi3.ResponseRef{
+		Value: &openapi3.Response{
+			Description: stringPtr("Internal server error"),
+		},
+	}
+	// Add default response to catch all other cases
+	operation.Responses["default"] = &openapi3.ResponseRef{
+		Value: &openapi3.Response{
+			Description: stringPtr("Default response"),
+		},
+	}
+
+	return operation
+}
+
+// createUIOperation creates an operation for UI endpoints
+func createUIOperation(operationID string) *openapi3.Operation {
+	operation := &openapi3.Operation{
+		OperationID: operationID,
+		Parameters: []*openapi3.ParameterRef{
+			{
+				Value: &openapi3.Parameter{
+					Name:     "proxy",
+					In:       "path",
+					Required: true,
+					Schema: &openapi3.SchemaRef{
+						Value: &openapi3.Schema{
+							Type: openapi3.TypeString,
+						},
+					},
+				},
+			},
+		},
+		Responses: openapi3.NewResponses(),
+	}
+
+	// Add responses with proper descriptions for v2 compatibility
 	operation.Responses["200"] = &openapi3.ResponseRef{
 		Value: &openapi3.Response{
 			Description: stringPtr("Successful response"),
@@ -146,35 +211,18 @@ func createAPIOperation(operationID, method string) *openapi3.Operation {
 			Description: stringPtr("Not found"),
 		},
 	}
+	operation.Responses["default"] = &openapi3.ResponseRef{
+		Value: &openapi3.Response{
+			Description: stringPtr("Default response"),
+		},
+	}
 
 	return operation
 }
 
-// createUIOperation creates an operation for UI endpoints
-func createUIOperation(operationID string) *openapi3.Operation {
-	return &openapi3.Operation{
-		OperationID: operationID,
-		Parameters: []*openapi3.ParameterRef{
-			{
-				Value: &openapi3.Parameter{
-					Name:     "proxy",
-					In:       "path",
-					Required: true,
-					Schema: &openapi3.SchemaRef{
-						Value: &openapi3.Schema{
-							Type: openapi3.TypeString,
-						},
-					},
-				},
-			},
-		},
-		Responses: openapi3.NewResponses(),
-	}
-}
-
 // createCORSOperation creates an OPTIONS operation for CORS preflight requests
 func createCORSOperation(operationID string) *openapi3.Operation {
-	return &openapi3.Operation{
+	operation := &openapi3.Operation{
 		OperationID: operationID,
 		Parameters: []*openapi3.ParameterRef{
 			{
@@ -192,4 +240,18 @@ func createCORSOperation(operationID string) *openapi3.Operation {
 		},
 		Responses: openapi3.NewResponses(),
 	}
+
+	// Add responses for CORS preflight
+	operation.Responses["200"] = &openapi3.ResponseRef{
+		Value: &openapi3.Response{
+			Description: stringPtr("CORS preflight successful"),
+		},
+	}
+	operation.Responses["default"] = &openapi3.ResponseRef{
+		Value: &openapi3.Response{
+			Description: stringPtr("Default response"),
+		},
+	}
+
+	return operation
 }
