@@ -73,16 +73,16 @@ func createCORSConfig(configArgs *APIConfigArgs) map[string]interface{} {
 }
 
 // createAPIPathItem creates a PathItem for API routes with all HTTP methods
-func createAPIPathItem(backendServiceURI string) *openapi3.PathItem {
+func createAPIPathItem(serviceURI string) *openapi3.PathItem {
 	return &openapi3.PathItem{
-		Get:     createAPIOperation("apiProxyGet", backendServiceURI, "get"),
-		Post:    createAPIOperation("apiProxyPost", backendServiceURI, "post"),
-		Put:     createAPIOperation("apiProxyPut", backendServiceURI, "put"),
-		Delete:  createAPIOperation("apiProxyDelete", backendServiceURI, "delete"),
+		Get:     createAPIOperation("apiProxyGet", "get"),
+		Post:    createAPIOperation("apiProxyPost", "post"),
+		Put:     createAPIOperation("apiProxyPut", "put"),
+		Delete:  createAPIOperation("apiProxyDelete", "delete"),
 		Options: createCORSOperation("apiProxyOptions"),
 		Extensions: map[string]interface{}{
 			"x-google-backend": map[string]interface{}{
-				"address": backendServiceURI + "/{proxy}",
+				"address": serviceURI + "/{proxy}",
 			},
 		},
 	}
@@ -91,7 +91,7 @@ func createAPIPathItem(backendServiceURI string) *openapi3.PathItem {
 // createUIPathItem creates a PathItem for UI routes with GET and OPTIONS methods
 func createUIPathItem(frontendServiceURI string) *openapi3.PathItem {
 	return &openapi3.PathItem{
-		Get:     createUIOperation("uiProxyGet", frontendServiceURI),
+		Get:     createUIOperation("uiProxyGet"),
 		Options: createCORSOperation("uiProxyOptions"),
 		Extensions: map[string]interface{}{
 			"x-google-backend": map[string]interface{}{
@@ -102,8 +102,8 @@ func createUIPathItem(frontendServiceURI string) *openapi3.PathItem {
 }
 
 // createAPIOperation creates an operation for API endpoints
-func createAPIOperation(operationID, backendServiceURI, method string) *openapi3.Operation {
-	op := &openapi3.Operation{
+func createAPIOperation(operationID, method string) *openapi3.Operation {
+	operation := &openapi3.Operation{
 		OperationID: operationID,
 		Parameters: []*openapi3.ParameterRef{
 			{
@@ -124,7 +124,7 @@ func createAPIOperation(operationID, backendServiceURI, method string) *openapi3
 
 	// Add request body for POST and PUT operations
 	if method == "post" || method == "put" {
-		op.RequestBody = &openapi3.RequestBodyRef{
+		operation.RequestBody = &openapi3.RequestBodyRef{
 			Value: &openapi3.RequestBody{
 				Required: false,
 				Content: openapi3.NewContentWithJSONSchema(&openapi3.Schema{
@@ -135,7 +135,7 @@ func createAPIOperation(operationID, backendServiceURI, method string) *openapi3
 	}
 
 	// Add responses
-	op.Responses.Set("200", &openapi3.ResponseRef{
+	operation.Responses.Set("200", &openapi3.ResponseRef{
 		Value: &openapi3.Response{
 			Description: stringPtr("Successful response"),
 			Content: openapi3.NewContentWithJSONSchema(&openapi3.Schema{
@@ -143,17 +143,17 @@ func createAPIOperation(operationID, backendServiceURI, method string) *openapi3
 			}),
 		},
 	})
-	op.Responses.Set("404", &openapi3.ResponseRef{
+	operation.Responses.Set("404", &openapi3.ResponseRef{
 		Value: &openapi3.Response{
 			Description: stringPtr("Not found"),
 		},
 	})
 
-	return op
+	return operation
 }
 
 // createUIOperation creates an operation for UI endpoints
-func createUIOperation(operationID, frontendServiceURI string) *openapi3.Operation {
+func createUIOperation(operationID string) *openapi3.Operation {
 	return &openapi3.Operation{
 		OperationID: operationID,
 		Parameters: []*openapi3.ParameterRef{
@@ -171,11 +171,6 @@ func createUIOperation(operationID, frontendServiceURI string) *openapi3.Operati
 			},
 		},
 		Responses: openapi3.NewResponses(),
-		Extensions: map[string]interface{}{
-			"x-google-backend": map[string]interface{}{
-				"address": frontendServiceURI + "/{proxy}",
-			},
-		},
 	}
 }
 
