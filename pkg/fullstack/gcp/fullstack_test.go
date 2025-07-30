@@ -770,7 +770,7 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 
 			return nil
 		})
-		assert.Equal(t, "test-fullstack-gateway", <-negResourceCh, "NEG resource should match the API Gateway name")
+		assert.Equal(t, "test-fullstack-gateway", <-negResourceCh, "NEG resource should match the API Gateway ID")
 
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
