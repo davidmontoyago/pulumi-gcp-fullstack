@@ -13,8 +13,10 @@ func stringPtr(s string) *string {
 // that routes traffic to Cloud Run backend and frontend services.
 func newOpenAPISpec(backendServiceURI, frontendServiceURI string, configArgs *APIConfigArgs) *openapi3.T {
 	paths := openapi3.Paths{}
-	paths["/api/{proxy+}"] = createAPIPathItem(backendServiceURI)
-	paths["/ui/{proxy+}"] = createUIPathItem(frontendServiceURI)
+
+	// Use simple catch-all paths that defer to upstream services
+	paths["/api/{proxy}"] = createAPIPathItem(backendServiceURI)
+	paths["/ui/{proxy}"] = createUIPathItem(frontendServiceURI)
 
 	spec := &openapi3.T{
 		OpenAPI: "3.0.1",
