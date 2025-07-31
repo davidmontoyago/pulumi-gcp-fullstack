@@ -2,8 +2,10 @@ package gcp_test
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"testing"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/apigateway"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/compute"
@@ -639,6 +641,10 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 		require.NotNil(t, openapiDocuments, "OpenAPI documents should not be nil")
 		assert.Len(t, openapiDocuments, 1, "Should have exactly one OpenAPI document")
 
+		// Assert OpenAPI documents has correct paths
+		apiPathsCh := make(chan openapi3.Paths, 1)
+		defer close(apiPathsCh)
+
 		// Assert API Config has Gateway configuration
 		gatewayConfigCh := make(chan *apigateway.ApiConfigGatewayConfig, 1)
 		defer close(gatewayConfigCh)
@@ -668,6 +674,29 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 		assert.Contains(t, decodedContent, "\"swagger\":\"2.0\"", "Decoded content should contain OpenAPI 2.0 version")
 		assert.Contains(t, decodedContent, "\"paths\":", "Decoded content should contain paths section")
 		assert.Contains(t, decodedContent, "\"info\":", "Decoded content should contain info section")
+
+		// Parse the decoded JSON and verify the first path entry
+		var openAPISpec map[string]interface{}
+		err = json.Unmarshal(decodedBytes, &openAPISpec)
+		require.NoError(t, err, "Decoded content should be valid JSON")
+
+		// Get the paths object
+		pathsObj, ok := openAPISpec["paths"].(map[string]interface{})
+		require.True(t, ok, "Paths should be a map[string]interface{}")
+		require.NotEmpty(t, pathsObj, "Paths object should not be empty")
+
+		// Get the first and second path keys
+		pathKeys := make([]string, 0, len(pathsObj))
+		for pathKey := range pathsObj {
+			pathKeys = append(pathKeys, pathKey)
+		}
+		require.Len(t, pathKeys, 2, "Should have exactly two path keys")
+
+		// Assert that the first path key matches "/api/v1/{proxy}"
+		assert.Equal(t, "/api/v1/{proxy}", pathKeys[0], "First path key should match expected value")
+
+		// Assert that the second path key matches "/ui/{proxy}"
+		assert.Equal(t, "/ui/{proxy}", pathKeys[1], "Second path key should match expected value")
 
 		// Verify IAM member configurations
 		backendIamMember := fullstack.GetBackendGatewayIamMember()

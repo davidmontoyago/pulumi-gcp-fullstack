@@ -24,14 +24,23 @@ type APIGatewayArgs struct {
 	Regions []string
 }
 
+type APIPathArgs struct {
+	// Path to match in the public API. Defaults to "/api/v1".
+	Path string
+	// Optional. If not set, defaults to Path.
+	UpstreamPath string
+}
+
 // APIConfigArgs contains configuration for API Gateway API Config
 type APIConfigArgs struct {
-	// OpenAPI specification file path. Optional - defaults to "/openapi.yaml".
-	OpenAPISpecPath string
 	// Backend service URL (Cloud Run service URL). Required.
 	BackendServiceURL pulumi.StringOutput
 	// Frontend service URL (Cloud Run service URL). Required for dual routing.
 	FrontendServiceURL pulumi.StringOutput
+	// Backend API paths. Defaults to ["/api/v1"].
+	BackendAPIPaths []*APIPathArgs
+	// Frontend API paths. Defaults to ["/ui/v1"].
+	FrontendAPIPaths []*APIPathArgs
 	// Whether to enable CORS. Defaults to true.
 	EnableCORS bool
 	// CORS allowed origins. Defaults to ["*"].
@@ -40,6 +49,8 @@ type APIConfigArgs struct {
 	CORSAllowedMethods []string
 	// CORS allowed headers. Defaults to ["*"].
 	CORSAllowedHeaders []string
+	// OpenAPI specification file path. Optional - defaults to "/openapi.yaml".
+	OpenAPISpecPath string
 }
 
 // deployAPIGateway sets up Google API Gateway with the following features:

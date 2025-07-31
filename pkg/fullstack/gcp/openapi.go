@@ -4,19 +4,26 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
-// stringPtr returns a pointer to the given string
-func stringPtr(s string) *string {
-	return &s
-}
-
 // newOpenAPISpec creates a new OpenAPI 3.0.1 specification for API Gateway
 // that routes traffic to Cloud Run backend and frontend services.
 func newOpenAPISpec(backendServiceURI, frontendServiceURI string, configArgs *APIConfigArgs) *openapi3.T {
 	paths := openapi3.Paths{}
 
-	// Use simple catch-all paths that defer to upstream services
-	paths["/api/{proxy}"] = createAPIPathItem(backendServiceURI)
-	paths["/ui/{proxy}"] = createUIPathItem(frontendServiceURI)
+	// Add backend API paths
+	if configArgs != nil && len(configArgs.BackendAPIPaths) > 0 {
+		addPaths(paths, configArgs.BackendAPIPaths, backendServiceURI, createAPIPathItem)
+	} else {
+		// Default backend path if none specified
+		paths["/api/v1/{proxy}"] = createAPIPathItem(backendServiceURI, "/api/v1")
+	}
+
+	// Add frontend API paths
+	if configArgs != nil && len(configArgs.FrontendAPIPaths) > 0 {
+		addPaths(paths, configArgs.FrontendAPIPaths, frontendServiceURI, createUIPathItem)
+	} else {
+		// Default frontend path if none specified
+		paths["/ui/{proxy}"] = createUIPathItem(frontendServiceURI, "/ui/v1")
+	}
 
 	spec := &openapi3.T{
 		OpenAPI: "3.0.1",
@@ -43,6 +50,28 @@ func newOpenAPISpec(backendServiceURI, frontendServiceURI string, configArgs *AP
 	}
 
 	return spec
+}
+
+// createUpstreamPath is a function type for creating path items
+type createUpstreamPath func(serviceURI, upstreamPath string) *openapi3.PathItem
+
+// addPaths creates OpenAPI paths from a list of path configurations
+func addPaths(paths openapi3.Paths, pathConfigs []*APIPathArgs, serviceURI string, creator createUpstreamPath) {
+	for _, pathConfig := range pathConfigs {
+		if pathConfig.Path == "" {
+			continue
+		}
+
+		// Set UpstreamPath to Path if not specified
+		upstreamPath := pathConfig.UpstreamPath
+		if upstreamPath == "" {
+			upstreamPath = pathConfig.Path
+		}
+
+		// Create public path with {proxy} parameter
+		path := pathConfig.Path + "/{proxy}"
+		paths[path] = creator(serviceURI, upstreamPath)
+	}
 }
 
 // createCORSConfig creates the CORS configuration for Google API Gateway
@@ -73,26 +102,26 @@ func createCORSConfig(configArgs *APIConfigArgs) map[string]interface{} {
 }
 
 // createAPIPathItem creates a PathItem for API routes with all HTTP methods
-func createAPIPathItem(backendServiceURI string) *openapi3.PathItem {
+func createAPIPathItem(backendServiceURI, upstreamPath string) *openapi3.PathItem {
 	return &openapi3.PathItem{
-		Get:     createAPIOperation("apiProxyGet", "get", backendServiceURI),
-		Post:    createAPIOperation("apiProxyPost", "post", backendServiceURI),
-		Put:     createAPIOperation("apiProxyPut", "put", backendServiceURI),
-		Delete:  createAPIOperation("apiProxyDelete", "delete", backendServiceURI),
-		Options: createCORSOperation("apiProxyOptions", backendServiceURI),
+		Get:     createAPIOperation("apiProxyGet", "get", backendServiceURI, upstreamPath),
+		Post:    createAPIOperation("apiProxyPost", "post", backendServiceURI, upstreamPath),
+		Put:     createAPIOperation("apiProxyPut", "put", backendServiceURI, upstreamPath),
+		Delete:  createAPIOperation("apiProxyDelete", "delete", backendServiceURI, upstreamPath),
+		Options: createCORSOperation("apiProxyOptions", backendServiceURI, upstreamPath),
 	}
 }
 
 // createUIPathItem creates a PathItem for UI routes with GET and OPTIONS methods
-func createUIPathItem(frontendServiceURI string) *openapi3.PathItem {
+func createUIPathItem(frontendServiceURI, upstreamPath string) *openapi3.PathItem {
 	return &openapi3.PathItem{
-		Get:     createUIOperation("uiProxyGet", frontendServiceURI),
-		Options: createCORSOperation("uiProxyOptions", frontendServiceURI),
+		Get:     createUIOperation("uiProxyGet", frontendServiceURI, upstreamPath),
+		Options: createCORSOperation("uiProxyOptions", frontendServiceURI, upstreamPath),
 	}
 }
 
 // createAPIOperation creates an operation for API endpoints
-func createAPIOperation(operationID, method, serviceURI string) *openapi3.Operation {
+func createAPIOperation(operationID, method, serviceURI, upstreamPath string) *openapi3.Operation {
 	operation := &openapi3.Operation{
 		OperationID: operationID,
 		Parameters: []*openapi3.ParameterRef{
@@ -112,7 +141,8 @@ func createAPIOperation(operationID, method, serviceURI string) *openapi3.Operat
 		Responses: openapi3.NewResponses(),
 		Extensions: map[string]interface{}{
 			"x-google-backend": map[string]interface{}{
-				"address": serviceURI + "/{proxy}",
+				"address":         serviceURI + upstreamPath + "/{proxy}",
+				"pathTranslation": "CONSTANT_ADDRESS",
 			},
 		},
 	}
@@ -174,7 +204,7 @@ func createAPIOperation(operationID, method, serviceURI string) *openapi3.Operat
 }
 
 // createUIOperation creates an operation for UI endpoints
-func createUIOperation(operationID, serviceURI string) *openapi3.Operation {
+func createUIOperation(operationID, serviceURI, upstreamPath string) *openapi3.Operation {
 	operation := &openapi3.Operation{
 		OperationID: operationID,
 		Parameters: []*openapi3.ParameterRef{
@@ -194,7 +224,8 @@ func createUIOperation(operationID, serviceURI string) *openapi3.Operation {
 		Responses: openapi3.NewResponses(),
 		Extensions: map[string]interface{}{
 			"x-google-backend": map[string]interface{}{
-				"address": serviceURI + "/{proxy}",
+				"address":         serviceURI + upstreamPath + "/{proxy}",
+				"pathTranslation": "CONSTANT_ADDRESS",
 			},
 		},
 	}
@@ -223,7 +254,7 @@ func createUIOperation(operationID, serviceURI string) *openapi3.Operation {
 }
 
 // createCORSOperation creates an OPTIONS operation for CORS preflight requests
-func createCORSOperation(operationID, serviceURI string) *openapi3.Operation {
+func createCORSOperation(operationID, serviceURI, upstreamPath string) *openapi3.Operation {
 	operation := &openapi3.Operation{
 		OperationID: operationID,
 		Parameters: []*openapi3.ParameterRef{
@@ -243,7 +274,8 @@ func createCORSOperation(operationID, serviceURI string) *openapi3.Operation {
 		Responses: openapi3.NewResponses(),
 		Extensions: map[string]interface{}{
 			"x-google-backend": map[string]interface{}{
-				"address": serviceURI + "/{proxy}",
+				"address":         serviceURI + upstreamPath + "/{proxy}",
+				"pathTranslation": "CONSTANT_ADDRESS",
 			},
 		},
 	}
@@ -261,4 +293,9 @@ func createCORSOperation(operationID, serviceURI string) *openapi3.Operation {
 	}
 
 	return operation
+}
+
+// stringPtr returns a pointer to the given string
+func stringPtr(s string) *string {
+	return &s
 }
