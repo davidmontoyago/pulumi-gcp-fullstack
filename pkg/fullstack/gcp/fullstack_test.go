@@ -3,6 +3,7 @@ package gcp_test
 import (
 	"encoding/base64"
 	"encoding/json"
+	"sort"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -690,7 +691,11 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 		for pathKey := range pathsObj {
 			pathKeys = append(pathKeys, pathKey)
 		}
+
 		require.Len(t, pathKeys, 2, "Should have exactly two path keys")
+
+		// Sort keys in ascending order for consistent assertions
+		sort.Strings(pathKeys)
 
 		// Assert that the first path key matches "/api/v1/{proxy}"
 		assert.Equal(t, "/api/v1/{proxy}", pathKeys[0], "First path key should match expected value")
