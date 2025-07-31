@@ -133,39 +133,10 @@ func (f *FullStack) newHTTPSProxy(ctx *pulumi.Context, serviceName, domainName, 
 	ctx.Export("load_balancer_https_proxy_uri", httpsProxy.SelfLink)
 
 	if !privateTraffic {
-
-		ipAddressName := f.newResourceName(serviceName, "global-ip", 100)
-		ipAddress, err := compute.NewGlobalAddress(ctx, ipAddressName, &compute.GlobalAddressArgs{
-			Project:     pulumi.String(project),
-			Description: pulumi.String(fmt.Sprintf("IP address for %s", serviceName)),
-			IpVersion:   pulumi.String("IPV4"),
-		})
+		err = f.createGlobalInternetEntrypoint(ctx, serviceName, project, httpsProxy)
 		if err != nil {
 			return err
 		}
-		ctx.Export("load_balancer_global_address_id", ipAddress.ID())
-		ctx.Export("load_balancer_global_address_uri", ipAddress.SelfLink)
-		ctx.Export("load_balancer_global_address_ip_address", ipAddress.Address)
-
-		// https://cloud.google.com/load-balancing/docs/https#forwarding-rule
-		forwardingRuleName := f.newResourceName(serviceName, "https-forwarding", 100)
-		trafficRule, err := compute.NewGlobalForwardingRule(ctx, forwardingRuleName, &compute.GlobalForwardingRuleArgs{
-			Description:         pulumi.String(fmt.Sprintf("HTTPS forwarding rule to LB traffic for %s", serviceName)),
-			Project:             pulumi.String(project),
-			PortRange:           pulumi.String("443"),
-			LoadBalancingScheme: pulumi.String("EXTERNAL"),
-			Target:              httpsProxy.SelfLink,
-			IpAddress:           ipAddress.Address,
-		})
-		if err != nil {
-			return err
-		}
-		ctx.Export("load_balancer_global_forwarding_rule_id", trafficRule.ID())
-		ctx.Export("load_balancer_global_forwarding_rule_uri", trafficRule.SelfLink)
-		ctx.Export("load_balancer_global_forwarding_rule_ip_address", trafficRule.IpAddress)
-
-		// Store the forwarding rule in the FullStack struct
-		f.globalForwardingRule = trafficRule
 	}
 
 	return nil
@@ -271,4 +242,42 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context, policy *compute.Securi
 	ctx.Export("load_balancer_url_map_uri", backendURLMap.SelfLink)
 
 	return backendURLMap, nil
+}
+
+// createGlobalInternetEntrypoint creates a global IP address and forwarding rule for external traffic
+func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceName, project string, httpsProxy *compute.TargetHttpsProxy) error {
+	ipAddressName := f.newResourceName(serviceName, "global-ip", 100)
+	ipAddress, err := compute.NewGlobalAddress(ctx, ipAddressName, &compute.GlobalAddressArgs{
+		Project:     pulumi.String(project),
+		Description: pulumi.String(fmt.Sprintf("IP address for %s", serviceName)),
+		IpVersion:   pulumi.String("IPV4"),
+	})
+	if err != nil {
+		return err
+	}
+	ctx.Export("load_balancer_global_address_id", ipAddress.ID())
+	ctx.Export("load_balancer_global_address_uri", ipAddress.SelfLink)
+	ctx.Export("load_balancer_global_address_ip_address", ipAddress.Address)
+
+	// https://cloud.google.com/load-balancing/docs/https#forwarding-rule
+	forwardingRuleName := f.newResourceName(serviceName, "https-forwarding", 100)
+	trafficRule, err := compute.NewGlobalForwardingRule(ctx, forwardingRuleName, &compute.GlobalForwardingRuleArgs{
+		Description:         pulumi.String(fmt.Sprintf("HTTPS forwarding rule to LB traffic for %s", serviceName)),
+		Project:             pulumi.String(project),
+		PortRange:           pulumi.String("443"),
+		LoadBalancingScheme: pulumi.String("EXTERNAL"),
+		Target:              httpsProxy.SelfLink,
+		IpAddress:           ipAddress.Address,
+	})
+	if err != nil {
+		return err
+	}
+	ctx.Export("load_balancer_global_forwarding_rule_id", trafficRule.ID())
+	ctx.Export("load_balancer_global_forwarding_rule_uri", trafficRule.SelfLink)
+	ctx.Export("load_balancer_global_forwarding_rule_ip_address", trafficRule.IpAddress)
+
+	// Store the forwarding rule in the FullStack struct
+	f.globalForwardingRule = trafficRule
+
+	return nil
 }

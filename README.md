@@ -91,6 +91,9 @@ mystack, err = gcp.NewFullStack(ctx, "my-gcp-stack", &gcp.FullStackArgs{
 
 ```
 
+See:
+- https://cloud.google.com/api-gateway/docs/gateway-load-balancing
+
 ### Topology
 
 ```
