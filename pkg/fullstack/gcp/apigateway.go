@@ -24,6 +24,7 @@ type APIGatewayArgs struct {
 	Regions []string
 }
 
+// APIPathArgs contains configuration for API Gateway API paths
 type APIPathArgs struct {
 	// Path to match in the public API. Defaults to "/api/v1".
 	Path string
