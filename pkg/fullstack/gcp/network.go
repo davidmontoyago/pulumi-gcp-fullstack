@@ -289,9 +289,14 @@ func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceN
 
 	// create a DNS record for the global IP address
 	dnsRecordName := f.newResourceName(serviceName, "dns-record", 100)
+	// Ensure domain URL ends with a trailing dot for DNS compliance
+	dnsName := domainURL
+	if !strings.HasSuffix(dnsName, ".") {
+		dnsName += "."
+	}
 	dnsRecord, err := dns.NewRecordSet(ctx, dnsRecordName, &dns.RecordSetArgs{
 		ManagedZone: pulumi.String(managedZoneName),
-		Name:        pulumi.String(domainURL),
+		Name:        pulumi.String(dnsName),
 		Type:        pulumi.String("A"),
 		Ttl:         pulumi.Int(3600),
 		Rrdatas:     pulumi.StringArray{ipAddress.Address},

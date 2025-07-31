@@ -848,7 +848,7 @@ func TestNewFullStack_WithGlobalInternetLoadBalancer(t *testing.T) {
 
 			return nil
 		})
-		assert.Equal(t, "myapp.example.com", <-dnsRecordNameCh, "DNS record name should match the provided domain")
+		assert.Equal(t, "myapp.example.com.", <-dnsRecordNameCh, "DNS record name should match the provided domain")
 
 		// Assert DNS record type is A
 		dnsRecordTypeCh := make(chan string, 1)
