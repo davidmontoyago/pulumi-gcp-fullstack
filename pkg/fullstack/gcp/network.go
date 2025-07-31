@@ -281,33 +281,11 @@ func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceN
 	// Store the forwarding rule in the FullStack struct
 	f.globalForwardingRule = trafficRule
 
-	// Look up the DNS managed zone for the domain
-	managedZoneName, err := f.lookupDNSZone(ctx, domainURL, project)
+	// Create DNS record for the global IP address
+	dnsRecord, err := f.createDNSRecord(ctx, serviceName, domainURL, project, ipAddress.Address)
 	if err != nil {
 		return err
 	}
-
-	// create a DNS record for the global IP address
-	dnsRecordName := f.newResourceName(serviceName, "dns-record", 100)
-	// Ensure domain URL ends with a trailing dot for DNS compliance
-	dnsName := domainURL
-	if !strings.HasSuffix(dnsName, ".") {
-		dnsName += "."
-	}
-	dnsRecord, err := dns.NewRecordSet(ctx, dnsRecordName, &dns.RecordSetArgs{
-		ManagedZone: pulumi.String(managedZoneName),
-		Name:        pulumi.String(dnsName),
-		Type:        pulumi.String("A"),
-		Ttl:         pulumi.Int(3600),
-		Rrdatas:     pulumi.StringArray{ipAddress.Address},
-	})
-	if err != nil {
-		return err
-	}
-	ctx.Export("load_balancer_dns_record_id", dnsRecord.ID())
-	ctx.Export("load_balancer_dns_record_ip_address", dnsRecord.Rrdatas)
-
-	// Store the DNS record in the FullStack struct
 	f.dnsRecord = dnsRecord
 
 	return nil
@@ -347,4 +325,37 @@ func (f *FullStack) lookupDNSZone(ctx *pulumi.Context, domainURL, project string
 	_ = ctx.Log.Debug(fmt.Sprintf("Found managed zone %s for domain %s", targetZoneName, domainURL), nil)
 
 	return targetZoneName, nil
+}
+
+// createDNSRecord creates a DNS A record for the given domain and IP address
+func (f *FullStack) createDNSRecord(ctx *pulumi.Context, serviceName, domainURL, project string, ipAddress pulumi.StringOutput) (*dns.RecordSet, error) {
+	// Look up the DNS managed zone for the domain
+	managedZoneName, err := f.lookupDNSZone(ctx, domainURL, project)
+	if err != nil {
+		return nil, err
+	}
+
+	dnsRecordName := f.newResourceName(serviceName, "dns-record", 100)
+
+	// Ensure domain URL ends with a trailing dot for DNS compliance
+	dnsName := domainURL
+	if !strings.HasSuffix(dnsName, ".") {
+		dnsName += "."
+	}
+
+	dnsRecord, err := dns.NewRecordSet(ctx, dnsRecordName, &dns.RecordSetArgs{
+		ManagedZone: pulumi.String(managedZoneName),
+		Name:        pulumi.String(dnsName),
+		Type:        pulumi.String("A"),
+		Ttl:         pulumi.Int(3600),
+		Rrdatas:     pulumi.StringArray{ipAddress},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	ctx.Export("load_balancer_dns_record_id", dnsRecord.ID())
+	ctx.Export("load_balancer_dns_record_ip_address", dnsRecord.Rrdatas)
+
+	return dnsRecord, nil
 }
