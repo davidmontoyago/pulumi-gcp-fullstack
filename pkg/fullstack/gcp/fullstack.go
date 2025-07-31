@@ -11,6 +11,7 @@ import (
 
 	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/compute"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/dns"
 )
 
 // FullStack represents a complete fullstack application infrastructure on Google Cloud Platform.
@@ -39,6 +40,7 @@ type FullStack struct {
 	certificate          *compute.ManagedSslCertificate
 	neg                  *compute.RegionNetworkEndpointGroup
 	globalForwardingRule *compute.GlobalForwardingRule
+	dnsRecord            *dns.RecordSet
 }
 
 // FullStackArgs contains configuration arguments for creating a FullStack instance.
@@ -346,4 +348,14 @@ func (f *FullStack) GetNEG() *compute.RegionNetworkEndpointGroup {
 // GetGlobalForwardingRule returns the global forwarding rule for the load balancer.
 func (f *FullStack) GetGlobalForwardingRule() *compute.GlobalForwardingRule {
 	return f.globalForwardingRule
+}
+
+// LookupDNSZone finds the appropriate DNS managed zone for the given domain in the current project
+func (f *FullStack) LookupDNSZone(ctx *pulumi.Context, domainURL string) (string, error) {
+	return f.lookupDNSZone(ctx, domainURL, f.Project)
+}
+
+// GetDNSRecord returns the DNS record created for the load balancer
+func (f *FullStack) GetDNSRecord() *dns.RecordSet {
+	return f.dnsRecord
 }

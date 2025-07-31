@@ -25,55 +25,12 @@ const (
 type fullstackMocks struct{}
 
 func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
-	// Mock resource outputs for each resource type:
-	//
-	// gcp:serviceaccount/account:Account
-	//   - name: string (resource name)
-	//   - accountId: string (service account ID)
-	//   - project: string (GCP project ID)
-	//   - displayName: string (human-readable name)
-	//   - email: string (service account email, computed)
-	//
-	// gcp:cloudrunv2/service:Service
-	//   - name: string (service name)
-	//   - location: string (service location)
-	//   - project: string (GCP project ID)
-	//   - uri: string (service URL)
-	//   - template: object (service template configuration)
-	//
-	// gcp:secretmanager/secret:Secret
-	//   - secretId: string (secret identifier)
-	//   - project: string (GCP project ID)
-	//   - labels: map[string]string (secret labels)
-	//
-	// gcp:secretmanager/secretIamMember:SecretIamMember
-	//   - secretId: string (secret identifier)
-	//   - role: string (IAM role)
-	//   - member: string (principal to bind)
-	//
-	// gcp:apigateway/api:Api
-	//   - apiId: string (API identifier)
-	//   - name: string (API name)
-	//   - project: string (GCP project ID)
-	//   - displayName: string (human-readable name)
-	//
-	// gcp:apigateway/apiConfig:ApiConfig
-	//   - apiConfigId: string (API config identifier)
-	//   - name: string (API config name)
-	//   - api: string (API reference)
-	//   - project: string (GCP project ID)
-	//
-	// gcp:apigateway/gateway:Gateway
-	//   - name: string (gateway name)
-	//   - region: string (gateway region)
-	//   - project: string (GCP project ID)
-	//   - apiConfig: string (API config reference)
-	//   - defaultHostname: string (gateway hostname)
 	outputs := map[string]interface{}{}
 	for k, v := range args.Inputs {
 		outputs[string(k)] = v
 	}
 
+	// Mock resource outputs for each resource type:
 	switch args.TypeToken {
 	case "gcp:serviceaccount/account:Account":
 		outputs["name"] = args.Name
@@ -149,55 +106,54 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 		}
 	// Expected outputs: name, project, region, networkEndpointType, serverlessDeployment/cloudRun
 	case "gcp:compute/globalAddress:GlobalAddress":
-		// Pass through all input values
-		for k, v := range args.Inputs {
-			outputs[string(k)] = v
-		}
-		// Expected outputs: name, project, address, description, ipVersion
+		// Add mock values for key outputs
+		outputs["address"] = "34.102.136.185"
+		outputs["creationTimestamp"] = "2023-01-01T00:00:00.000-00:00"
+		outputs["labelFingerprint"] = "42WmSpB8rSM="
+		outputs["selfLink"] = "https://www.googleapis.com/compute/v1/projects/" + testProjectName + "/global/addresses/" + args.Name
+		// Expected outputs: name, project, address, description, ipVersion, creationTimestamp, labelFingerprint, selfLink
 	case "gcp:compute/globalForwardingRule:GlobalForwardingRule":
-		// Pass through all input values
-		for k, v := range args.Inputs {
-			outputs[string(k)] = v
-		}
-		outputs["ipAddress"] = "34.102.136.185"
 		// Expected outputs: name, project, description, portRange, loadBalancingScheme, ipAddress, target
 	case "gcp:compute/targetHttpsProxy:TargetHttpsProxy":
-		// Pass through all input values
-		for k, v := range args.Inputs {
-			outputs[string(k)] = v
-		}
 		// Expected outputs: name, project, description, urlMap, sslCertificates
 	case "gcp:compute/backendService:BackendService":
-		// Pass through all input values
-		for k, v := range args.Inputs {
-			outputs[string(k)] = v
-		}
 		// Expected outputs: name, project, description, protocol, portName, timeoutSec, healthChecks
 	case "gcp:compute/urlMap:URLMap":
-		// Pass through all input values
-		for k, v := range args.Inputs {
-			outputs[string(k)] = v
-		}
 		// Expected outputs: name, project, description, defaultService
 	case "gcp:compute/subnetwork:Subnetwork":
-		// Pass through all input values
-		for k, v := range args.Inputs {
-			outputs[string(k)] = v
-		}
 		// Expected outputs: name, project, region, description, purpose, network, ipCidrRange, role
 	case "gcp:compute/securityPolicy:SecurityPolicy":
-		// Pass through all input values
-		for k, v := range args.Inputs {
-			outputs[string(k)] = v
-		}
 		// Expected outputs: name, project, description, type
+	case "gcp:dns/recordSet:RecordSet":
+		// Expected outputs: name, managedZone, type, ttl, rrdatas, project
 	}
 
 	return args.Name + "_id", resource.NewPropertyMapFromMap(outputs), nil
 }
 
-func (m *fullstackMocks) Call(_ pulumi.MockCallArgs) (resource.PropertyMap, error) {
-	return resource.PropertyMap{}, nil
+func (m *fullstackMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
+	switch args.Token {
+	case "gcp:dns/getManagedZones:getManagedZones":
+		// Mock DNS zones lookup
+		outputs := map[string]interface{}{
+			"managedZones": []map[string]interface{}{
+				{
+					"description":   "Example DNS zone",
+					"dnsName":       "example.com.",
+					"id":            "example-com-id",
+					"managedZoneId": "example-com-id",
+					"name":          "example-com",
+					"nameServers":   []string{"ns-cloud-a1.googledomains.com.", "ns-cloud-a2.googledomains.com."},
+					"project":       testProjectName,
+					"visibility":    "public",
+				},
+			},
+		}
+
+		return resource.NewPropertyMapFromMap(outputs), nil
+	default:
+		return resource.PropertyMap{}, nil
+	}
 }
 
 func TestNewFullStack_HappyPath(t *testing.T) {
@@ -815,7 +771,38 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 		})
 		assert.Equal(t, "test-fullstack-gateway", <-negResourceCh, "NEG resource should match the API Gateway ID")
 
-		// Verify global IP address configuration
+		return nil
+	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
+
+	if err != nil {
+		t.Fatalf("Pulumi WithMocks failed: %v", err)
+	}
+}
+
+func TestNewFullStack_WithGlobalInternetLoadBalancer(t *testing.T) {
+	t.Parallel()
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		args := &gcp.FullStackArgs{
+			Project:       testProjectName,
+			Region:        testRegion,
+			BackendName:   backendServiceName,
+			BackendImage:  pulumi.String("gcr.io/test-project/backend:latest"),
+			FrontendName:  frontendServiceName,
+			FrontendImage: pulumi.String("gcr.io/test-project/frontend:latest"),
+			Backend: &gcp.BackendArgs{
+				InstanceArgs: &gcp.InstanceArgs{},
+			},
+			Frontend: &gcp.FrontendArgs{
+				InstanceArgs: &gcp.InstanceArgs{},
+			},
+			Network: &gcp.NetworkArgs{
+				DomainURL: "myapp.example.com",
+			},
+		}
+
+		fullstack, err := gcp.NewFullStack(ctx, "test-fullstack", args)
+		require.NoError(t, err)
 
 		// Verify global forwarding rule configuration
 		globalForwardingRule := fullstack.GetGlobalForwardingRule()
@@ -830,8 +817,61 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 			return nil
 		})
 		ipAddress := <-forwardingRuleIPCh
-		assert.NotEmpty(t, "Forwarding rule IP address should not be empty", ipAddress)
-		assert.NotEqual(t, ipAddress, "", "Forwarding rule IP address should not be null")
+		assert.NotEmpty(t, ipAddress, "Forwarding rule IP address should not be empty")
+
+		// Verify certificate configuration (simplified)
+		certificate := fullstack.GetCertificate()
+		require.NotNil(t, certificate, "Certificate should not be nil")
+
+		// Assert certificate domains match the provided domain
+		certificateDomainsCh := make(chan []string, 1)
+		defer close(certificateDomainsCh)
+		certificate.Managed.ApplyT(func(managed *compute.ManagedSslCertificateManaged) error {
+			certificateDomainsCh <- managed.Domains
+
+			return nil
+		})
+		domains := <-certificateDomainsCh
+		require.NotNil(t, domains, "Certificate domains should not be nil")
+		assert.Len(t, domains, 1, "Certificate should have exactly one domain")
+		assert.Equal(t, "myapp.example.com", domains[0], "Certificate domain should match the provided domain")
+
+		// Verify DNS record configuration
+		dnsRecord := fullstack.GetDNSRecord()
+		require.NotNil(t, dnsRecord, "DNS record should not be nil")
+
+		// Assert DNS record name matches the provided domain
+		dnsRecordNameCh := make(chan string, 1)
+		defer close(dnsRecordNameCh)
+		dnsRecord.Name.ApplyT(func(name string) error {
+			dnsRecordNameCh <- name
+
+			return nil
+		})
+		assert.Equal(t, "myapp.example.com", <-dnsRecordNameCh, "DNS record name should match the provided domain")
+
+		// Assert DNS record type is A
+		dnsRecordTypeCh := make(chan string, 1)
+		defer close(dnsRecordTypeCh)
+		dnsRecord.Type.ApplyT(func(recordType string) error {
+			dnsRecordTypeCh <- recordType
+
+			return nil
+		})
+		assert.Equal(t, "A", <-dnsRecordTypeCh, "DNS record type should be A")
+
+		// Assert DNS record IP address matches the forwarding rule IP address
+		dnsRecordRrdatasCh := make(chan []string, 1)
+		defer close(dnsRecordRrdatasCh)
+		dnsRecord.Rrdatas.ApplyT(func(rrdatas []string) error {
+			dnsRecordRrdatasCh <- rrdatas
+
+			return nil
+		})
+		dnsRecordIPs := <-dnsRecordRrdatasCh
+		require.NotNil(t, dnsRecordIPs, "DNS record IP addresses should not be nil")
+		assert.Len(t, dnsRecordIPs, 1, "DNS record should have exactly one IP address")
+		assert.Equal(t, ipAddress, dnsRecordIPs[0], "DNS record IP address should match the forwarding rule IP address")
 
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))

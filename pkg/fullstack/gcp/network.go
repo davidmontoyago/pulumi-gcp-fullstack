@@ -2,9 +2,11 @@ package gcp
 
 import (
 	"fmt"
+	"strings"
 
 	apigateway "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/apigateway"
 	compute "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/compute"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/dns"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/projects"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -99,14 +101,14 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, args *Networ
 	return err
 }
 
-func (f *FullStack) newHTTPSProxy(ctx *pulumi.Context, serviceName, domainName, project string, privateTraffic bool, backendURLMap *compute.URLMap) error {
+func (f *FullStack) newHTTPSProxy(ctx *pulumi.Context, serviceName, domainURL, project string, privateTraffic bool, backendURLMap *compute.URLMap) error {
 	tlsCertName := f.newResourceName(serviceName, "tls-cert", 100)
 	certificate, err := compute.NewManagedSslCertificate(ctx, tlsCertName, &compute.ManagedSslCertificateArgs{
 		Description: pulumi.String(fmt.Sprintf("TLS cert for %s", serviceName)),
 		Project:     pulumi.String(project),
 		Managed: &compute.ManagedSslCertificateManagedArgs{
 			Domains: pulumi.StringArray{
-				pulumi.String(domainName),
+				pulumi.String(domainURL),
 			},
 		},
 	})
@@ -133,7 +135,7 @@ func (f *FullStack) newHTTPSProxy(ctx *pulumi.Context, serviceName, domainName, 
 	ctx.Export("load_balancer_https_proxy_uri", httpsProxy.SelfLink)
 
 	if !privateTraffic {
-		err = f.createGlobalInternetEntrypoint(ctx, serviceName, project, httpsProxy)
+		err = f.createGlobalInternetEntrypoint(ctx, serviceName, domainURL, project, httpsProxy)
 		if err != nil {
 			return err
 		}
@@ -245,7 +247,7 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context, policy *compute.Securi
 }
 
 // createGlobalInternetEntrypoint creates a global IP address and forwarding rule for external traffic
-func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceName, project string, httpsProxy *compute.TargetHttpsProxy) error {
+func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceName, domainURL, project string, httpsProxy *compute.TargetHttpsProxy) error {
 	ipAddressName := f.newResourceName(serviceName, "global-ip", 100)
 	ipAddress, err := compute.NewGlobalAddress(ctx, ipAddressName, &compute.GlobalAddressArgs{
 		Project:     pulumi.String(project),
@@ -279,5 +281,65 @@ func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceN
 	// Store the forwarding rule in the FullStack struct
 	f.globalForwardingRule = trafficRule
 
+	// Look up the DNS managed zone for the domain
+	managedZoneName, err := f.lookupDNSZone(ctx, domainURL, project)
+	if err != nil {
+		return err
+	}
+
+	// create a DNS record for the global IP address
+	dnsRecordName := f.newResourceName(serviceName, "dns-record", 100)
+	dnsRecord, err := dns.NewRecordSet(ctx, dnsRecordName, &dns.RecordSetArgs{
+		ManagedZone: pulumi.String(managedZoneName),
+		Name:        pulumi.String(domainURL),
+		Type:        pulumi.String("A"),
+		Ttl:         pulumi.Int(3600),
+		Rrdatas:     pulumi.StringArray{ipAddress.Address},
+	})
+	if err != nil {
+		return err
+	}
+	ctx.Export("load_balancer_dns_record_id", dnsRecord.ID())
+	ctx.Export("load_balancer_dns_record_ip_address", dnsRecord.Rrdatas)
+
+	// Store the DNS record in the FullStack struct
+	f.dnsRecord = dnsRecord
+
 	return nil
+}
+
+// lookupDNSZone finds the appropriate DNS managed zone for the given domain
+func (f *FullStack) lookupDNSZone(ctx *pulumi.Context, domainURL, project string) (string, error) {
+	// Get all managed zones in the project
+	managedZones, err := dns.GetManagedZones(ctx, &dns.GetManagedZonesArgs{
+		Project: &project,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to get managed zones: %w", err)
+	}
+
+	// Find the managed zone that matches our domain
+	var targetZoneName string
+	var targetZoneDNSName string
+	for _, zone := range managedZones.ManagedZones {
+		// Check if the domain URL ends with the zone's DNS name (with or without trailing dot)
+		zoneDNSName := strings.TrimSuffix(zone.DnsName, ".")
+		if strings.HasSuffix(domainURL, zoneDNSName) {
+			// If we find multiple matches, prefer the most specific one (longest DNS name)
+			if targetZoneName == "" || len(zone.DnsName) > len(targetZoneDNSName) {
+				if zone.Name != nil {
+					targetZoneName = *zone.Name
+				}
+				targetZoneDNSName = zone.DnsName
+			}
+		}
+	}
+
+	if targetZoneName == "" {
+		return "", fmt.Errorf("no managed zone found for domain %s in project %s", domainURL, project)
+	}
+
+	_ = ctx.Log.Debug(fmt.Sprintf("Found managed zone %s for domain %s", targetZoneName, domainURL), nil)
+
+	return targetZoneName, nil
 }
