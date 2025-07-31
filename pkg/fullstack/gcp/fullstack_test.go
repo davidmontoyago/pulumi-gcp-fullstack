@@ -682,8 +682,8 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 		require.NoError(t, err, "Decoded content should be valid JSON")
 
 		// Get the paths object
-		pathsObj, ok := openAPISpec["paths"].(map[string]interface{})
-		require.True(t, ok, "Paths should be a map[string]interface{}")
+		pathsObj, found := openAPISpec["paths"].(map[string]interface{})
+		require.True(t, found, "Paths should be a map[string]interface{}")
 		require.NotEmpty(t, pathsObj, "Paths object should not be empty")
 
 		// Get the first and second path keys
@@ -702,6 +702,34 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 
 		// Assert that the second path key matches "/ui/{proxy}"
 		assert.Equal(t, "/ui/{proxy}", pathKeys[1], "Second path key should match expected value")
+
+		// Verify that the "address" attribute of "x-google-backend" object matches the backend Instance URL
+		// Get the first path (API path) and check its GET operation's x-google-backend configuration
+		apiPathObj, apiPathFound := pathsObj["/api/v1/{proxy}"].(map[string]interface{})
+		require.True(t, apiPathFound, "API path object should be a map[string]interface{}")
+
+		getOperation, getOpFound := apiPathObj["get"].(map[string]interface{})
+		require.True(t, getOpFound, "GET operation should be a map[string]interface{}")
+
+		xGoogleBackend, backendFound := getOperation["x-google-backend"].(map[string]interface{})
+		require.True(t, backendFound, "x-google-backend should be a map[string]interface{}")
+
+		backendAddress, addressFound := xGoogleBackend["address"].(string)
+		require.True(t, addressFound, "address should be a string")
+
+		// Get the backend service URL to compare against
+		backendServiceURLCh := make(chan string, 1)
+		defer close(backendServiceURLCh)
+		backendService.Uri.ApplyT(func(uri string) error {
+			backendServiceURLCh <- uri
+
+			return nil
+		})
+		backendServiceURL := <-backendServiceURLCh
+
+		// The expected address should be: backendServiceURL + "/api/v1" + "/{proxy}"
+		expectedAddress := backendServiceURL + "/api/v1/{proxy}"
+		assert.Equal(t, expectedAddress, backendAddress, "Backend address in x-google-backend should match the backend service URL with path")
 
 		// Verify IAM member configurations
 		backendIamMember := fullstack.GetBackendGatewayIamMember()

@@ -278,10 +278,7 @@ func (f *FullStack) newResourceName(serviceName, resourceType string, maxLength 
 // If the provided args has a nil Config, it applies the default config.
 func applyDefaultGatewayArgs(existingArgs *APIGatewayArgs, backendServiceURL, frontendServiceURL pulumi.StringOutput) *APIGatewayArgs {
 	defaultGatewayArgs := &APIGatewayArgs{
-		Config: &APIConfigArgs{
-			BackendServiceURL:  backendServiceURL,
-			FrontendServiceURL: frontendServiceURL,
-		},
+		Config: &APIConfigArgs{},
 	}
 
 	var gatewayArgs *APIGatewayArgs
@@ -293,10 +290,11 @@ func applyDefaultGatewayArgs(existingArgs *APIGatewayArgs, backendServiceURL, fr
 
 	if gatewayArgs.Config == nil {
 		gatewayArgs.Config = defaultGatewayArgs.Config
-	} else {
-		gatewayArgs.Config.BackendServiceURL = backendServiceURL
-		gatewayArgs.Config.FrontendServiceURL = frontendServiceURL
 	}
+
+	// Ignore any value given and set always to the services URLs
+	gatewayArgs.Config.BackendServiceURL = backendServiceURL
+	gatewayArgs.Config.FrontendServiceURL = frontendServiceURL
 
 	if gatewayArgs.Name == "" {
 		gatewayArgs.Name = "gateway"

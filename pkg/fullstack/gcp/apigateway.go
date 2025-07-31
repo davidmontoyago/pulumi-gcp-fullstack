@@ -34,9 +34,9 @@ type APIPathArgs struct {
 
 // APIConfigArgs contains configuration for API Gateway API Config
 type APIConfigArgs struct {
-	// Backend service URL (Cloud Run service URL). Required.
+	// Backend service URL. Defaults to the backend Cloud Run service URL.
 	BackendServiceURL pulumi.StringOutput
-	// Frontend service URL (Cloud Run service URL). Required for dual routing.
+	// Frontend service URL. Defaults to the backend Cloud Run service URL.
 	FrontendServiceURL pulumi.StringOutput
 	// Backend API paths. Defaults to ["/api/v1"].
 	BackendAPIPaths []*APIPathArgs
