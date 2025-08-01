@@ -727,8 +727,8 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 		})
 		backendServiceURL := <-backendServiceURLCh
 
-		// The expected address should be: backendServiceURL + "/api/v1" + "/{proxy}"
-		expectedAddress := backendServiceURL + "/api/v1/{proxy}"
+		// The expected address should be: backendServiceURL + "/api/v1" (without /{proxy} since we use APPEND_PATH_TO_ADDRESS)
+		expectedAddress := backendServiceURL + "/api/v1"
 		assert.Equal(t, expectedAddress, backendAddress, "Backend address in x-google-backend should match the backend service URL with path")
 
 		// Verify IAM member configurations

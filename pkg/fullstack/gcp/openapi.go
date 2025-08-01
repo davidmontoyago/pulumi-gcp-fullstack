@@ -141,8 +141,8 @@ func createAPIOperation(operationID, method, serviceURI, upstreamPath string) *o
 		Responses: openapi3.NewResponses(),
 		Extensions: map[string]interface{}{
 			"x-google-backend": map[string]interface{}{
-				"address":         serviceURI + upstreamPath + "/{proxy}",
-				"pathTranslation": "CONSTANT_ADDRESS",
+				"address":         serviceURI + upstreamPath,
+				"pathTranslation": "APPEND_PATH_TO_ADDRESS",
 			},
 		},
 	}
@@ -224,8 +224,8 @@ func createUIOperation(operationID, serviceURI, upstreamPath string) *openapi3.O
 		Responses: openapi3.NewResponses(),
 		Extensions: map[string]interface{}{
 			"x-google-backend": map[string]interface{}{
-				"address":         serviceURI + upstreamPath + "/{proxy}",
-				"pathTranslation": "CONSTANT_ADDRESS",
+				"address":         serviceURI + upstreamPath,
+				"pathTranslation": "APPEND_PATH_TO_ADDRESS",
 			},
 		},
 	}
@@ -274,8 +274,8 @@ func createCORSOperation(operationID, serviceURI, upstreamPath string) *openapi3
 		Responses: openapi3.NewResponses(),
 		Extensions: map[string]interface{}{
 			"x-google-backend": map[string]interface{}{
-				"address":         serviceURI + upstreamPath + "/{proxy}",
-				"pathTranslation": "CONSTANT_ADDRESS",
+				"address":         serviceURI + upstreamPath,
+				"pathTranslation": "APPEND_PATH_TO_ADDRESS",
 			},
 		},
 	}
