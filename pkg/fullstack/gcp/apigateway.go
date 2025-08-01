@@ -32,16 +32,30 @@ type APIPathArgs struct {
 	UpstreamPath string
 }
 
+// JWTAuth contains JWT authentication configuration for upstream services
+type JWTAuth struct {
+	// JWT issuer (iss claim). Required for JWT validation.
+	Issuer string
+	// JWKS URI for JWT token validation. Required for JWT validation.
+	JwksURI string
+}
+
+// Upstream contains configuration for an upstream service
+type Upstream struct {
+	// Service URL for the upstream service.
+	ServiceURL pulumi.StringOutput
+	// API paths configuration for the upstream service.
+	APIPaths []*APIPathArgs
+	// JWT authentication configuration. Optional.
+	JWTAuth *JWTAuth
+}
+
 // APIConfigArgs contains configuration for API Gateway API Config
 type APIConfigArgs struct {
-	// Backend service URL. Defaults to the backend Cloud Run service URL.
-	BackendServiceURL pulumi.StringOutput
-	// Frontend service URL. Defaults to the backend Cloud Run service URL.
-	FrontendServiceURL pulumi.StringOutput
-	// Backend API paths. Defaults to ["/api/v1"].
-	BackendAPIPaths []*APIPathArgs
-	// Frontend API paths. Defaults to ["/ui/v1"].
-	FrontendAPIPaths []*APIPathArgs
+	// Backend upstream configuration.
+	Backend *Upstream
+	// Frontend upstream configuration.
+	Frontend *Upstream
 	// Whether to enable CORS. Defaults to true.
 	EnableCORS bool
 	// CORS allowed origins. Defaults to ["*"].
@@ -201,7 +215,7 @@ func (f *FullStack) grantAPIGatewayInvokerPermissions(ctx *pulumi.Context, apiGa
 // createAPIConfig configures the API gateway, and sets the
 // Gateway service account email used to invoke the backend and frontend.
 // The OpenAPI spec document is responsible for mapping paths to the backend and
-// frontend services URLs. See BackendServiceURL and FrontendServiceURL.
+// frontend services URLs. See Backend.ServiceURL and Frontend.ServiceURL.
 func (f *FullStack) createAPIConfig(ctx *pulumi.Context, apiID string, configArgs *APIConfigArgs, api *apigateway.Api, gatewayServiceAccountEmail pulumi.StringOutput) (*apigateway.ApiConfig, error) {
 	if configArgs == nil {
 		return nil, fmt.Errorf("APIConfigArgs is required")
@@ -262,7 +276,7 @@ func (f *FullStack) createAPIConfig(ctx *pulumi.Context, apiID string, configArg
 // See:
 // https://cloud.google.com/api-gateway/docs/reference/rest/v1/projects.locations.apis.configs#OpenApiDocument
 func (f *FullStack) generateOpenAPISpec(ctx *pulumi.Context, configArgs *APIConfigArgs) pulumi.StringOutput {
-	openAPISpec := pulumi.All(configArgs.BackendServiceURL, configArgs.FrontendServiceURL).ApplyT(func(args []interface{}) (string, error) {
+	openAPISpec := pulumi.All(configArgs.Backend.ServiceURL, configArgs.Frontend.ServiceURL).ApplyT(func(args []interface{}) (string, error) {
 
 		backendURL := args[0].(string)
 		frontendURL := args[1].(string)

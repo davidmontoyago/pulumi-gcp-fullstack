@@ -277,24 +277,28 @@ func (f *FullStack) newResourceName(serviceName, resourceType string, maxLength 
 // If the provided args is nil, it returns a new instance with default config.
 // If the provided args has a nil Config, it applies the default config.
 func applyDefaultGatewayArgs(existingArgs *APIGatewayArgs, backendServiceURL, frontendServiceURL pulumi.StringOutput) *APIGatewayArgs {
-	defaultGatewayArgs := &APIGatewayArgs{
-		Config: &APIConfigArgs{},
-	}
-
 	var gatewayArgs *APIGatewayArgs
 	if existingArgs == nil {
-		gatewayArgs = defaultGatewayArgs
+		gatewayArgs = &APIGatewayArgs{}
 	} else {
 		gatewayArgs = existingArgs
 	}
 
 	if gatewayArgs.Config == nil {
-		gatewayArgs.Config = defaultGatewayArgs.Config
+		gatewayArgs.Config = &APIConfigArgs{}
+	}
+
+	// Initialize Backend and Frontend if they are nil
+	if gatewayArgs.Config.Backend == nil {
+		gatewayArgs.Config.Backend = &Upstream{}
+	}
+	if gatewayArgs.Config.Frontend == nil {
+		gatewayArgs.Config.Frontend = &Upstream{}
 	}
 
 	// Ignore any value given and set always to the services URLs
-	gatewayArgs.Config.BackendServiceURL = backendServiceURL
-	gatewayArgs.Config.FrontendServiceURL = frontendServiceURL
+	gatewayArgs.Config.Backend.ServiceURL = backendServiceURL
+	gatewayArgs.Config.Frontend.ServiceURL = frontendServiceURL
 
 	if gatewayArgs.Name == "" {
 		gatewayArgs.Name = "gateway"

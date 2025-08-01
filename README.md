@@ -132,12 +132,25 @@ The API Gateway uses a Serverless NEG (Network Endpoint Group) to integrate with
 
 #### APIConfigArgs
 - **OpenAPISpecPath**: Path to OpenAPI specification file (defaults to "/openapi.yaml")
-- **BackendServiceURL**: Cloud Run backend service URL (automatically configured)
-- **FrontendServiceURL**: Cloud Run frontend service URL (automatically configured)
+- **Backend**: Backend upstream configuration
+- **Frontend**: Frontend upstream configuration
 - **EnableCORS**: Whether to enable CORS support (defaults to true)
 - **CORSAllowedOrigins**: List of allowed origins for CORS (defaults to ["*"])
 - **CORSAllowedMethods**: List of allowed HTTP methods for CORS (defaults to ["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 - **CORSAllowedHeaders**: List of allowed headers for CORS (defaults to ["*"])
+
+#### Upstream
+- **ServiceURL**: Cloud Run service URL (automatically configured)
+- **APIPaths**: List of API path configurations
+- **JWTAuth**: JWT authentication configuration (optional)
+
+#### APIPathArgs
+- **Path**: Path to match in the public API (e.g., "/api/v1")
+- **UpstreamPath**: Optional upstream path (defaults to Path if not specified)
+
+#### JWTAuth
+- **Issuer**: JWT issuer (iss claim) for token validation
+- **JwksURI**: JWKS URI for JWT token validation
 
 Resource names are automatically generated using the backend service name as a base, ensuring proper prefixing and length limits.
 
