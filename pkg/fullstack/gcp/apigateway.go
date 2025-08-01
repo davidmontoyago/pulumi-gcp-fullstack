@@ -276,12 +276,22 @@ func (f *FullStack) createAPIConfig(ctx *pulumi.Context, apiID string, configArg
 // See:
 // https://cloud.google.com/api-gateway/docs/reference/rest/v1/projects.locations.apis.configs#OpenApiDocument
 func (f *FullStack) generateOpenAPISpec(ctx *pulumi.Context, configArgs *APIConfigArgs) pulumi.StringOutput {
-	openAPISpec := pulumi.All(configArgs.Backend.ServiceURL, configArgs.Frontend.ServiceURL).ApplyT(func(args []interface{}) (string, error) {
+	openAPISpec := pulumi.All(
+		configArgs.Backend.ServiceURL,
+		configArgs.Frontend.ServiceURL,
+		f.frontendService.Template.ServiceAccount(),
+	).ApplyT(func(args []interface{}) (string, error) {
 
 		backendURL := args[0].(string)
 		frontendURL := args[1].(string)
 
-		v3Spec := newOpenAPISpec(backendURL, frontendURL, configArgs)
+		// If JWT is enabled, set config defaults
+		frontendServiceAccountEmailPtr := args[2].(*string)
+		if frontendServiceAccountEmailPtr != nil {
+			applyJWTConfigDefaults(configArgs.Backend.JWTAuth, *frontendServiceAccountEmailPtr)
+		}
+
+		v3Spec := newOpenAPISpec(backendURL, frontendURL, configArgs, configArgs.Backend.JWTAuth)
 
 		// Debug: Print v3 spec
 		v3JSON, err := v3Spec.MarshalJSON()
@@ -314,4 +324,16 @@ func (f *FullStack) generateOpenAPISpec(ctx *pulumi.Context, configArgs *APIConf
 	}).(pulumi.StringOutput)
 
 	return openAPISpec
+}
+
+// applyJWTConfigDefaults applies default JWT configuration values for service-to-service authentication
+func applyJWTConfigDefaults(jwtAuth *JWTAuth, frontendServiceAccountEmail string) {
+	if jwtAuth != nil {
+		if jwtAuth.Issuer == "" {
+			jwtAuth.Issuer = frontendServiceAccountEmail
+		}
+		if jwtAuth.JwksURI == "" {
+			jwtAuth.JwksURI = fmt.Sprintf("https://www.googleapis.com/service_accounts/v1/metadata/x509/%s", frontendServiceAccountEmail)
+		}
+	}
 }

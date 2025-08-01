@@ -3,6 +3,7 @@ package gcp_test
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"testing"
 
@@ -210,6 +211,12 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 					Name: "gateway",
 					Config: &gcp.APIConfigArgs{
 						EnableCORS: true,
+						Backend: &gcp.Upstream{
+							JWTAuth: &gcp.JWTAuth{
+								// JWT authentication will be automatically configured
+								// with the frontend service account email and JWKS URI
+							},
+						},
 					},
 				},
 			},
@@ -731,6 +738,11 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 		expectedAddress := backendServiceURL + "/api/v1"
 		assert.Equal(t, expectedAddress, backendAddress, "Backend address in x-google-backend should match the backend service URL with path")
 
+		// Verify JWT authentication is NOT configured
+		// Check that security definitions are not present (JWT should not be enabled by default)
+		_, securityDefinitionsFound := openAPISpec["securityDefinitions"]
+		assert.False(t, securityDefinitionsFound, "Security definitions should not be present when JWT is not enabled")
+
 		// Verify IAM member configurations
 		backendIamMember := fullstack.GetBackendGatewayIamMember()
 		require.NotNil(t, backendIamMember, "Backend IAM member should not be nil")
@@ -934,6 +946,194 @@ func TestNewFullStack_WithGlobalInternetLoadBalancer(t *testing.T) {
 		require.NotNil(t, dnsRecordIPs, "DNS record IP addresses should not be nil")
 		assert.Len(t, dnsRecordIPs, 1, "DNS record should have exactly one IP address")
 		assert.Equal(t, ipAddress, dnsRecordIPs[0], "DNS record IP address should match the forwarding rule IP address")
+
+		return nil
+	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
+
+	if err != nil {
+		t.Fatalf("Pulumi WithMocks failed: %v", err)
+	}
+}
+
+func TestNewFullStack_WithBackendJWTAuthentication(t *testing.T) {
+	t.Parallel()
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		args := &gcp.FullStackArgs{
+			Project:       testProjectName,
+			Region:        testRegion,
+			BackendName:   backendServiceName,
+			BackendImage:  pulumi.String("gcr.io/test-project/backend:latest"),
+			FrontendName:  frontendServiceName,
+			FrontendImage: pulumi.String("gcr.io/test-project/frontend:latest"),
+			Backend: &gcp.BackendArgs{
+				InstanceArgs: &gcp.InstanceArgs{},
+			},
+			Frontend: &gcp.FrontendArgs{
+				InstanceArgs: &gcp.InstanceArgs{},
+			},
+			Network: &gcp.NetworkArgs{
+				DomainURL: "myapp.example.com",
+				APIGateway: &gcp.APIGatewayArgs{
+					Name: "gateway",
+					Config: &gcp.APIConfigArgs{
+						EnableCORS: true,
+						Backend: &gcp.Upstream{
+							JWTAuth: &gcp.JWTAuth{
+								// JWT authentication will be automatically configured
+								// with the frontend service account email and JWKS URI
+							},
+						},
+					},
+				},
+			},
+		}
+
+		fullstack, err := gcp.NewFullStack(ctx, "test-fullstack", args)
+		require.NoError(t, err)
+
+		// Verify API Gateway configuration
+		apiGateway := fullstack.GetAPIGateway()
+		require.NotNil(t, apiGateway, "API Gateway should not be nil")
+
+		// Verify API Config properties
+		apiConfig := fullstack.GetAPIConfig()
+		require.NotNil(t, apiConfig, "API Config should not be nil")
+
+		// Assert API Config has OpenAPI documents
+		openapiDocumentsCh := make(chan []apigateway.ApiConfigOpenapiDocument, 1)
+		defer close(openapiDocumentsCh)
+		apiConfig.OpenapiDocuments.ApplyT(func(documents []apigateway.ApiConfigOpenapiDocument) error {
+			openapiDocumentsCh <- documents
+
+			return nil
+		})
+		openapiDocuments := <-openapiDocumentsCh
+		require.NotNil(t, openapiDocuments, "OpenAPI documents should not be nil")
+		assert.Len(t, openapiDocuments, 1, "Should have exactly one OpenAPI document")
+
+		// Assert the OpenAPI document contents can be decoded from base64
+		document := openapiDocuments[0]
+		require.NotNil(t, document.Document, "Document should not be nil")
+
+		base64Contents := document.Document.Contents
+		require.NotEmpty(t, base64Contents, "Document contents should not be empty")
+
+		// Verify the contents can be decoded from base64
+		decodedBytes, err := base64.StdEncoding.DecodeString(base64Contents)
+		require.NoError(t, err, "Document contents should be valid base64")
+		require.NotEmpty(t, decodedBytes, "Decoded contents should not be empty")
+
+		// Verify the decoded content is valid JSON/OpenAPI 2.0 spec
+		decodedContent := string(decodedBytes)
+		assert.Contains(t, decodedContent, "\"swagger\":\"2.0\"", "Decoded content should contain OpenAPI 2.0 version")
+		assert.Contains(t, decodedContent, "\"paths\":", "Decoded content should contain paths section")
+		assert.Contains(t, decodedContent, "\"info\":", "Decoded content should contain info section")
+
+		// Parse the decoded JSON and verify JWT security configuration
+		var openAPISpec map[string]interface{}
+		err = json.Unmarshal(decodedBytes, &openAPISpec)
+		require.NoError(t, err, "Decoded content should be valid JSON")
+
+		// Verify security schemes are configured
+		securityDefinitions, found := openAPISpec["securityDefinitions"].(map[string]interface{})
+		require.True(t, found, "Security definitions should be present")
+		require.NotEmpty(t, securityDefinitions, "Security definitions should not be empty")
+
+		// Verify JWT security scheme is configured
+		jwtScheme, jwtFound := securityDefinitions["JWT"].(map[string]interface{})
+		require.True(t, jwtFound, "JWT security scheme should be present")
+		require.NotEmpty(t, jwtScheme, "JWT security scheme should not be empty")
+
+		// Verify JWT scheme type is "apiKey" (converted from OpenAPI 3.0 http/bearer)
+		jwtType, typeFound := jwtScheme["type"].(string)
+		require.True(t, typeFound, "JWT scheme type should be present")
+		assert.Equal(t, "apiKey", jwtType, "JWT scheme type should be apiKey")
+
+		// Verify JWT scheme name is set (for apiKey type)
+		jwtName, nameFound := jwtScheme["name"].(string)
+		require.True(t, nameFound, "JWT scheme name should be present")
+		assert.Equal(t, "Authorization", jwtName, "JWT scheme name should be Authorization")
+
+		// Verify JWT scheme in is "header" (for apiKey type)
+		jwtIn, inFound := jwtScheme["in"].(string)
+		require.True(t, inFound, "JWT scheme in should be present")
+		assert.Equal(t, "header", jwtIn, "JWT scheme in should be header")
+
+		// Verify x-google-issuer is set to the expected default value
+		// The default issuer should be the frontend service account email
+		frontendService := fullstack.GetFrontendService()
+		require.NotNil(t, frontendService, "Frontend service should not be nil")
+
+		frontendServiceAccountCh := make(chan string, 1)
+		defer close(frontendServiceAccountCh)
+		frontendService.Template.ServiceAccount().ApplyT(func(serviceAccount *string) error {
+			if serviceAccount != nil {
+				frontendServiceAccountCh <- *serviceAccount
+			} else {
+				frontendServiceAccountCh <- ""
+			}
+
+			return nil
+		})
+		expectedIssuer := <-frontendServiceAccountCh
+		require.NotEmpty(t, expectedIssuer, "Frontend service account should not be empty")
+
+		// Verify x-google-jwks_uri is set to the expected default value
+		expectedJwksURI := fmt.Sprintf("https://www.googleapis.com/service_accounts/v1/metadata/x509/%s", expectedIssuer)
+
+		// Get the x-google-issuer and x-google-jwks_uri from the JWT scheme
+		xGoogleIssuer, issuerFound := jwtScheme["x-google-issuer"].(string)
+		require.True(t, issuerFound, "x-google-issuer should be present")
+		assert.Equal(t, expectedIssuer, xGoogleIssuer, "x-google-issuer should match the frontend service account email")
+
+		xGoogleJwksURI, jwksURIFound := jwtScheme["x-google-jwks_uri"].(string)
+		require.True(t, jwksURIFound, "x-google-jwks_uri should be present")
+		assert.Equal(t, expectedJwksURI, xGoogleJwksURI, "x-google-jwks_uri should match the expected JWKS URI")
+
+		// Verify that API paths require JWT authentication
+		pathsObj, pathsFound := openAPISpec["paths"].(map[string]interface{})
+		require.True(t, pathsFound, "Paths should be a map[string]interface{}")
+		require.NotEmpty(t, pathsObj, "Paths object should not be empty")
+
+		// Check that the API path requires JWT security
+		apiPathObj, apiPathFound := pathsObj["/api/v1/{proxy}"].(map[string]interface{})
+		require.True(t, apiPathFound, "API path object should be a map[string]interface{}")
+
+		// Verify GET operation has JWT security requirement
+		getOperation, getOpFound := apiPathObj["get"].(map[string]interface{})
+		require.True(t, getOpFound, "GET operation should be a map[string]interface{}")
+
+		getSecurity, getSecurityFound := getOperation["security"].([]interface{})
+		require.True(t, getSecurityFound, "GET operation should have security requirements")
+		require.Len(t, getSecurity, 1, "GET operation should have exactly one security requirement")
+
+		getSecurityReq, getSecurityReqFound := getSecurity[0].(map[string]interface{})
+		require.True(t, getSecurityReqFound, "GET security requirement should be a map[string]interface{}")
+		assert.Contains(t, getSecurityReq, "JWT", "GET operation should require JWT authentication")
+
+		// Verify POST operation has JWT security requirement
+		postOperation, postOpFound := apiPathObj["post"].(map[string]interface{})
+		require.True(t, postOpFound, "POST operation should be a map[string]interface{}")
+
+		postSecurity, postSecurityFound := postOperation["security"].([]interface{})
+		require.True(t, postSecurityFound, "POST operation should have security requirements")
+		require.Len(t, postSecurity, 1, "POST operation should have exactly one security requirement")
+
+		postSecurityReq, postSecurityReqFound := postSecurity[0].(map[string]interface{})
+		require.True(t, postSecurityReqFound, "POST security requirement should be a map[string]interface{}")
+		assert.Contains(t, postSecurityReq, "JWT", "POST operation should require JWT authentication")
+
+		// Verify that UI paths do NOT require JWT authentication (frontend should be public)
+		uiPathObj, uiPathFound := pathsObj["/ui/{proxy}"].(map[string]interface{})
+		require.True(t, uiPathFound, "UI path object should be a map[string]interface{}")
+
+		uiGetOperation, uiGetOpFound := uiPathObj["get"].(map[string]interface{})
+		require.True(t, uiGetOpFound, "UI GET operation should be a map[string]interface{}")
+
+		// UI operations should not have security requirements
+		_, uiGetSecurityFound := uiGetOperation["security"]
+		assert.False(t, uiGetSecurityFound, "UI GET operation should not have security requirements")
 
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))

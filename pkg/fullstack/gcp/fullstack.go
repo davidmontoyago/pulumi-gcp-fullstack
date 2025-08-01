@@ -276,12 +276,12 @@ func (f *FullStack) newResourceName(serviceName, resourceType string, maxLength 
 // applyDefaultGatewayArgs applies default API Gateway configuration to the provided args.
 // If the provided args is nil, it returns a new instance with default config.
 // If the provided args has a nil Config, it applies the default config.
-func applyDefaultGatewayArgs(existingArgs *APIGatewayArgs, backendServiceURL, frontendServiceURL pulumi.StringOutput) *APIGatewayArgs {
+func applyDefaultGatewayArgs(args *APIGatewayArgs, backendServiceURL, frontendServiceURL pulumi.StringOutput) *APIGatewayArgs {
 	var gatewayArgs *APIGatewayArgs
-	if existingArgs == nil {
+	if args == nil {
 		gatewayArgs = &APIGatewayArgs{}
 	} else {
-		gatewayArgs = existingArgs
+		gatewayArgs = args
 	}
 
 	if gatewayArgs.Config == nil {

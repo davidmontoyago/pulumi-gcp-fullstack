@@ -149,10 +149,47 @@ The API Gateway uses a Serverless NEG (Network Endpoint Group) to integrate with
 - **UpstreamPath**: Optional upstream path (defaults to Path if not specified)
 
 #### JWTAuth
-- **Issuer**: JWT issuer (iss claim) for token validation
-- **JwksURI**: JWKS URI for JWT token validation
+- **Issuer**: JWT issuer (iss claim) for token validation (automatically set to frontend service account email)
+- **JwksURI**: JWKS URI for JWT token validation (automatically set to frontend service account JWKS endpoint)
+
+**Note**: JWT authentication is designed for service-to-service authentication where only the frontend service account can access the backend API. This is not for user authentication.
 
 Resource names are automatically generated using the backend service name as a base, ensuring proper prefixing and length limits.
+
+### JWT Authentication Example
+
+To enable JWT authentication for service-to-service communication between frontend and backend:
+
+```go
+fullstack, err := gcp.NewFullStack(ctx, "my-stack", &gcp.FullStackArgs{
+    Project:       "my-project",
+    Region:        "us-central1",
+    BackendName:   "backend",
+    BackendImage:  pulumi.String("gcr.io/my-project/backend:latest"),
+    FrontendName:  "frontend",
+    FrontendImage: pulumi.String("gcr.io/my-project/frontend:latest"),
+    Network: &gcp.NetworkArgs{
+        DomainURL: "myapp.example.com",
+        APIGateway: &gcp.APIGatewayArgs{
+            Config: &gcp.APIConfigArgs{
+                Backend: &gcp.Upstream{
+                    JWTAuth: &gcp.JWTAuth{
+                        // Issuer and JwksURI will be automatically configured
+                        // with the frontend service account credentials
+                    },
+                },
+            },
+        },
+    },
+})
+```
+
+When JWT authentication is enabled:
+- The frontend service account email is automatically set as the JWT issuer
+- The frontend service account JWKS URI is automatically configured
+- All backend API endpoints require a valid JWT token from the frontend service account
+- The frontend can generate JWT tokens using its service account credentials
+- Only requests with valid JWT tokens from the frontend service account can access the backend API
 
 ## Resource Naming Convention
 

@@ -6,20 +6,46 @@ import (
 
 // newOpenAPISpec creates a new OpenAPI 3.0.1 specification for API Gateway
 // that routes traffic to Cloud Run backend and frontend services.
-func newOpenAPISpec(backendServiceURI, frontendServiceURI string, configArgs *APIConfigArgs) *openapi3.T {
+func newOpenAPISpec(backendServiceURI, frontendServiceURI string, configArgs *APIConfigArgs, backendJWTConfig *JWTAuth) *openapi3.T {
 	paths := openapi3.Paths{}
+	securitySchemes := make(openapi3.SecuritySchemes)
+
+	// Configure JWT authentication if enabled for backend
+	if backendJWTConfig != nil {
+		// Add JWT security scheme for service-to-service authentication
+		securitySchemes["JWT"] = &openapi3.SecuritySchemeRef{
+			Value: &openapi3.SecurityScheme{
+				Type:         "http",
+				Scheme:       "bearer",
+				BearerFormat: "JWT",
+				Extensions: map[string]interface{}{
+					"x-google-issuer":   backendJWTConfig.Issuer,
+					"x-google-jwks_uri": backendJWTConfig.JwksURI,
+				},
+			},
+		}
+	}
 
 	// Add backend API paths
 	if configArgs != nil && configArgs.Backend != nil && len(configArgs.Backend.APIPaths) > 0 {
-		addPaths(paths, configArgs.Backend.APIPaths, backendServiceURI, createAPIPathItem)
+		addPaths(paths, configArgs.Backend.APIPaths, backendServiceURI, createAPIPathItem, backendJWTConfig)
 	} else {
 		// Default backend path if none specified
-		paths["/api/v1/{proxy}"] = createAPIPathItem(backendServiceURI, "/api/v1")
+		pathItem := createAPIPathItem(backendServiceURI, "/api/v1")
+		// Apply JWT security if configured
+		if backendJWTConfig != nil {
+			pathItem.Get.Security = &openapi3.SecurityRequirements{{"JWT": []string{}}}
+			pathItem.Post.Security = &openapi3.SecurityRequirements{{"JWT": []string{}}}
+			pathItem.Put.Security = &openapi3.SecurityRequirements{{"JWT": []string{}}}
+			pathItem.Delete.Security = &openapi3.SecurityRequirements{{"JWT": []string{}}}
+			// OPTIONS should not require authentication for CORS preflight
+		}
+		paths["/api/v1/{proxy}"] = pathItem
 	}
 
 	// Add frontend API paths
 	if configArgs != nil && configArgs.Frontend != nil && len(configArgs.Frontend.APIPaths) > 0 {
-		addPaths(paths, configArgs.Frontend.APIPaths, frontendServiceURI, createUIPathItem)
+		addPaths(paths, configArgs.Frontend.APIPaths, frontendServiceURI, createUIPathItem, nil) // Frontend doesn't need JWT auth
 	} else {
 		// Default frontend path if none specified
 		paths["/ui/{proxy}"] = createUIPathItem(frontendServiceURI, "/ui/v1")
@@ -39,7 +65,7 @@ func newOpenAPISpec(backendServiceURI, frontendServiceURI string, configArgs *AP
 		},
 		Paths: paths,
 		Components: &openapi3.Components{
-			SecuritySchemes: make(openapi3.SecuritySchemes),
+			SecuritySchemes: securitySchemes,
 		},
 	}
 
@@ -56,7 +82,7 @@ func newOpenAPISpec(backendServiceURI, frontendServiceURI string, configArgs *AP
 type createUpstreamPath func(serviceURI, upstreamPath string) *openapi3.PathItem
 
 // addPaths creates OpenAPI paths from a list of path configurations
-func addPaths(paths openapi3.Paths, pathConfigs []*APIPathArgs, serviceURI string, creator createUpstreamPath) {
+func addPaths(paths openapi3.Paths, pathConfigs []*APIPathArgs, serviceURI string, creator createUpstreamPath, jwtAuthConfig *JWTAuth) {
 	for _, pathConfig := range pathConfigs {
 		if pathConfig.Path == "" {
 			continue
@@ -70,7 +96,18 @@ func addPaths(paths openapi3.Paths, pathConfigs []*APIPathArgs, serviceURI strin
 
 		// Create public path with {proxy} parameter
 		path := pathConfig.Path + "/{proxy}"
-		paths[path] = creator(serviceURI, upstreamPath)
+		pathItem := creator(serviceURI, upstreamPath)
+
+		// Apply JWT security if configured
+		if jwtAuthConfig != nil {
+			pathItem.Get.Security = &openapi3.SecurityRequirements{{"JWT": []string{}}}
+			pathItem.Post.Security = &openapi3.SecurityRequirements{{"JWT": []string{}}}
+			pathItem.Put.Security = &openapi3.SecurityRequirements{{"JWT": []string{}}}
+			pathItem.Delete.Security = &openapi3.SecurityRequirements{{"JWT": []string{}}}
+			// OPTIONS should not require authentication for CORS preflight
+		}
+
+		paths[path] = pathItem
 	}
 }
 
