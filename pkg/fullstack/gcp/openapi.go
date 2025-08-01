@@ -10,16 +10,16 @@ func newOpenAPISpec(backendServiceURI, frontendServiceURI string, configArgs *AP
 	paths := openapi3.Paths{}
 
 	// Add backend API paths
-	if configArgs != nil && len(configArgs.BackendAPIPaths) > 0 {
-		addPaths(paths, configArgs.BackendAPIPaths, backendServiceURI, createAPIPathItem)
+	if configArgs != nil && configArgs.Backend != nil && len(configArgs.Backend.APIPaths) > 0 {
+		addPaths(paths, configArgs.Backend.APIPaths, backendServiceURI, createAPIPathItem)
 	} else {
 		// Default backend path if none specified
 		paths["/api/v1/{proxy}"] = createAPIPathItem(backendServiceURI, "/api/v1")
 	}
 
 	// Add frontend API paths
-	if configArgs != nil && len(configArgs.FrontendAPIPaths) > 0 {
-		addPaths(paths, configArgs.FrontendAPIPaths, frontendServiceURI, createUIPathItem)
+	if configArgs != nil && configArgs.Frontend != nil && len(configArgs.Frontend.APIPaths) > 0 {
+		addPaths(paths, configArgs.Frontend.APIPaths, frontendServiceURI, createUIPathItem)
 	} else {
 		// Default frontend path if none specified
 		paths["/ui/{proxy}"] = createUIPathItem(frontendServiceURI, "/ui/v1")
