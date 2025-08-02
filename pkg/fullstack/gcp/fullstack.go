@@ -24,6 +24,7 @@ type FullStack struct {
 	BackendImage  pulumi.StringOutput
 	FrontendName  string
 	FrontendImage pulumi.StringOutput
+	Labels        map[string]string
 
 	name string
 
@@ -55,6 +56,7 @@ type FullStackArgs struct {
 	Backend  *BackendArgs
 	Frontend *FrontendArgs
 	Network  *NetworkArgs
+	Labels   map[string]string
 }
 
 // BackendArgs contains configuration for the backend service.
@@ -131,6 +133,7 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 		FrontendImage: args.FrontendImage.ToStringOutput(),
 		BackendName:   backendName,
 		FrontendName:  frontendName,
+		Labels:        args.Labels,
 
 		name: name,
 	}

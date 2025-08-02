@@ -248,11 +248,16 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context, policy *compute.Securi
 
 // createGlobalInternetEntrypoint creates a global IP address and forwarding rule for external traffic
 func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceName, domainURL, project string, httpsProxy *compute.TargetHttpsProxy) error {
+	labels := mergeLabels(f.Labels, pulumi.StringMap{
+		"load_balancer": pulumi.String("true"),
+	})
+
 	ipAddressName := f.newResourceName(serviceName, "global-ip", 100)
 	ipAddress, err := compute.NewGlobalAddress(ctx, ipAddressName, &compute.GlobalAddressArgs{
 		Project:     pulumi.String(project),
 		Description: pulumi.String(fmt.Sprintf("IP address for %s", serviceName)),
 		IpVersion:   pulumi.String("IPV4"),
+		Labels:      labels,
 	})
 	if err != nil {
 		return err
@@ -270,6 +275,7 @@ func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceN
 		LoadBalancingScheme: pulumi.String("EXTERNAL"),
 		Target:              httpsProxy.SelfLink,
 		IpAddress:           ipAddress.Address,
+		Labels:              labels,
 	})
 	if err != nil {
 		return err

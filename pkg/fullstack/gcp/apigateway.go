@@ -97,12 +97,16 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 
 	apiID := f.newResourceName(args.Name, "api", 50)
 	displayName := fmt.Sprintf("Gateway API (apiID: %s)", apiID)
+	gatewayLabels := mergeLabels(f.Labels, pulumi.StringMap{
+		"gateway": pulumi.String("true"),
+	})
 
 	// Create the API
 	api, err := apigateway.NewApi(ctx, apiID, &apigateway.ApiArgs{
 		ApiId:       pulumi.String(apiID),
 		DisplayName: pulumi.String(displayName),
 		Project:     pulumi.String(f.Project),
+		Labels:      gatewayLabels,
 	})
 	if err != nil {
 		return nil, err
@@ -110,7 +114,7 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 	ctx.Export("api_gateway_api_id", api.ApiId)
 	ctx.Export("api_gateway_api_name", api.Name)
 
-	apiConfig, err := f.createAPIConfig(ctx, apiID, args.Config, api, apiGatewayServiceAccountEmail)
+	apiConfig, err := f.createAPIConfig(ctx, apiID, args.Config, api, apiGatewayServiceAccountEmail, gatewayLabels)
 	if err != nil {
 		return nil, err
 	}
@@ -132,6 +136,7 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 		Region:      pulumi.String(region),
 		Project:     pulumi.String(f.Project),
 		ApiConfig:   apiConfig.Name,
+		Labels:      gatewayLabels,
 	})
 	if err != nil {
 		return nil, err
@@ -216,7 +221,13 @@ func (f *FullStack) grantAPIGatewayInvokerPermissions(ctx *pulumi.Context, apiGa
 // Gateway service account email used to invoke the backend and frontend.
 // The OpenAPI spec document is responsible for mapping paths to the backend and
 // frontend services URLs. See Backend.ServiceURL and Frontend.ServiceURL.
-func (f *FullStack) createAPIConfig(ctx *pulumi.Context, apiID string, configArgs *APIConfigArgs, api *apigateway.Api, gatewayServiceAccountEmail pulumi.StringOutput) (*apigateway.ApiConfig, error) {
+func (f *FullStack) createAPIConfig(ctx *pulumi.Context,
+	apiID string,
+	configArgs *APIConfigArgs,
+	api *apigateway.Api,
+	gatewayServiceAccountEmail pulumi.StringOutput,
+	gatewayLabels pulumi.StringMap) (*apigateway.ApiConfig, error) {
+
 	if configArgs == nil {
 		return nil, fmt.Errorf("APIConfigArgs is required")
 	}
@@ -254,6 +265,7 @@ func (f *FullStack) createAPIConfig(ctx *pulumi.Context, apiID string, configArg
 				GoogleServiceAccount: gatewayServiceAccountEmail,
 			},
 		},
+		Labels: gatewayLabels,
 	})
 	if err != nil {
 		return nil, err
