@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	apigateway "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/apigateway"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 
 	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
@@ -29,11 +30,14 @@ type FullStack struct {
 	name string
 
 	backendService  *cloudrunv2.Service
+	backendAccount  *serviceaccount.Account
 	frontendService *cloudrunv2.Service
+	frontendAccount *serviceaccount.Account
 	apiGateway      *apigateway.Gateway
 	apiConfig       *apigateway.ApiConfig
 
 	// IAM members for API Gateway invoker permissions
+	gatewayServiceAccount    *serviceaccount.Account
 	backendGatewayIamMember  *cloudrunv2.ServiceIamMember
 	frontendGatewayIamMember *cloudrunv2.ServiceIamMember
 
@@ -157,19 +161,21 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 }
 
 func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
-	backendService, _, err := f.deployBackendCloudRunInstance(ctx, args.Backend)
+	backendService, backendAcccount, err := f.deployBackendCloudRunInstance(ctx, args.Backend)
 	if err != nil {
 		return err
 	}
 
 	f.backendService = backendService
+	f.backendAccount = backendAcccount
 
-	frontendService, _, err := f.deployFrontendCloudRunInstance(ctx, args.Frontend, backendService.Uri)
+	frontendService, frontendAccount, err := f.deployFrontendCloudRunInstance(ctx, args.Frontend, backendService.Uri)
 	if err != nil {
 		return err
 	}
 
 	f.frontendService = frontendService
+	f.frontendAccount = frontendAccount
 
 	// TODO should be removed as we want the frontend to not bypass the API gateway
 	// allow backend to be invoked from frontend
@@ -363,4 +369,19 @@ func (f *FullStack) LookupDNSZone(ctx *pulumi.Context, domainURL string) (string
 // GetDNSRecord returns the DNS record created for the load balancer
 func (f *FullStack) GetDNSRecord() *dns.RecordSet {
 	return f.dnsRecord
+}
+
+// GetBackendAccount returns the backend service account.
+func (f *FullStack) GetBackendAccount() *serviceaccount.Account {
+	return f.backendAccount
+}
+
+// GetFrontendAccount returns the frontend service account.
+func (f *FullStack) GetFrontendAccount() *serviceaccount.Account {
+	return f.frontendAccount
+}
+
+// GetGatewayServiceAccount returns the API Gateway service account.
+func (f *FullStack) GetGatewayServiceAccount() *serviceaccount.Account {
+	return f.gatewayServiceAccount
 }

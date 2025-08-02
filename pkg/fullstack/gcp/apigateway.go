@@ -90,7 +90,7 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 	}
 
 	// Create API Gateway IAM resources (service account and permissions)
-	apiGatewayServiceAccountEmail, err := f.createAPIGatewayIAM(ctx, args.Name)
+	gatewayServiceAccount, err := f.createAPIGatewayIAM(ctx, args.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +114,7 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 	ctx.Export("api_gateway_api_id", api.ApiId)
 	ctx.Export("api_gateway_api_name", api.Name)
 
-	apiConfig, err := f.createAPIConfig(ctx, apiID, args.Config, api, apiGatewayServiceAccountEmail, gatewayLabels)
+	apiConfig, err := f.createAPIConfig(ctx, apiID, args.Config, api, gatewayServiceAccount.Email, gatewayLabels)
 	if err != nil {
 		return nil, err
 	}
@@ -153,27 +153,28 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 //
 // This function ensures that the API Gateway has its own identity and can properly
 // route traffic to both backend and frontend Cloud Run services.
-func (f *FullStack) createAPIGatewayIAM(ctx *pulumi.Context, gatewayName string) (pulumi.StringOutput, error) {
+func (f *FullStack) createAPIGatewayIAM(ctx *pulumi.Context, gatewayName string) (*serviceaccount.Account, error) {
 	// Create dedicated service account for API Gateway
 	apiGatewayAccountName := f.newResourceName(gatewayName, "account", 28)
-	apiGatewayServiceAccount, err := serviceaccount.NewAccount(ctx, apiGatewayAccountName, &serviceaccount.AccountArgs{
+	serviceAccount, err := serviceaccount.NewAccount(ctx, apiGatewayAccountName, &serviceaccount.AccountArgs{
 		AccountId:   pulumi.String(apiGatewayAccountName),
 		DisplayName: pulumi.String(fmt.Sprintf("API Gateway service account (%s)", gatewayName)),
 		Project:     pulumi.String(f.Project),
 	})
 	if err != nil {
-		return pulumi.String("").ToStringOutput(), fmt.Errorf("failed to create API Gateway service account: %w", err)
+		return nil, fmt.Errorf("failed to create API Gateway service account: %w", err)
 	}
-	ctx.Export("api_gateway_service_account_id", apiGatewayServiceAccount.ID())
-	ctx.Export("api_gateway_service_account_email", apiGatewayServiceAccount.Email)
+	ctx.Export("api_gateway_service_account_id", serviceAccount.ID())
+	ctx.Export("api_gateway_service_account_email", serviceAccount.Email)
+	f.gatewayServiceAccount = serviceAccount
 
 	// Grant API Gateway service account permission to invoke Cloud Run services
-	err = f.grantAPIGatewayInvokerPermissions(ctx, apiGatewayServiceAccount.Email, gatewayName)
+	err = f.grantAPIGatewayInvokerPermissions(ctx, serviceAccount.Email, gatewayName)
 	if err != nil {
-		return pulumi.String("").ToStringOutput(), err
+		return nil, err
 	}
 
-	return apiGatewayServiceAccount.Email, nil
+	return serviceAccount, nil
 }
 
 // grantAPIGatewayInvokerPermissions grants the API Gateway service account

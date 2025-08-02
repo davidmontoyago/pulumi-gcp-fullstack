@@ -84,6 +84,7 @@ jobs:
         with:
           sarif_file: ${{ steps.scan.outputs.sarif }}
           category: "SBOM Vulnerability Scan"
+        continue-on-error: true
 
   release:
     runs-on: ubuntu-latest
