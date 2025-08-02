@@ -466,6 +466,18 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		assert.Equal(t, "/healthz", *backendContainer.LivenessProbe.HttpGet.Path, "Backend container LivenessProbe should use /healthz path")
 		assert.Equal(t, 8080, *backendContainer.LivenessProbe.HttpGet.Port, "Backend container LivenessProbe should use port 8080")
 
+		// Verify backend service account
+		backendAccount := fullstack.GetBackendAccount()
+		require.NotNil(t, backendAccount, "Backend service account should not be nil")
+
+		// Verify frontend service account
+		frontendAccount := fullstack.GetFrontendAccount()
+		require.NotNil(t, frontendAccount, "Frontend service account should not be nil")
+
+		// Verify API Gateway service account
+		gatewayAccount := fullstack.GetGatewayServiceAccount()
+		require.NotNil(t, gatewayAccount, "API Gateway service account should not be nil")
+
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
 
