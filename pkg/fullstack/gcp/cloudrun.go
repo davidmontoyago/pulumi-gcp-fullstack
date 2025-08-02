@@ -90,6 +90,10 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 	args.InstanceArgs = setInstanceDefaults(args.InstanceArgs, backendDefaults)
 
 	backendName := f.BackendName
+	backendLabels := mergeLabels(f.Labels, pulumi.StringMap{
+		"backend": pulumi.String("true"),
+	})
+
 	accountName := f.newResourceName(backendName, "account", 28)
 	serviceAccount, err := serviceaccount.NewAccount(ctx, accountName, &serviceaccount.AccountArgs{
 		AccountId:   pulumi.String(accountName),
@@ -102,9 +106,12 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 	ctx.Export("cloud_run_service_backend_account_id", serviceAccount.ID())
 
 	// create a secret to hold env vars for the cloud run instance
-	configSecret, err := f.newEnvConfigSecret(ctx, backendName, serviceAccount, args.DeletionProtection, pulumi.StringMap{
-		"backend": pulumi.String("true"),
-	})
+	configSecret, err := f.newEnvConfigSecret(ctx,
+		backendName,
+		serviceAccount,
+		args.DeletionProtection,
+		backendLabels,
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -116,9 +123,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 		Description: pulumi.String(fmt.Sprintf("Serverless instance (%s)", backendName)),
 		Location:    pulumi.String(f.Region),
 		Project:     pulumi.String(f.Project),
-		Labels: pulumi.StringMap{
-			"backend": pulumi.String("true"),
-		},
+		Labels:      backendLabels,
 		Template: &cloudrunv2.ServiceTemplateArgs{
 			Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
 				MaxInstanceCount: pulumi.Int(args.MaxInstanceCount),
@@ -202,6 +207,10 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 	}
 	args.InstanceArgs = setInstanceDefaults(args.InstanceArgs, frontendDefaults)
 
+	frontendLabels := mergeLabels(f.Labels, pulumi.StringMap{
+		"frontend": pulumi.String("true"),
+	})
+
 	frontendImage := f.FrontendImage
 	project := f.Project
 	region := f.Region
@@ -233,9 +242,7 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 		Description: pulumi.String(fmt.Sprintf("Serverless instance (%s)", serviceName)),
 		Location:    pulumi.String(region),
 		Project:     pulumi.String(project),
-		Labels: pulumi.StringMap{
-			"frontend": pulumi.String("true"),
-		},
+		Labels:      frontendLabels,
 		Template: &cloudrunv2.ServiceTemplateArgs{
 			Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
 				MaxInstanceCount: pulumi.Int(args.MaxInstanceCount),

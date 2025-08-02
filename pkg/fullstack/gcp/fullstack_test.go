@@ -220,6 +220,9 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 					},
 				},
 			},
+			Labels: map[string]string{
+				"this-label-should-be-set": "test",
+			},
 		}
 
 		fullstack, err := gcp.NewFullStack(ctx, "test-fullstack", args)
@@ -253,6 +256,18 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		// Verify backend service configuration
 		backendService := fullstack.GetBackendService()
 		require.NotNil(t, backendService, "Backend service should not be nil")
+
+		// Assert backend service labels are set correctly
+		backendLabelsCh := make(chan map[string]string, 1)
+		defer close(backendLabelsCh)
+		backendService.Labels.ApplyT(func(labels map[string]string) error {
+			backendLabelsCh <- labels
+
+			return nil
+		})
+		backendLabels := <-backendLabelsCh
+		assert.Equal(t, "test", backendLabels["this-label-should-be-set"], "Backend service should have the expected label")
+		assert.Equal(t, "true", backendLabels["backend"], "Backend service should have the expected label")
 
 		// Verify backend service basic properties
 		backendProjectCh := make(chan string, 1)
