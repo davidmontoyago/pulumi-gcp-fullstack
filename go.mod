@@ -4,6 +4,7 @@ go 1.24.0
 
 require (
 	github.com/getkin/kin-openapi v0.113.0
+	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/pulumi/pulumi-gcp/sdk/v8 v8.38.0
 	github.com/pulumi/pulumi/sdk/v3 v3.185.0
 	github.com/stretchr/testify v1.10.0
