@@ -2,6 +2,7 @@ package gcp
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	apigateway "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/apigateway"
@@ -328,7 +329,9 @@ func (f *FullStack) lookupDNSZone(ctx *pulumi.Context, domainURL, project string
 		return "", fmt.Errorf("no managed zone found for domain %s in project %s", domainURL, project)
 	}
 
-	_ = ctx.Log.Debug(fmt.Sprintf("Found managed zone %s for domain %s", targetZoneName, domainURL), nil)
+	if err := ctx.Log.Debug(fmt.Sprintf("Found managed zone %s for domain %s", targetZoneName, domainURL), nil); err != nil {
+		log.Printf("failed to log managed zone with Pulumi context: %v", err)
+	}
 
 	return targetZoneName, nil
 }

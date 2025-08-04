@@ -4,6 +4,7 @@ package gcp
 import (
 	"encoding/base64"
 	"fmt"
+	"log"
 
 	"github.com/getkin/kin-openapi/openapi2conv"
 	apigateway "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/apigateway"
@@ -256,7 +257,7 @@ func (f *FullStack) generateOpenAPISpec(ctx *pulumi.Context, configArgs *APIConf
 			return "", fmt.Errorf("failed to marshal v3 spec: %w", err)
 		}
 		if err := ctx.Log.Debug(fmt.Sprintf("DEBUG: OpenAPI v3 spec:\n%s\n", string(v3JSON)), nil); err != nil {
-			return "", fmt.Errorf("failed to log v3 spec: %w", err)
+			log.Printf("failed to log v3 spec with Pulumi context: %v", err)
 		}
 
 		// Convert OpenAPI 3 to OpenAPI 2 spec as expected by Google API Gateway
@@ -274,7 +275,7 @@ func (f *FullStack) generateOpenAPISpec(ctx *pulumi.Context, configArgs *APIConf
 			return "", fmt.Errorf("failed to marshal v2 spec: %w", err)
 		}
 		if err := ctx.Log.Debug(fmt.Sprintf("DEBUG: OpenAPI v2 spec:\n%s\n", string(v2JSON)), nil); err != nil {
-			return "", fmt.Errorf("failed to log v2 spec: %w", err)
+			log.Printf("failed to log v2 spec with Pulumi context: %v", err)
 		}
 
 		return string(v2JSON), nil
