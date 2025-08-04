@@ -3,6 +3,7 @@ package gcp
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"strings"
 
@@ -92,7 +93,7 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 		gatewayArgs = applyDefaultGatewayArgs(args.Network.APIGateway, backendService.Uri, frontendService.Uri)
 
 		if err := ctx.Log.Info(fmt.Sprintf("Using API Gateway args: %+v", gatewayArgs), nil); err != nil {
-			return fmt.Errorf("failed to log API Gateway args: %w", err)
+			log.Println("failed to log API Gateway args with Pulumi context: %w", err)
 		}
 
 		apiGateway, err = f.deployAPIGateway(ctx, gatewayArgs)
