@@ -1,6 +1,6 @@
 .PHONY: build clean test lint
 
-build:
+build: clean
 	go build -o ./build/ ./...
 
 test: build
