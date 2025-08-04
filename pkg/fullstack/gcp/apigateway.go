@@ -12,62 +12,6 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-// APIGatewayArgs contains configuration for Google API Gateway
-type APIGatewayArgs struct {
-	// Name of the API Gateway and its resources. Defaults to "gateway".
-	Name string
-	// API Gateway configuration. Required when enabled.
-	Config *APIConfigArgs
-	// Whether to disable API Gateway. Defaults to false.
-	Disabled bool
-	// List of regions where to deploy API Gateway instances.
-	Regions []string
-}
-
-// APIPathArgs contains configuration for API Gateway API paths
-type APIPathArgs struct {
-	// Path to match in the public API. Defaults to "/api/v1".
-	Path string
-	// Optional. If not set, defaults to Path.
-	UpstreamPath string
-}
-
-// JWTAuth contains JWT authentication configuration for upstream services
-type JWTAuth struct {
-	// JWT issuer (iss claim). Required for JWT validation.
-	Issuer string
-	// JWKS URI for JWT token validation. Required for JWT validation.
-	JwksURI string
-}
-
-// Upstream contains configuration for an upstream service
-type Upstream struct {
-	// Service URL for the upstream service.
-	ServiceURL pulumi.StringOutput
-	// API paths configuration for the upstream service.
-	APIPaths []*APIPathArgs
-	// JWT authentication configuration. Optional.
-	JWTAuth *JWTAuth
-}
-
-// APIConfigArgs contains configuration for API Gateway API Config
-type APIConfigArgs struct {
-	// Backend upstream configuration.
-	Backend *Upstream
-	// Frontend upstream configuration.
-	Frontend *Upstream
-	// Whether to enable CORS. Defaults to true.
-	EnableCORS bool
-	// CORS allowed origins. Defaults to ["*"].
-	CORSAllowedOrigins []string
-	// CORS allowed methods. Defaults to ["GET", "POST", "PUT", "DELETE", "OPTIONS"].
-	CORSAllowedMethods []string
-	// CORS allowed headers. Defaults to ["*"].
-	CORSAllowedHeaders []string
-	// OpenAPI specification file path. Optional - defaults to "/openapi.yaml".
-	OpenAPISpecPath string
-}
-
 // deployAPIGateway sets up Google API Gateway with the following features:
 //
 // - Dedicated service account for API Gateway
@@ -349,4 +293,38 @@ func applyJWTConfigDefaults(jwtAuth *JWTAuth, frontendServiceAccountEmail string
 			jwtAuth.JwksURI = fmt.Sprintf("https://www.googleapis.com/service_accounts/v1/metadata/x509/%s", frontendServiceAccountEmail)
 		}
 	}
+}
+
+// applyDefaultGatewayArgs applies default API Gateway configuration to the provided args.
+// If the provided args is nil, it returns a new instance with default config.
+// If the provided args has a nil Config, it applies the default config.
+func applyDefaultGatewayArgs(args *APIGatewayArgs, backendServiceURL, frontendServiceURL pulumi.StringOutput) *APIGatewayArgs {
+	var gatewayArgs *APIGatewayArgs
+	if args == nil {
+		gatewayArgs = &APIGatewayArgs{}
+	} else {
+		gatewayArgs = args
+	}
+
+	if gatewayArgs.Config == nil {
+		gatewayArgs.Config = &APIConfigArgs{}
+	}
+
+	// Initialize Backend and Frontend if they are nil
+	if gatewayArgs.Config.Backend == nil {
+		gatewayArgs.Config.Backend = &Upstream{}
+	}
+	if gatewayArgs.Config.Frontend == nil {
+		gatewayArgs.Config.Frontend = &Upstream{}
+	}
+
+	// Ignore any value given and set always to the services URLs
+	gatewayArgs.Config.Backend.ServiceURL = backendServiceURL
+	gatewayArgs.Config.Frontend.ServiceURL = frontendServiceURL
+
+	if gatewayArgs.Name == "" {
+		gatewayArgs.Name = "gateway"
+	}
+
+	return gatewayArgs
 }
