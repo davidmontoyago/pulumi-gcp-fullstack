@@ -26,8 +26,8 @@ go get github.com/davidmontoyago/pulumi-gcp-fullstack
 
 ### Basic Setup
 
-```
-mystack, err = gcp.NewFullStack(ctx, "my-gcp-stack", &gcp.FullStackArgs{
+```go
+mystack, err = gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
     Project:       "my-gcp-project",
     Region:        "us-central1",
     BackendImage:  "us-docker.pkg.dev/my-gcp-project/my-app/backend",
@@ -39,27 +39,88 @@ mystack, err = gcp.NewFullStack(ctx, "my-gcp-stack", &gcp.FullStackArgs{
 })
 ```
 
-### With API Gateway Integration
+### Full Config
 
-```
-mystack, err = gcp.NewFullStack(ctx, "my-gcp-stack", &gcp.FullStackArgs{
-    Project:       "my-gcp-project",
-    Region:        "us-central1",
-    BackendImage:  "us-docker.pkg.dev/my-gcp-project/my-app/backend",
-    FrontendImage: "us-docker.pkg.dev/my-gcp-project/my-app/frontend",
+```go
+mystack, err := gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
+    Project:       cfg.GCPProject,
+    Region:        cfg.GCPRegion,
+    BackendImage:  pulumi.String(cfg.BackendImage),
+    FrontendImage: pulumi.String(cfg.FrontendImage),
     Network: &gcp.NetworkArgs{
-        DomainURL:        "myapp.example.org",
-        EnableCloudArmor: true,
+        DomainURL:                cfg.DomainURL,
+        EnableCloudArmor:         cfg.EnableCloudArmor,
+        ClientIPAllowlist:        cfg.ClientIPAllowlist,
+        EnablePrivateTrafficOnly: cfg.EnablePrivateTrafficOnly,
         APIGateway: &gcp.APIGatewayArgs{
-            Disabled: false,
-            Regions: []string{"us-central1", "us-east1"},
             Config: &gcp.APIConfigArgs{
-                EnableCORS:      true,
-                CORSAllowedOrigins: []string{"https://myapp.example.org"},
-                CORSAllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-                CORSAllowedHeaders: []string{"*"},
+                Backend: &gcp.Upstream{
+                    APIPaths: []*gcp.APIPathArgs{
+                        {
+                            Path: "/api/v1",
+                        },
+                    },
+                },
+                Frontend: &gcp.Upstream{
+                    APIPaths: []*gcp.APIPathArgs{
+                        {
+                            Path:         "/ui",
+                            UpstreamPath: "/api/v1",
+                        },
+                    },
+                },
             },
         },
+    },
+    Backend: &gcp.BackendArgs{
+        InstanceArgs: &gcp.InstanceArgs{
+            MaxInstanceCount:   3,
+            DeletionProtection: false,
+            ContainerPort:      9001,
+            LivenessProbe: &gcp.Probe{
+                Path:                "api/v1/healthz",
+                InitialDelaySeconds: 60,
+                PeriodSeconds:       10,
+                TimeoutSeconds:      5,
+                FailureThreshold:    3,
+            },
+            StartupProbe: &gcp.Probe{
+                InitialDelaySeconds: 30,
+                PeriodSeconds:       5,
+                TimeoutSeconds:      3,
+                FailureThreshold:    10,
+            },
+            EnvVars: map[string]string{
+                "ENV":               "prod",
+            },
+        },
+    },
+    Frontend: &gcp.FrontendArgs{
+        // EnableUnauthenticated: true,
+        InstanceArgs: &gcp.InstanceArgs{
+            MaxInstanceCount:     3,
+            SecretConfigFileName: ".env",
+            SecretConfigFilePath: "/app/config/",
+            DeletionProtection:   false,
+            ContainerPort:        3000,
+            LivenessProbe: &gcp.Probe{
+                Path:                "api/v1/healthz",
+                InitialDelaySeconds: 60,
+                PeriodSeconds:       10,
+                TimeoutSeconds:      5,
+                FailureThreshold:    3,
+            },
+            StartupProbe: &gcp.Probe{
+                InitialDelaySeconds: 30,
+                PeriodSeconds:       5,
+                TimeoutSeconds:      3,
+                FailureThreshold:    10,
+            },
+        },
+    },
+    Labels: map[string]string{
+        "environment": "production",
+        "managed-by":  "pulumi",
     },
 })
 ```
@@ -93,8 +154,10 @@ mystack, err = gcp.NewFullStack(ctx, "my-gcp-stack", &gcp.FullStackArgs{
 
 See:
 - https://cloud.google.com/api-gateway/docs/gateway-load-balancing
+- https://cloud.google.com/api-gateway/docs/gateway-serverless-neg
 
-### Topology
+
+### General Topology
 
 ```
      [Internet]
@@ -106,7 +169,7 @@ See:
       [Gateway]
           |
           v
-  [Frontend & Backend]
+[Frontend] [Backend]
           |
           v
    [Cloud Resources]
@@ -215,6 +278,3 @@ Network-related resources follow the same pattern:
 
 ### Customization
 Resource names can be customized by modifying the stack name parameter in `NewFullStack()`. The component ensures all generated names are unique within the project and region.
-
-See:
-- https://cloud.google.com/api-gateway/docs/gateway-serverless-neg

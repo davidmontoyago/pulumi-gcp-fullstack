@@ -82,21 +82,24 @@ func newOpenAPISpec(backendServiceURI, frontendServiceURI string, configArgs *AP
 type createUpstreamPath func(serviceURI, upstreamPath string) *openapi3.PathItem
 
 // addPaths creates OpenAPI paths from a list of path configurations
-func addPaths(paths openapi3.Paths, pathConfigs []*APIPathArgs, serviceURI string, creator createUpstreamPath, jwtAuthConfig *JWTAuth) {
+func addPaths(paths openapi3.Paths, pathConfigs []*APIPathArgs, serviceURI string, createPathItem createUpstreamPath, jwtAuthConfig *JWTAuth) {
 	for _, pathConfig := range pathConfigs {
-		if pathConfig.Path == "" {
-			continue
-		}
 
-		// Set UpstreamPath to Path if not specified
 		upstreamPath := pathConfig.UpstreamPath
-		if upstreamPath == "" {
-			upstreamPath = pathConfig.Path
+		rewritePath := upstreamPath != "" && upstreamPath != pathConfig.Path
+
+		// Always match the remaining of the path (/{proxy}) and pass it to the upstream
+		gatewayPath := pathConfig.Path + "/{proxy}"
+
+		if rewritePath {
+			// Path rewriting - the upstream chose its own path
+			upstreamPath = pathConfig.UpstreamPath
+		} else {
+			// The gateway and upstream share the same path
+			upstreamPath = ""
 		}
 
-		// Create public path with {proxy} parameter
-		path := pathConfig.Path + "/{proxy}"
-		pathItem := creator(serviceURI, upstreamPath)
+		pathItem := createPathItem(serviceURI, upstreamPath)
 
 		// Apply JWT security if configured
 		if jwtAuthConfig != nil {
@@ -107,7 +110,7 @@ func addPaths(paths openapi3.Paths, pathConfigs []*APIPathArgs, serviceURI strin
 			// OPTIONS should not require authentication for CORS preflight
 		}
 
-		paths[path] = pathItem
+		paths[gatewayPath] = pathItem
 	}
 }
 

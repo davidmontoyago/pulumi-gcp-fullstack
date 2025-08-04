@@ -1169,3 +1169,144 @@ func TestNewFullStack_WithBackendJWTAuthentication(t *testing.T) {
 		t.Fatalf("Pulumi WithMocks failed: %v", err)
 	}
 }
+
+func TestNewFullStack_WithCustomApiPaths(t *testing.T) {
+	t.Parallel()
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		args := &gcp.FullStackArgs{
+			Project:       testProjectName,
+			Region:        testRegion,
+			BackendName:   backendServiceName,
+			BackendImage:  pulumi.String("gcr.io/test-project/backend:latest"),
+			FrontendName:  frontendServiceName,
+			FrontendImage: pulumi.String("gcr.io/test-project/frontend:latest"),
+			Backend: &gcp.BackendArgs{
+				InstanceArgs: &gcp.InstanceArgs{},
+			},
+			Frontend: &gcp.FrontendArgs{
+				InstanceArgs: &gcp.InstanceArgs{},
+			},
+			Network: &gcp.NetworkArgs{
+				DomainURL: "myapp.example.com",
+				APIGateway: &gcp.APIGatewayArgs{
+					Config: &gcp.APIConfigArgs{
+						Backend: &gcp.Upstream{
+							APIPaths: []*gcp.APIPathArgs{
+								{
+									Path: "/api/v1",
+								},
+							},
+						},
+						Frontend: &gcp.Upstream{
+							APIPaths: []*gcp.APIPathArgs{
+								{
+									Path:         "/ui",
+									UpstreamPath: "/api/v1",
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		fullstack, err := gcp.NewFullStack(ctx, "test-fullstack", args)
+		require.NoError(t, err)
+
+		// Verify API Gateway configuration
+		apiGateway := fullstack.GetAPIGateway()
+		require.NotNil(t, apiGateway, "API Gateway should not be nil")
+
+		// Verify API Config properties
+		apiConfig := fullstack.GetAPIConfig()
+		require.NotNil(t, apiConfig, "API Config should not be nil")
+
+		// Assert API Config has OpenAPI documents
+		openapiDocumentsCh := make(chan []apigateway.ApiConfigOpenapiDocument, 1)
+		defer close(openapiDocumentsCh)
+		apiConfig.OpenapiDocuments.ApplyT(func(documents []apigateway.ApiConfigOpenapiDocument) error {
+			openapiDocumentsCh <- documents
+
+			return nil
+		})
+		openapiDocuments := <-openapiDocumentsCh
+		require.NotNil(t, openapiDocuments, "OpenAPI documents should not be nil")
+		assert.Len(t, openapiDocuments, 1, "Should have exactly one OpenAPI document")
+
+		// Assert the OpenAPI document contents can be decoded from base64
+		document := openapiDocuments[0]
+		require.NotNil(t, document.Document, "Document should not be nil")
+
+		base64Contents := document.Document.Contents
+		require.NotEmpty(t, base64Contents, "Document contents should not be empty")
+
+		// Verify the contents can be decoded from base64
+		decodedBytes, err := base64.StdEncoding.DecodeString(base64Contents)
+		require.NoError(t, err, "Document contents should be valid base64")
+		require.NotEmpty(t, decodedBytes, "Decoded contents should not be empty")
+
+		// Verify the decoded content is valid JSON/OpenAPI 2.0 spec
+		decodedContent := string(decodedBytes)
+		assert.Contains(t, decodedContent, "\"swagger\":\"2.0\"", "Decoded content should contain OpenAPI 2.0 version")
+		assert.Contains(t, decodedContent, "\"paths\":", "Decoded content should contain paths section")
+		assert.Contains(t, decodedContent, "\"info\":", "Decoded content should contain info section")
+
+		// Parse the decoded JSON and verify custom path configuration
+		var openAPISpec map[string]interface{}
+		err = json.Unmarshal(decodedBytes, &openAPISpec)
+		require.NoError(t, err, "Decoded content should be valid JSON")
+
+		// Verify paths are configured correctly
+		paths, found := openAPISpec["paths"].(map[string]interface{})
+		require.True(t, found, "Paths should be present")
+		require.NotEmpty(t, paths, "Paths should not be empty")
+
+		// Verify backend path configuration
+		backendPath, backendFound := paths["/api/v1/{proxy}"].(map[string]interface{})
+		require.True(t, backendFound, "Backend path /api/v1/{proxy} should be present")
+		require.NotEmpty(t, backendPath, "Backend path should not be empty")
+
+		// Verify frontend path configuration with path rewriting
+		frontendPath, frontendFound := paths["/ui/{proxy}"].(map[string]interface{})
+		require.True(t, frontendFound, "Frontend path /ui/{proxy} should be present")
+		require.NotEmpty(t, frontendPath, "Frontend path should not be empty")
+
+		// Verify GET operation exists for both paths
+		backendGet, backendGetFound := backendPath["get"].(map[string]interface{})
+		require.True(t, backendGetFound, "Backend GET operation should be present")
+
+		frontendGet, frontendGetFound := frontendPath["get"].(map[string]interface{})
+		require.True(t, frontendGetFound, "Frontend GET operation should be present")
+
+		// Verify x-google-backend configuration for backend (no path rewriting)
+		backendExtensions, backendExtFound := backendGet["x-google-backend"].(map[string]interface{})
+		require.True(t, backendExtFound, "Backend x-google-backend should be present")
+
+		backendAddress, backendAddrFound := backendExtensions["address"].(string)
+		require.True(t, backendAddrFound, "Backend address should be present")
+
+		// Expected backend address: service URL only (no custom upstream path)
+		expectedBackendAddress := "https://test-fullstack-backend-service-hash-uc.a.run.app"
+		assert.Equal(t, expectedBackendAddress, backendAddress,
+			"Backend address should be service URL only (no path rewriting)")
+
+		// Verify x-google-backend configuration for frontend (with path rewriting)
+		frontendExtensions, frontendExtFound := frontendGet["x-google-backend"].(map[string]interface{})
+		require.True(t, frontendExtFound, "Frontend x-google-backend should be present")
+
+		frontendAddress, frontendAddrFound := frontendExtensions["address"].(string)
+		require.True(t, frontendAddrFound, "Frontend address should be present")
+
+		// Expected frontend address: service URL + custom upstream path
+		expectedFrontendAddress := "https://test-fullstack-frontend-service-hash-uc.a.run.app/api/v1"
+		assert.Equal(t, expectedFrontendAddress, frontendAddress,
+			"Frontend address should be service URL + custom upstream path (path rewriting)")
+
+		return nil
+	}, pulumi.WithMocks("test-project", "test-stack", &fullstackMocks{}))
+
+	if err != nil {
+		t.Fatalf("Pulumi WithMocks failed: %v", err)
+	}
+}
