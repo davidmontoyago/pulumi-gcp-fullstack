@@ -1395,6 +1395,7 @@ func TestNewFullStack_WithoutGateway(t *testing.T) {
 		defer close(negNameCh)
 		backendNeg.Name.ApplyT(func(name string) error {
 			negNameCh <- name
+
 			return nil
 		})
 		assert.Equal(t, "test-fullstack-gcp-lb-backend-cloudrun-neg", <-negNameCh, "NEG name should match Cloud Run convention")
@@ -1405,6 +1406,7 @@ func TestNewFullStack_WithoutGateway(t *testing.T) {
 		defer close(negCloudRunCh)
 		backendNeg.CloudRun.ApplyT(func(cloudRun *compute.RegionNetworkEndpointGroupCloudRun) error {
 			cloudRunServiceCh <- cloudRun.Service
+
 			return nil
 		})
 		actualCloudRunService := <-cloudRunServiceCh
@@ -1415,6 +1417,7 @@ func TestNewFullStack_WithoutGateway(t *testing.T) {
 		defer close(backendServiceNameCh)
 		backendService.Name.ApplyT(func(name string) error {
 			backendServiceNameCh <- name
+
 			return nil
 		})
 
@@ -1430,6 +1433,7 @@ func TestNewFullStack_WithoutGateway(t *testing.T) {
 		defer close(frontendNegNameCh)
 		frontendNeg.Name.ApplyT(func(name string) error {
 			frontendNegNameCh <- name
+
 			return nil
 		})
 		assert.Equal(t, "test-fullstack-gcp-lb-frontend-cloudrun-neg", <-frontendNegNameCh, "Frontend NEG name should match Cloud Run convention")
@@ -1439,6 +1443,7 @@ func TestNewFullStack_WithoutGateway(t *testing.T) {
 		defer close(frontendCloudRunServiceCh)
 		frontendNeg.CloudRun.ApplyT(func(cloudRun *compute.RegionNetworkEndpointGroupCloudRun) error {
 			frontendCloudRunServiceCh <- cloudRun.Service
+
 			return nil
 		})
 		actualFrontendCloudRunService := <-frontendCloudRunServiceCh
@@ -1449,6 +1454,7 @@ func TestNewFullStack_WithoutGateway(t *testing.T) {
 		defer close(frontendServiceNameCh)
 		frontendService.Name.ApplyT(func(name string) error {
 			frontendServiceNameCh <- name
+
 			return nil
 		})
 
@@ -1464,6 +1470,7 @@ func TestNewFullStack_WithoutGateway(t *testing.T) {
 		defer close(urlMapDefaultServiceCh)
 		urlMap.DefaultService.ApplyT(func(defaultService *string) error {
 			urlMapDefaultServiceCh <- defaultService
+
 			return nil
 		})
 		defaultService := <-urlMapDefaultServiceCh
@@ -1474,6 +1481,7 @@ func TestNewFullStack_WithoutGateway(t *testing.T) {
 		defer close(urlMapPathMatchersCh)
 		urlMap.PathMatchers.ApplyT(func(pathMatchers []compute.URLMapPathMatcher) error {
 			urlMapPathMatchersCh <- pathMatchers
+
 			return nil
 		})
 		pathMatchers := <-urlMapPathMatchersCh
@@ -1501,6 +1509,7 @@ func TestNewFullStack_WithoutGateway(t *testing.T) {
 		defer close(urlMapHostRulesCh)
 		urlMap.HostRules.ApplyT(func(hostRules []compute.URLMapHostRule) error {
 			urlMapHostRulesCh <- hostRules
+
 			return nil
 		})
 		hostRules := <-urlMapHostRulesCh
