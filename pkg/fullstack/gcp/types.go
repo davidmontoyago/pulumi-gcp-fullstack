@@ -93,7 +93,7 @@ func (f *FullStack) GetGlobalForwardingRule() *compute.GlobalForwardingRule {
 
 // LookupDNSZone finds the appropriate DNS managed zone for the given domain in the current project
 func (f *FullStack) LookupDNSZone(ctx *pulumi.Context, domainURL string) (string, error) {
-	return f.lookupDNSZone(ctx, domainURL, f.Project)
+	return f.lookupDNSZone(ctx, domainURL)
 }
 
 // GetDNSRecord returns the DNS record created for the load balancer
