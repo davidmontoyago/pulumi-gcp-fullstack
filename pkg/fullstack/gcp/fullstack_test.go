@@ -486,7 +486,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 	}
 }
 
-func TestNewFullStack_WithDefaults(t *testing.T) {
+func TestNewFullStack_WithGatewayDefaults(t *testing.T) {
 	t.Parallel()
 
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
@@ -532,13 +532,13 @@ func TestNewFullStack_WithDefaults(t *testing.T) {
 				EnableUnauthenticated: false,
 			},
 			Network: &gcp.NetworkArgs{
-				DomainURL: "myapp.example.com",
-				// APIGateway: &gcp.APIGatewayArgs{
-				// 	Name: "gateway",
-				// 	Config: &gcp.APIConfigArgs{
-				// 		EnableCORS: true,
-				// 	},
-				// },
+				DomainURL:  "myapp.example.com",
+				APIGateway: &gcp.APIGatewayArgs{
+					// 	Name: "gateway",
+					// 	Config: &gcp.APIConfigArgs{
+					// 		EnableCORS: true,
+					// 	},
+				},
 			},
 		}
 

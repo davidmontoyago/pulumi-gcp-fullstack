@@ -174,6 +174,12 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context, policy *compute.Securi
 
 	// Create NEG - either for Cloud Run or API Gateway
 	var neg *compute.RegionNetworkEndpointGroup
+
+	// Create health check only for Cloud Run NEGs
+	// Note: Health checks are NOT supported for Serverless NEGs (API Gateway, Cloud Run, etc.)
+	// See: https://cloud.google.com/load-balancing/docs/negs/serverless-neg-concepts#health-checks
+	var healthCheck *compute.HealthCheck
+
 	if apiGateway != nil {
 		// Create NEG for API Gateway
 		gatewayNegName := f.newResourceName(serviceName, "gateway-neg", 100)
@@ -186,9 +192,9 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context, policy *compute.Securi
 				Platform: pulumi.String("apigateway.googleapis.com"),
 				Resource: apiGateway.GatewayId,
 			},
-		})
+		}, pulumi.DependsOn([]pulumi.Resource{apiGateway}))
 	} else {
-		// Create NEG for Cloud Run
+		// No Gateway. Create NEG for Cloud Run
 		cloudrunNegName := f.newResourceName(serviceName, "cloudrun-neg", 100)
 		neg, err = compute.NewRegionNetworkEndpointGroup(ctx, cloudrunNegName, &compute.RegionNetworkEndpointGroupArgs{
 			Description:         pulumi.String(fmt.Sprintf("NEG to route LB traffic to %s", serviceName)),
@@ -200,6 +206,30 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context, policy *compute.Securi
 				Service: pulumi.String(serviceName),
 			},
 		})
+		if err != nil {
+			return nil, err
+		}
+
+		// Only create health check for Cloud Run NEGs
+		healthCheckName := f.newResourceName(serviceName, "health-check", 100)
+		healthCheck, err = compute.NewHealthCheck(ctx, healthCheckName, &compute.HealthCheckArgs{
+			Description: pulumi.String(fmt.Sprintf("Health check for %s backend service", serviceName)),
+			Project:     pulumi.String(project),
+			HttpHealthCheck: &compute.HealthCheckHttpHealthCheckArgs{
+				Port: pulumi.Int(443),
+				// TODO make configurable
+				RequestPath: pulumi.String("/api/v1/healthz"),
+			},
+			CheckIntervalSec:   pulumi.Int(5),
+			TimeoutSec:         pulumi.Int(3),
+			HealthyThreshold:   pulumi.Int(2),
+			UnhealthyThreshold: pulumi.Int(3),
+		})
+		if err != nil {
+			return nil, err
+		}
+		ctx.Export("load_balancer_health_check_id", healthCheck.ID())
+		ctx.Export("load_balancer_health_check_uri", healthCheck.SelfLink)
 	}
 	if err != nil {
 		return nil, err
@@ -208,19 +238,27 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context, policy *compute.Securi
 	ctx.Export("load_balancer_network_endpoint_group_uri", neg.SelfLink)
 	f.neg = neg
 
+	// Create the LB's backend service
 	serviceArgs := &compute.BackendServiceArgs{
 		Description:         pulumi.String(fmt.Sprintf("service backend for %s", serviceName)),
 		Project:             pulumi.String(project),
 		LoadBalancingScheme: pulumi.String("EXTERNAL"),
 		Backends: compute.BackendServiceBackendArray{
 			&compute.BackendServiceBackendArgs{
+				// Point the backend service to the NEG
 				Group: neg.SelfLink,
 			},
 		},
 		// TODO allow enabling IAP (Identity Aware Proxy)
 	}
+
+	// Attach Cloud Armor policy if enabled
 	if policy != nil {
 		serviceArgs.SecurityPolicy = policy.SelfLink
+	}
+	// Only add health check for Cloud Run NEGs
+	if healthCheck != nil {
+		serviceArgs.HealthChecks = healthCheck.SelfLink
 	}
 
 	backendServiceName := f.newResourceName(serviceName, "backend-service", 100)
@@ -228,10 +266,9 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context, policy *compute.Securi
 	if err != nil {
 		return nil, err
 	}
-	ctx.Export("load_balancer_backend_service_id", neg.ID())
-	ctx.Export("load_balancer_backend_service_uri", neg.SelfLink)
+	ctx.Export("load_balancer_backend_service_id", service.ID())
+	ctx.Export("load_balancer_backend_service_uri", service.SelfLink)
 
-	// TODO create compute address if enabled
 	urlMapName := f.newResourceName(serviceName, "url-map", 100)
 	backendURLMap, err := compute.NewURLMap(ctx, urlMapName, &compute.URLMapArgs{
 		Description:    pulumi.String(fmt.Sprintf("URL map to LB traffic for %s", serviceName)),
