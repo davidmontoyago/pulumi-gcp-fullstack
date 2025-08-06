@@ -80,7 +80,7 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 		DisplayName: pulumi.String(gatewayDisplayName),
 		Region:      pulumi.String(region),
 		Project:     pulumi.String(f.Project),
-		ApiConfig:   apiConfig.Name,
+		ApiConfig:   apiConfig.ID(),
 		Labels:      gatewayLabels,
 	})
 	if err != nil {
@@ -135,9 +135,7 @@ func (f *FullStack) grantAPIGatewayInvokerPermissions(ctx *pulumi.Context, apiGa
 		Project:  pulumi.String(f.Project),
 		Location: pulumi.String(f.Region),
 		Role:     pulumi.String("roles/run.invoker"),
-		Member: apiGatewayServiceAccountEmail.ApplyT(func(email string) string {
-			return fmt.Sprintf("serviceAccount:%s", email)
-		}).(pulumi.StringOutput),
+		Member:   pulumi.Sprintf("serviceAccount:%s", apiGatewayServiceAccountEmail),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to grant API Gateway backend invoker permissions: %w", err)
@@ -151,9 +149,7 @@ func (f *FullStack) grantAPIGatewayInvokerPermissions(ctx *pulumi.Context, apiGa
 		Project:  pulumi.String(f.Project),
 		Location: pulumi.String(f.Region),
 		Role:     pulumi.String("roles/run.invoker"),
-		Member: apiGatewayServiceAccountEmail.ApplyT(func(email string) string {
-			return fmt.Sprintf("serviceAccount:%s", email)
-		}).(pulumi.StringOutput),
+		Member:   pulumi.Sprintf("serviceAccount:%s", apiGatewayServiceAccountEmail),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to grant API Gateway frontend invoker permissions: %w", err)
@@ -212,7 +208,7 @@ func (f *FullStack) createAPIConfig(ctx *pulumi.Context,
 			},
 		},
 		Labels: gatewayLabels,
-	})
+	}, pulumi.ReplaceOnChanges([]string{"*"}))
 	if err != nil {
 		return nil, err
 	}
