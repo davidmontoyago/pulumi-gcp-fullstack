@@ -182,6 +182,11 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context, policy *compute.Securi
 
 	if apiGateway != nil {
 		// Create NEG for API Gateway
+
+		// This feature is currently in preview. The NEG gets to fail attached to the API Gateway.
+		// See:
+		// - https://discuss.google.dev/t/serverless-neg-and-api-gateway/189045
+		// - https://discuss.google.dev/t/cloud-run-accessed-via-serverless-neg-with-url-mask-returns-404/172725
 		gatewayNegName := f.newResourceName(serviceName, "gateway-neg", 100)
 		neg, err = compute.NewRegionNetworkEndpointGroup(ctx, gatewayNegName, &compute.RegionNetworkEndpointGroupArgs{
 			Description:         pulumi.String(fmt.Sprintf("NEG to route LB traffic to API Gateway for %s", serviceName)),
@@ -191,6 +196,10 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context, policy *compute.Securi
 			ServerlessDeployment: &compute.RegionNetworkEndpointGroupServerlessDeploymentArgs{
 				Platform: pulumi.String("apigateway.googleapis.com"),
 				Resource: apiGateway.GatewayId,
+				// Gateway NEG can also be configured with a URL mask
+				// See:
+				// - https://cloud.google.com/load-balancing/docs/https/setting-up-https-serverless#using-url-mask
+				// UrlMask: pulumi.String("davidmontoyago.path2prod.dev/<gateway>/my-gateway-id"),
 			},
 		}, pulumi.DependsOn([]pulumi.Resource{apiGateway}))
 	} else {
