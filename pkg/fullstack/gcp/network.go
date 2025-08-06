@@ -201,56 +201,10 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context,
 		}
 
 	} else {
-		// Create NEGs for Cloud Run instances
-		backendService, frontendService, err := f.createCloudRunNEGs(ctx, policy, serviceName, project, region)
+		urlMap, err = f.routeTrafficToCloudRunInstances(ctx, policy, serviceName, domainURL, project, region)
 		if err != nil {
 			return nil, err
 		}
-
-		paths := &compute.URLMapPathMatcherArgs{
-			Name:           pulumi.String("traffic-paths"),
-			DefaultService: backendService.SelfLink,
-			PathRules: compute.URLMapPathMatcherPathRuleArray{
-				&compute.URLMapPathMatcherPathRuleArgs{
-					Paths: pulumi.StringArray{
-						// TODO make me configurable
-						pulumi.String("/api/*"),
-					},
-					Service: backendService.SelfLink,
-				},
-				&compute.URLMapPathMatcherPathRuleArgs{
-					Paths: pulumi.StringArray{
-						// TODO make me configurable
-						pulumi.String("/ui/*"),
-					},
-					Service: frontendService.SelfLink,
-				},
-			},
-		}
-
-		urlMap, err = compute.NewURLMap(ctx, urlMapName, &compute.URLMapArgs{
-			Description: pulumi.String(fmt.Sprintf("URL map to LB traffic for %s", serviceName)),
-			Project:     pulumi.String(project),
-			// Default to the backend if no path matches
-			DefaultService: backendService.SelfLink,
-			PathMatchers: compute.URLMapPathMatcherArray{
-				paths,
-			},
-			// Host rules (can be customized for your domain)
-			HostRules: compute.URLMapHostRuleArray{
-				&compute.URLMapHostRuleArgs{
-					Hosts: pulumi.StringArray{
-						// Favor domain URL over "*" to avoid host header attacks
-						pulumi.String(domainURL),
-					},
-					PathMatcher: paths.Name,
-				},
-			},
-		})
-		if err != nil {
-			return nil, err
-		}
-
 	}
 
 	ctx.Export("load_balancer_url_map_id", urlMap.ID())
@@ -414,6 +368,70 @@ func (f *FullStack) createCloudRunNEGs(ctx *pulumi.Context,
 	ctx.Export("load_balancer_cloud_run_frontend_service_uri", frontendService.SelfLink)
 
 	return backendService, frontendService, nil
+}
+
+// routeTrafficToCloudRunInstances creates Cloud Run NEGs and URL mapping rules to route traffic to them
+// and returns the URL map.
+func (f *FullStack) routeTrafficToCloudRunInstances(ctx *pulumi.Context,
+	policy *compute.SecurityPolicy,
+	serviceName,
+	domainURL,
+	project,
+	region string) (*compute.URLMap, error) {
+
+	// Create NEGs for Cloud Run instances
+	backendService, frontendService, err := f.createCloudRunNEGs(ctx, policy, serviceName, project, region)
+	if err != nil {
+		return nil, err
+	}
+
+	urlMapName := f.newResourceName(serviceName, "url-map", 100)
+
+	paths := &compute.URLMapPathMatcherArgs{
+		Name:           pulumi.String("traffic-paths"),
+		DefaultService: backendService.SelfLink,
+		PathRules: compute.URLMapPathMatcherPathRuleArray{
+			&compute.URLMapPathMatcherPathRuleArgs{
+				Paths: pulumi.StringArray{
+					// TODO make me configurable
+					pulumi.String("/api/*"),
+				},
+				Service: backendService.SelfLink,
+			},
+			&compute.URLMapPathMatcherPathRuleArgs{
+				Paths: pulumi.StringArray{
+					// TODO make me configurable
+					pulumi.String("/ui/*"),
+				},
+				Service: frontendService.SelfLink,
+			},
+		},
+	}
+
+	urlMap, err := compute.NewURLMap(ctx, urlMapName, &compute.URLMapArgs{
+		Description: pulumi.String(fmt.Sprintf("URL map to LB traffic for %s", serviceName)),
+		Project:     pulumi.String(project),
+		// Default to the backend if no path matches
+		DefaultService: backendService.SelfLink,
+		PathMatchers: compute.URLMapPathMatcherArray{
+			paths,
+		},
+		// Host rules (can be customized for your domain)
+		HostRules: compute.URLMapHostRuleArray{
+			&compute.URLMapHostRuleArgs{
+				Hosts: pulumi.StringArray{
+					// Favor domain URL over "*" to avoid host header attacks
+					pulumi.String(domainURL),
+				},
+				PathMatcher: paths.Name,
+			},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return urlMap, nil
 }
 
 // createGlobalInternetEntrypoint creates a global IP address and forwarding rule for external traffic
