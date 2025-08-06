@@ -180,26 +180,12 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context,
 	ctx.Export("load_balancer_proxy_subnet_uri", subnet.SelfLink)
 
 	var urlMap *compute.URLMap
-	urlMapName := f.newResourceName(serviceName, "url-map", 100)
 
 	if f.gatewayEnabled {
-		// Create NEG for API Gateway
-		lbGatewayBackendService, err := f.createGatewayNEG(ctx, policy, serviceName, project, region, apiGateway)
+		urlMap, err = f.routeTrafficToGateway(ctx, policy, serviceName, domainURL, project, region, apiGateway)
 		if err != nil {
 			return nil, err
 		}
-
-		// Create URL map for Gateway NEG
-		urlMap, err = compute.NewURLMap(ctx, urlMapName, &compute.URLMapArgs{
-			Description: pulumi.String(fmt.Sprintf("URL map to LB traffic for %s", serviceName)),
-			Project:     pulumi.String(project),
-			// All traffic is deferred to the Gateway NEG
-			DefaultService: lbGatewayBackendService.SelfLink,
-		})
-		if err != nil {
-			return nil, err
-		}
-
 	} else {
 		urlMap, err = f.routeTrafficToCloudRunInstances(ctx, policy, serviceName, domainURL, project, region)
 		if err != nil {
@@ -210,6 +196,39 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context,
 	ctx.Export("load_balancer_url_map_id", urlMap.ID())
 	ctx.Export("load_balancer_url_map_uri", urlMap.SelfLink)
 	f.urlMap = urlMap
+
+	return urlMap, nil
+}
+
+// routeTrafficToGateway creates a Gateway NEG and routes traffic to it
+// and returns the URL map.
+func (f *FullStack) routeTrafficToGateway(ctx *pulumi.Context,
+	policy *compute.SecurityPolicy,
+	serviceName,
+	_,
+	project,
+	region string,
+	apiGateway *apigateway.Gateway) (*compute.URLMap, error) {
+
+	// Create NEG for API Gateway
+	lbGatewayBackendService, err := f.createGatewayNEG(ctx, policy, serviceName, project, region, apiGateway)
+	if err != nil {
+		return nil, err
+	}
+
+	urlMapName := f.newResourceName(serviceName, "url-map", 100)
+
+	// Create URL map for Gateway NEG
+	urlMap, err := compute.NewURLMap(ctx, urlMapName, &compute.URLMapArgs{
+		Description: pulumi.String(fmt.Sprintf("URL map to LB traffic for %s", serviceName)),
+		Project:     pulumi.String(project),
+		// All traffic is deferred to the Gateway NEG
+		DefaultService: lbGatewayBackendService.SelfLink,
+		// TODO set host rules to match DNS
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	return urlMap, nil
 }
