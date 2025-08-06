@@ -34,6 +34,10 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 		return nil, fmt.Errorf("APIConfigArgs is required when API Gateway is enabled")
 	}
 
+	if err := ctx.Log.Info(fmt.Sprintf("Routing traffic to API Gateway: %#v", args), nil); err != nil {
+		log.Println("failed to log API Gateway args with Pulumi context: %w", err)
+	}
+
 	// Create API Gateway IAM resources (service account and permissions)
 	gatewayServiceAccount, err := f.createAPIGatewayIAM(ctx, args.Name)
 	if err != nil {
@@ -89,6 +93,8 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 	ctx.Export("api_gateway_gateway_id", gateway.GatewayId)
 	ctx.Export("api_gateway_gateway_name", gateway.Name)
 	ctx.Export("api_gateway_gateway_default_hostname", gateway.DefaultHostname)
+
+	f.apiGateway = gateway
 
 	return gateway, nil
 }
