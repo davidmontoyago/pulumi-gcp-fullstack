@@ -35,7 +35,7 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 		Labels:        args.Labels,
 
 		name:           name,
-		gatewayEnabled: args.Network != nil && args.Network.APIGateway != nil,
+		gatewayEnabled: args.Network != nil && args.Network.APIGateway != nil && !args.Network.APIGateway.Disabled,
 	}
 	err := ctx.RegisterComponentResource("pulumi-fullstack:gcp:FullStack", name, fullStack, opts...)
 	if err != nil {
