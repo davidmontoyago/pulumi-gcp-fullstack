@@ -1310,3 +1310,119 @@ func TestNewFullStack_WithCustomApiPaths(t *testing.T) {
 		t.Fatalf("Pulumi WithMocks failed: %v", err)
 	}
 }
+
+func TestNewFullStack_WithoutGateway(t *testing.T) {
+	t.Parallel()
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		args := &gcp.FullStackArgs{
+			Project:       testProjectName,
+			Region:        testRegion,
+			BackendName:   backendServiceName,
+			BackendImage:  pulumi.String("gcr.io/test-project/backend:latest"),
+			FrontendName:  frontendServiceName,
+			FrontendImage: pulumi.String("gcr.io/test-project/frontend:latest"),
+			Backend: &gcp.BackendArgs{
+				InstanceArgs: &gcp.InstanceArgs{},
+			},
+			Frontend: &gcp.FrontendArgs{
+				InstanceArgs:          &gcp.InstanceArgs{},
+				EnableUnauthenticated: false,
+			},
+			Network: &gcp.NetworkArgs{
+				DomainURL: "myapp.example.com",
+			},
+		}
+
+		fullstack, err := gcp.NewFullStack(ctx, "test-fullstack", args)
+		require.NoError(t, err)
+
+		// Verify basic properties
+		assert.Equal(t, testProjectName, fullstack.Project)
+		assert.Equal(t, testRegion, fullstack.Region)
+		assert.Equal(t, backendServiceName, fullstack.BackendName)
+		assert.Equal(t, frontendServiceName, fullstack.FrontendName)
+
+		// Verify backend service configuration
+		backendService := fullstack.GetBackendService()
+		require.NotNil(t, backendService, "Backend service should not be nil")
+
+		// Assert backend image is set correctly
+		backendImageCh := make(chan string, 1)
+		defer close(backendImageCh)
+		backendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
+			backendImageCh <- containers[0].Image
+
+			return nil
+		})
+		assert.Equal(t, "gcr.io/test-project/backend:latest", <-backendImageCh, "Backend image should match the provided image")
+
+		// Verify frontend service configuration
+		frontendService := fullstack.GetFrontendService()
+		require.NotNil(t, frontendService, "Frontend service should not be nil")
+
+		frontendLocationCh := make(chan string, 1)
+		defer close(frontendLocationCh)
+		frontendService.Location.ApplyT(func(location string) error {
+			frontendLocationCh <- location
+
+			return nil
+		})
+		assert.Equal(t, testRegion, <-frontendLocationCh, "Frontend service location should match")
+
+		// Assert frontend image is set correctly
+		frontendImageCh := make(chan string, 1)
+		defer close(frontendImageCh)
+		frontendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
+			frontendImageCh <- containers[0].Image
+
+			return nil
+		})
+		assert.Equal(t, "gcr.io/test-project/frontend:latest", <-frontendImageCh, "Frontend image should match the provided image")
+
+		// Verify API Gateway configuration
+		apiGateway := fullstack.GetAPIGateway()
+		require.Nil(t, apiGateway, "API Gateway should not be present")
+
+		// Verify NEG configuration for Cloud Run (when no gateway is present)
+		neg := fullstack.GetNEG()
+		require.NotNil(t, neg, "NEG should not be nil")
+
+		// Assert NEG name is set correctly for Cloud Run
+		negNameCh := make(chan string, 1)
+		defer close(negNameCh)
+		neg.Name.ApplyT(func(name string) error {
+			negNameCh <- name
+			return nil
+		})
+		assert.Equal(t, "test-fullstack-gcp-lb-backend-cloudrun-neg", <-negNameCh, "NEG name should match Cloud Run convention")
+
+		// Assert NEG has CloudRun configuration (not ServerlessDeployment)
+		negCloudRunCh := make(chan *compute.RegionNetworkEndpointGroupCloudRun, 1)
+		cloudRunServiceCh := make(chan *string, 1)
+		defer close(negCloudRunCh)
+		neg.CloudRun.ApplyT(func(cloudRun *compute.RegionNetworkEndpointGroupCloudRun) error {
+			cloudRunServiceCh <- cloudRun.Service
+			return nil
+		})
+		actualCloudRunService := <-cloudRunServiceCh
+		require.NotNil(t, actualCloudRunService, "CloudRun service should not be nil")
+
+		// Get the actual backend service name to compare against
+		backendServiceNameCh := make(chan string, 1)
+		defer close(backendServiceNameCh)
+		backendService.Name.ApplyT(func(name string) error {
+			backendServiceNameCh <- name
+			return nil
+		})
+
+		// The NEG should be created with CloudRun pointing to the backend service
+		assert.Equal(t, <-backendServiceNameCh, *actualCloudRunService, "CloudRun NEG service should match the backend service name")
+
+		return nil
+	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
+
+	if err != nil {
+		t.Fatalf("Pulumi WithMocks failed: %v", err)
+	}
+}
