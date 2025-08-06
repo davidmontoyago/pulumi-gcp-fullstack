@@ -34,7 +34,8 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 		FrontendName:  frontendName,
 		Labels:        args.Labels,
 
-		name: name,
+		name:           name,
+		gatewayEnabled: args.Network != nil && args.Network.APIGateway != nil,
 	}
 	err := ctx.RegisterComponentResource("pulumi-fullstack:gcp:FullStack", name, fullStack, opts...)
 	if err != nil {
@@ -75,7 +76,7 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 	var apiGateway *apigateway.Gateway
 	var gatewayArgs *APIGatewayArgs
 
-	if args.Network != nil && args.Network.APIGateway != nil {
+	if f.gatewayEnabled {
 		// Deploy API Gateway if enabled
 		gatewayArgs = applyDefaultGatewayArgs(args.Network.APIGateway, backendService.Uri, frontendService.Uri)
 

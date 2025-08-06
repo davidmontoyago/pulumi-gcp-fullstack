@@ -22,7 +22,8 @@ type FullStack struct {
 	FrontendImage pulumi.StringOutput
 	Labels        map[string]string
 
-	name string
+	name           string
+	gatewayEnabled bool
 
 	backendService  *cloudrunv2.Service
 	backendAccount  *serviceaccount.Account

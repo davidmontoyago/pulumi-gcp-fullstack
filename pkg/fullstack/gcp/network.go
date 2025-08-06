@@ -182,61 +182,14 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context,
 	var urlMap *compute.URLMap
 	urlMapName := f.newResourceName(serviceName, "url-map", 100)
 
-	if apiGateway != nil {
+	if f.gatewayEnabled {
 		// Create NEG for API Gateway
-
-		// This feature is currently in preview. The NEG gets to fail attached to the API Gateway.
-		// See:
-		// - https://discuss.google.dev/t/serverless-neg-and-api-gateway/189045
-		// - https://discuss.google.dev/t/cloud-run-accessed-via-serverless-neg-with-url-mask-returns-404/172725
-		gatewayNegName := f.newResourceName(serviceName, "gateway-neg", 100)
-		neg, err := compute.NewRegionNetworkEndpointGroup(ctx, gatewayNegName, &compute.RegionNetworkEndpointGroupArgs{
-			Description:         pulumi.String(fmt.Sprintf("NEG to route LB traffic to API Gateway for %s", serviceName)),
-			Project:             pulumi.String(project),
-			Region:              pulumi.String(region),
-			NetworkEndpointType: pulumi.String("SERVERLESS"),
-			ServerlessDeployment: &compute.RegionNetworkEndpointGroupServerlessDeploymentArgs{
-				Platform: pulumi.String("apigateway.googleapis.com"),
-				Resource: apiGateway.GatewayId,
-				// Gateway NEG can also be configured with a URL mask
-				// See:
-				// - https://cloud.google.com/load-balancing/docs/https/setting-up-https-serverless#using-url-mask
-				// UrlMask: pulumi.String("davidmontoyago.path2prod.dev/<gateway>/my-gateway-id"),
-			},
-		})
+		lbGatewayBackendService, err := f.createGatewayNEG(ctx, policy, serviceName, project, region, apiGateway)
 		if err != nil {
 			return nil, err
 		}
-		f.apiGatewayNeg = neg
-		ctx.Export("load_balancer_gateway_network_endpoint_group_id", neg.ID())
-		ctx.Export("load_balancer_gateway_network_endpoint_group_uri", neg.SelfLink)
 
-		lbGatewayServiceArgs := &compute.BackendServiceArgs{
-			Description:         pulumi.String(fmt.Sprintf("service backend for %s", serviceName)),
-			Project:             pulumi.String(project),
-			LoadBalancingScheme: pulumi.String("EXTERNAL"),
-			Backends: compute.BackendServiceBackendArray{
-				&compute.BackendServiceBackendArgs{
-					// Point the LB backend to the Gateway NEG
-					Group: f.apiGatewayNeg.SelfLink,
-				},
-			},
-		}
-
-		// Attach Cloud Armor policy if enabled
-		if policy != nil {
-			lbGatewayServiceArgs.SecurityPolicy = policy.SelfLink
-		}
-
-		// Create the LB's backend service for Gateway NEG
-		backendServiceName := f.newResourceName(serviceName, "gateway-backend-service", 100)
-		lbGatewayBackendService, err := compute.NewBackendService(ctx, backendServiceName, lbGatewayServiceArgs)
-		if err != nil {
-			return nil, err
-		}
-		ctx.Export("load_balancer_gateway_backend_service_id", lbGatewayBackendService.ID())
-		ctx.Export("load_balancer_gateway_backend_service_uri", lbGatewayBackendService.SelfLink)
-
+		// Create URL map for Gateway NEG
 		urlMap, err = compute.NewURLMap(ctx, urlMapName, &compute.URLMapArgs{
 			Description: pulumi.String(fmt.Sprintf("URL map to LB traffic for %s", serviceName)),
 			Project:     pulumi.String(project),
@@ -382,6 +335,69 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context,
 	f.urlMap = urlMap
 
 	return urlMap, nil
+}
+
+// createGatewayNEG creates a Network Endpoint Group (NEG) for API Gateway integration
+// and returns the associated backend service.
+func (f *FullStack) createGatewayNEG(ctx *pulumi.Context,
+	policy *compute.SecurityPolicy,
+	serviceName,
+	project,
+	region string,
+	apiGateway *apigateway.Gateway) (*compute.BackendService, error) {
+	// This feature is currently in preview. The NEG gets to fail attached to the API Gateway.
+	// See:
+	// - https://discuss.google.dev/t/serverless-neg-and-api-gateway/189045
+	// - https://discuss.google.dev/t/cloud-run-accessed-via-serverless-neg-with-url-mask-returns-404/172725
+	gatewayNegName := f.newResourceName(serviceName, "gateway-neg", 100)
+	neg, err := compute.NewRegionNetworkEndpointGroup(ctx, gatewayNegName, &compute.RegionNetworkEndpointGroupArgs{
+		Description:         pulumi.String(fmt.Sprintf("NEG to route LB traffic to API Gateway for %s", serviceName)),
+		Project:             pulumi.String(project),
+		Region:              pulumi.String(region),
+		NetworkEndpointType: pulumi.String("SERVERLESS"),
+		ServerlessDeployment: &compute.RegionNetworkEndpointGroupServerlessDeploymentArgs{
+			Platform: pulumi.String("apigateway.googleapis.com"),
+			Resource: apiGateway.GatewayId,
+			// Gateway NEG can also be configured with a URL mask
+			// See:
+			// - https://cloud.google.com/load-balancing/docs/https/setting-up-https-serverless#using-url-mask
+			// UrlMask: pulumi.String("davidmontoyago.path2prod.dev/<gateway>/my-gateway-id"),
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	f.apiGatewayNeg = neg
+	ctx.Export("load_balancer_gateway_network_endpoint_group_id", neg.ID())
+	ctx.Export("load_balancer_gateway_network_endpoint_group_uri", neg.SelfLink)
+
+	lbGatewayServiceArgs := &compute.BackendServiceArgs{
+		Description:         pulumi.String(fmt.Sprintf("service backend for %s", serviceName)),
+		Project:             pulumi.String(project),
+		LoadBalancingScheme: pulumi.String("EXTERNAL"),
+		Backends: compute.BackendServiceBackendArray{
+			&compute.BackendServiceBackendArgs{
+				// Point the LB backend to the Gateway NEG
+				Group: f.apiGatewayNeg.SelfLink,
+			},
+		},
+	}
+
+	// Attach Cloud Armor policy if enabled
+	if policy != nil {
+		lbGatewayServiceArgs.SecurityPolicy = policy.SelfLink
+	}
+
+	// Create the LB's backend service for Gateway NEG
+	backendServiceName := f.newResourceName(serviceName, "gateway-backend-service", 100)
+	lbGatewayBackendService, err := compute.NewBackendService(ctx, backendServiceName, lbGatewayServiceArgs)
+	if err != nil {
+		return nil, err
+	}
+	ctx.Export("load_balancer_gateway_backend_service_id", lbGatewayBackendService.ID())
+	ctx.Export("load_balancer_gateway_backend_service_uri", lbGatewayBackendService.SelfLink)
+
+	return lbGatewayBackendService, nil
 }
 
 // createGlobalInternetEntrypoint creates a global IP address and forwarding rule for external traffic
