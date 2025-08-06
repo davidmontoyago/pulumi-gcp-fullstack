@@ -30,7 +30,7 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, args *Networ
 	var cloudArmorPolicy *compute.SecurityPolicy
 	var err error
 	if args.EnableCloudArmor {
-		cloudArmorPolicy, err = f.newCloudArmorPolicy(ctx, endpointName, args, f.Project)
+		cloudArmorPolicy, err = f.newCloudArmorPolicy(ctx, endpointName, args)
 		if err != nil {
 			return err
 		}
@@ -92,21 +92,21 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, args *Networ
 	}
 
 	// Create NEG for either Cloud Run or API Gateway
-	backendURLMap, err := f.newServerlessNEG(ctx, cloudArmorPolicy, endpointName, args.DomainURL, args.ProxyNetworkName, f.Project, f.Region, apiGateway)
+	lbRouteURLMap, err := f.setupTrafficRouterToUpstreamNEG(ctx, cloudArmorPolicy, endpointName, args.DomainURL, args.ProxyNetworkName, apiGateway)
 	if err != nil {
 		return err
 	}
 
-	err = f.newHTTPSProxy(ctx, endpointName, args.DomainURL, f.Project, args.EnablePrivateTrafficOnly, backendURLMap)
+	err = f.newHTTPSProxy(ctx, endpointName, args.DomainURL, args.EnablePrivateTrafficOnly, lbRouteURLMap)
 
 	return err
 }
 
-func (f *FullStack) newHTTPSProxy(ctx *pulumi.Context, serviceName, domainURL, project string, privateTraffic bool, backendURLMap *compute.URLMap) error {
+func (f *FullStack) newHTTPSProxy(ctx *pulumi.Context, serviceName, domainURL string, privateTraffic bool, backendURLMap *compute.URLMap) error {
 	tlsCertName := f.newResourceName(serviceName, "tls-cert", 100)
 	certificate, err := compute.NewManagedSslCertificate(ctx, tlsCertName, &compute.ManagedSslCertificateArgs{
 		Description: pulumi.String(fmt.Sprintf("TLS cert for %s", serviceName)),
-		Project:     pulumi.String(project),
+		Project:     pulumi.String(f.Project),
 		Managed: &compute.ManagedSslCertificateManagedArgs{
 			Domains: pulumi.StringArray{
 				pulumi.String(domainURL),
@@ -123,7 +123,7 @@ func (f *FullStack) newHTTPSProxy(ctx *pulumi.Context, serviceName, domainURL, p
 	httpsProxyName := f.newResourceName(serviceName, "https-proxy", 100)
 	httpsProxy, err := compute.NewTargetHttpsProxy(ctx, httpsProxyName, &compute.TargetHttpsProxyArgs{
 		Description: pulumi.String(fmt.Sprintf("proxy to LB traffic for %s", serviceName)),
-		Project:     pulumi.String(project),
+		Project:     pulumi.String(f.Project),
 		UrlMap:      backendURLMap.SelfLink,
 		SslCertificates: pulumi.StringArray{
 			certificate.SelfLink,
@@ -136,7 +136,7 @@ func (f *FullStack) newHTTPSProxy(ctx *pulumi.Context, serviceName, domainURL, p
 	ctx.Export("load_balancer_https_proxy_uri", httpsProxy.SelfLink)
 
 	if !privateTraffic {
-		err = f.createGlobalInternetEntrypoint(ctx, serviceName, domainURL, project, httpsProxy)
+		err = f.createGlobalInternetEntrypoint(ctx, serviceName, domainURL, httpsProxy)
 		if err != nil {
 			return err
 		}
@@ -145,13 +145,11 @@ func (f *FullStack) newHTTPSProxy(ctx *pulumi.Context, serviceName, domainURL, p
 	return nil
 }
 
-func (f *FullStack) newServerlessNEG(ctx *pulumi.Context,
+func (f *FullStack) setupTrafficRouterToUpstreamNEG(ctx *pulumi.Context,
 	policy *compute.SecurityPolicy,
 	serviceName,
 	domainURL,
-	network,
-	project,
-	region string,
+	network string,
 	apiGateway *apigateway.Gateway) (*compute.URLMap, error) {
 	// create proxy-only subnet required by Cloud Run to get traffic from the LB
 	// See:
@@ -165,8 +163,8 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context,
 	subnet, err := compute.NewSubnetwork(ctx, proxySubnetName, &compute.SubnetworkArgs{
 		Name:        pulumi.String(proxySubnetName),
 		Description: pulumi.String(fmt.Sprintf("proxy-only subnet for %s traffic", serviceName)),
-		Project:     pulumi.String(project),
-		Region:      pulumi.String(region),
+		Project:     pulumi.String(f.Project),
+		Region:      pulumi.String(f.Region),
 		Purpose:     pulumi.String("REGIONAL_MANAGED_PROXY"),
 		Network:     pulumi.String(trafficNetwork),
 		// Extended subnetworks in auto subnet mode networks cannot overlap with 10.128.0.0/9
@@ -182,12 +180,12 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context,
 	var urlMap *compute.URLMap
 
 	if f.gatewayEnabled {
-		urlMap, err = f.routeTrafficToGateway(ctx, policy, serviceName, domainURL, project, region, apiGateway)
+		urlMap, err = f.routeTrafficToGateway(ctx, policy, serviceName, domainURL, apiGateway)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		urlMap, err = f.routeTrafficToCloudRunInstances(ctx, policy, serviceName, domainURL, project, region)
+		urlMap, err = f.routeTrafficToCloudRunInstances(ctx, policy, serviceName, domainURL)
 		if err != nil {
 			return nil, err
 		}
@@ -205,13 +203,11 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context,
 func (f *FullStack) routeTrafficToGateway(ctx *pulumi.Context,
 	policy *compute.SecurityPolicy,
 	serviceName,
-	_,
-	project,
-	region string,
+	_ string,
 	apiGateway *apigateway.Gateway) (*compute.URLMap, error) {
 
 	// Create NEG for API Gateway
-	lbGatewayBackendService, err := f.createGatewayNEG(ctx, policy, serviceName, project, region, apiGateway)
+	lbGatewayBackendService, err := f.createGatewayNEG(ctx, policy, serviceName, apiGateway)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +217,7 @@ func (f *FullStack) routeTrafficToGateway(ctx *pulumi.Context,
 	// Create URL map for Gateway NEG
 	urlMap, err := compute.NewURLMap(ctx, urlMapName, &compute.URLMapArgs{
 		Description: pulumi.String(fmt.Sprintf("URL map to LB traffic for %s", serviceName)),
-		Project:     pulumi.String(project),
+		Project:     pulumi.String(f.Project),
 		// All traffic is deferred to the Gateway NEG
 		DefaultService: lbGatewayBackendService.SelfLink,
 		// TODO set host rules to match DNS
@@ -237,9 +233,7 @@ func (f *FullStack) routeTrafficToGateway(ctx *pulumi.Context,
 // and returns the associated backend service.
 func (f *FullStack) createGatewayNEG(ctx *pulumi.Context,
 	policy *compute.SecurityPolicy,
-	serviceName,
-	project,
-	region string,
+	serviceName string,
 	apiGateway *apigateway.Gateway) (*compute.BackendService, error) {
 	// This feature is currently in preview. The NEG gets to fail attached to the API Gateway.
 	// See:
@@ -248,8 +242,8 @@ func (f *FullStack) createGatewayNEG(ctx *pulumi.Context,
 	gatewayNegName := f.newResourceName(serviceName, "gateway-neg", 100)
 	neg, err := compute.NewRegionNetworkEndpointGroup(ctx, gatewayNegName, &compute.RegionNetworkEndpointGroupArgs{
 		Description:         pulumi.String(fmt.Sprintf("NEG to route LB traffic to API Gateway for %s", serviceName)),
-		Project:             pulumi.String(project),
-		Region:              pulumi.String(region),
+		Project:             pulumi.String(f.Project),
+		Region:              pulumi.String(f.Region),
 		NetworkEndpointType: pulumi.String("SERVERLESS"),
 		ServerlessDeployment: &compute.RegionNetworkEndpointGroupServerlessDeploymentArgs{
 			Platform: pulumi.String("apigateway.googleapis.com"),
@@ -269,7 +263,7 @@ func (f *FullStack) createGatewayNEG(ctx *pulumi.Context,
 
 	lbGatewayServiceArgs := &compute.BackendServiceArgs{
 		Description:         pulumi.String(fmt.Sprintf("service backend for %s", serviceName)),
-		Project:             pulumi.String(project),
+		Project:             pulumi.String(f.Project),
 		LoadBalancingScheme: pulumi.String("EXTERNAL"),
 		Backends: compute.BackendServiceBackendArray{
 			&compute.BackendServiceBackendArgs{
@@ -300,16 +294,14 @@ func (f *FullStack) createGatewayNEG(ctx *pulumi.Context,
 // and returns the associated backend and frontend services.
 func (f *FullStack) createCloudRunNEGs(ctx *pulumi.Context,
 	policy *compute.SecurityPolicy,
-	serviceName,
-	project,
-	region string) (*compute.BackendService, *compute.BackendService, error) {
+	serviceName string) (*compute.BackendService, *compute.BackendService, error) {
 	// No Gateway. Create NEGs for backend and frontendCloud Run instances
 
 	cloudrunBackendNegName := f.newResourceName(serviceName, "backend-cloudrun-neg", 100)
 	backendNeg, err := compute.NewRegionNetworkEndpointGroup(ctx, cloudrunBackendNegName, &compute.RegionNetworkEndpointGroupArgs{
 		Description:         pulumi.String(fmt.Sprintf("NEG to route LB traffic to %s", serviceName)),
-		Project:             pulumi.String(project),
-		Region:              pulumi.String(region),
+		Project:             pulumi.String(f.Project),
+		Region:              pulumi.String(f.Region),
 		NetworkEndpointType: pulumi.String("SERVERLESS"),
 		CloudRun: &compute.RegionNetworkEndpointGroupCloudRunArgs{
 			Service: f.backendService.Name,
@@ -325,8 +317,8 @@ func (f *FullStack) createCloudRunNEGs(ctx *pulumi.Context,
 	cloudrunFrontendNegName := f.newResourceName(serviceName, "frontend-cloudrun-neg", 100)
 	frontendNeg, err := compute.NewRegionNetworkEndpointGroup(ctx, cloudrunFrontendNegName, &compute.RegionNetworkEndpointGroupArgs{
 		Description:         pulumi.String(fmt.Sprintf("NEG to route LB traffic to %s", serviceName)),
-		Project:             pulumi.String(project),
-		Region:              pulumi.String(region),
+		Project:             pulumi.String(f.Project),
+		Region:              pulumi.String(f.Region),
 		NetworkEndpointType: pulumi.String("SERVERLESS"),
 		CloudRun: &compute.RegionNetworkEndpointGroupCloudRunArgs{
 			Service: f.frontendService.Name,
@@ -341,7 +333,7 @@ func (f *FullStack) createCloudRunNEGs(ctx *pulumi.Context,
 
 	lbBackendServiceArgs := &compute.BackendServiceArgs{
 		Description:         pulumi.String(fmt.Sprintf("service backend for %s", serviceName)),
-		Project:             pulumi.String(project),
+		Project:             pulumi.String(f.Project),
 		LoadBalancingScheme: pulumi.String("EXTERNAL"),
 		Backends: compute.BackendServiceBackendArray{
 			&compute.BackendServiceBackendArgs{
@@ -353,7 +345,7 @@ func (f *FullStack) createCloudRunNEGs(ctx *pulumi.Context,
 
 	lbFrontendServiceArgs := &compute.BackendServiceArgs{
 		Description:         pulumi.String(fmt.Sprintf("service backend for %s", serviceName)),
-		Project:             pulumi.String(project),
+		Project:             pulumi.String(f.Project),
 		LoadBalancingScheme: pulumi.String("EXTERNAL"),
 		Backends: compute.BackendServiceBackendArray{
 			&compute.BackendServiceBackendArgs{
@@ -394,12 +386,10 @@ func (f *FullStack) createCloudRunNEGs(ctx *pulumi.Context,
 func (f *FullStack) routeTrafficToCloudRunInstances(ctx *pulumi.Context,
 	policy *compute.SecurityPolicy,
 	serviceName,
-	domainURL,
-	project,
-	region string) (*compute.URLMap, error) {
+	domainURL string) (*compute.URLMap, error) {
 
 	// Create NEGs for Cloud Run instances
-	backendService, frontendService, err := f.createCloudRunNEGs(ctx, policy, serviceName, project, region)
+	backendService, frontendService, err := f.createCloudRunNEGs(ctx, policy, serviceName)
 	if err != nil {
 		return nil, err
 	}
@@ -429,7 +419,7 @@ func (f *FullStack) routeTrafficToCloudRunInstances(ctx *pulumi.Context,
 
 	urlMap, err := compute.NewURLMap(ctx, urlMapName, &compute.URLMapArgs{
 		Description: pulumi.String(fmt.Sprintf("URL map to LB traffic for %s", serviceName)),
-		Project:     pulumi.String(project),
+		Project:     pulumi.String(f.Project),
 		// Default to the backend if no path matches
 		DefaultService: backendService.SelfLink,
 		PathMatchers: compute.URLMapPathMatcherArray{
@@ -454,7 +444,7 @@ func (f *FullStack) routeTrafficToCloudRunInstances(ctx *pulumi.Context,
 }
 
 // createGlobalInternetEntrypoint creates a global IP address and forwarding rule for external traffic
-func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceName, domainURL, project string, httpsProxy *compute.TargetHttpsProxy) error {
+func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceName, domainURL string, httpsProxy *compute.TargetHttpsProxy) error {
 	labels := mergeLabels(f.Labels, pulumi.StringMap{
 		"load_balancer": pulumi.String("true"),
 	})
@@ -462,7 +452,7 @@ func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceN
 	// reserve an IP address for the LB
 	ipAddressName := f.newResourceName(serviceName, "global-ip", 100)
 	ipAddress, err := compute.NewGlobalAddress(ctx, ipAddressName, &compute.GlobalAddressArgs{
-		Project:     pulumi.String(project),
+		Project:     pulumi.String(f.Project),
 		Description: pulumi.String(fmt.Sprintf("IP address for %s", serviceName)),
 		IpVersion:   pulumi.String("IPV4"),
 		Labels:      labels,
@@ -478,7 +468,7 @@ func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceN
 	forwardingRuleName := f.newResourceName(serviceName, "https-forwarding", 100)
 	trafficRule, err := compute.NewGlobalForwardingRule(ctx, forwardingRuleName, &compute.GlobalForwardingRuleArgs{
 		Description:         pulumi.String(fmt.Sprintf("HTTPS forwarding rule to LB traffic for %s", serviceName)),
-		Project:             pulumi.String(project),
+		Project:             pulumi.String(f.Project),
 		PortRange:           pulumi.String("443"),
 		LoadBalancingScheme: pulumi.String("EXTERNAL"),
 		Target:              httpsProxy.SelfLink,
@@ -496,7 +486,7 @@ func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceN
 	f.globalForwardingRule = trafficRule
 
 	// Create DNS record for the global IP address
-	dnsRecord, err := f.createDNSRecord(ctx, serviceName, domainURL, project, ipAddress.Address)
+	dnsRecord, err := f.createDNSRecord(ctx, serviceName, domainURL, ipAddress.Address)
 	if err != nil {
 		return err
 	}
@@ -506,10 +496,10 @@ func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceN
 }
 
 // lookupDNSZone finds the appropriate DNS managed zone for the given domain
-func (f *FullStack) lookupDNSZone(ctx *pulumi.Context, domainURL, project string) (string, error) {
+func (f *FullStack) lookupDNSZone(ctx *pulumi.Context, domainURL string) (string, error) {
 	// Get all managed zones in the project
 	managedZones, err := dns.GetManagedZones(ctx, &dns.GetManagedZonesArgs{
-		Project: &project,
+		Project: &f.Project,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to get managed zones: %w", err)
@@ -533,7 +523,7 @@ func (f *FullStack) lookupDNSZone(ctx *pulumi.Context, domainURL, project string
 	}
 
 	if targetZoneName == "" {
-		return "", fmt.Errorf("no managed zone found for domain %s in project %s", domainURL, project)
+		return "", fmt.Errorf("no managed zone found for domain %s in project %s", domainURL, f.Project)
 	}
 
 	if err := ctx.Log.Debug(fmt.Sprintf("Found managed zone %s for domain %s", targetZoneName, domainURL), nil); err != nil {
@@ -544,9 +534,9 @@ func (f *FullStack) lookupDNSZone(ctx *pulumi.Context, domainURL, project string
 }
 
 // createDNSRecord creates a DNS A record for the given domain and IP address
-func (f *FullStack) createDNSRecord(ctx *pulumi.Context, serviceName, domainURL, project string, ipAddress pulumi.StringOutput) (*dns.RecordSet, error) {
+func (f *FullStack) createDNSRecord(ctx *pulumi.Context, serviceName, domainURL string, ipAddress pulumi.StringOutput) (*dns.RecordSet, error) {
 	// Look up the DNS managed zone for the domain
-	managedZoneName, err := f.lookupDNSZone(ctx, domainURL, project)
+	managedZoneName, err := f.lookupDNSZone(ctx, domainURL)
 	if err != nil {
 		return nil, err
 	}

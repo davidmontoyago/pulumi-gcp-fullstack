@@ -10,7 +10,7 @@ import (
 // creates a best-practice Cloud Armor security policy.
 // See:
 // https://github.com/GoogleCloudPlatform/terraform-google-cloud-armor/blob/9ea03ee3ff0778a087888582e806da7342635d69/main.tf#L445
-func (f *FullStack) newCloudArmorPolicy(ctx *pulumi.Context, policyName string, args *NetworkArgs, project string) (*compute.SecurityPolicy, error) {
+func (f *FullStack) newCloudArmorPolicy(ctx *pulumi.Context, policyName string, args *NetworkArgs) (*compute.SecurityPolicy, error) {
 	// Every security policy must have a default rule at priority 2147483647 with match condition *.
 	// See:
 	// https://cloud.google.com/armor/docs/waf-rules
@@ -35,7 +35,7 @@ func (f *FullStack) newCloudArmorPolicy(ctx *pulumi.Context, policyName string, 
 	cloudArmorPolicyName := f.newResourceName(policyName, "cloudarmor", 100)
 	policy, err := compute.NewSecurityPolicy(ctx, cloudArmorPolicyName, &compute.SecurityPolicyArgs{
 		Description: pulumi.String(fmt.Sprintf("Cloud Armor security policy for %s", policyName)),
-		Project:     pulumi.String(project),
+		Project:     pulumi.String(f.Project),
 		Rules:       rules,
 		Type:        pulumi.String("CLOUD_ARMOR"),
 	})
