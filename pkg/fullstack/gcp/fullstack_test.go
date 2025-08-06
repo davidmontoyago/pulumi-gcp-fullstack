@@ -48,6 +48,7 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 		outputs["location"] = testRegion
 		outputs["project"] = testProjectName
 		outputs["uri"] = "https://" + args.Name + "-hash-uc.a.run.app"
+		outputs["selfLink"] = "https://www.googleapis.com/apis/run.googleapis.com/v1/projects/" + testProjectName + "/location/us-central1/services" + args.Name
 		// Expected outputs: name, location, project, uri, template
 	case "gcp:secretmanager/secret:Secret":
 		outputs["secretId"] = args.Name
@@ -121,9 +122,11 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 	case "gcp:compute/targetHttpsProxy:TargetHttpsProxy":
 		// Expected outputs: name, project, description, urlMap, sslCertificates
 	case "gcp:compute/backendService:BackendService":
+		outputs["selfLink"] = "https://www.googleapis.com/compute/v1/projects/" + testProjectName + "/global/backendServices/" + args.Name
 		// Expected outputs: name, project, description, protocol, portName, timeoutSec, healthChecks
-	case "gcp:compute/urlMap:URLMap":
-		// Expected outputs: name, project, description, defaultService
+	case "gcp:compute/uRLMap:URLMap":
+		outputs["selfLink"] = "https://www.googleapis.com/compute/v1/projects/" + testProjectName + "/global/urlMaps/" + args.Name
+		// Expected outputs: name, project, description, defaultService, pathMatchers, hostRules
 	case "gcp:compute/subnetwork:Subnetwork":
 		// Expected outputs: name, project, region, description, purpose, network, ipCidrRange, role
 	case "gcp:compute/securityPolicy:SecurityPolicy":
@@ -199,11 +202,11 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 						"NEXT_PUBLIC_API_URL": "https://api.example.com",
 						"ANALYTICS_ID":        "GA-123456789",
 					},
-					MaxInstanceCount:   3,
-					DeletionProtection: false,
-					ContainerPort:      3000,
+					MaxInstanceCount:      3,
+					DeletionProtection:    false,
+					ContainerPort:         3000,
+					EnableUnauthenticated: false,
 				},
-				EnableUnauthenticated: false,
 			},
 			Network: &gcp.NetworkArgs{
 				DomainURL: "myapp.example.com",
@@ -528,8 +531,8 @@ func TestNewFullStack_WithGatewayDefaults(t *testing.T) {
 					// MaxInstanceCount:   3,
 					// DeletionProtection: false,
 					// ContainerPort:      3000,
+					EnableUnauthenticated: false,
 				},
-				EnableUnauthenticated: false,
 			},
 			Network: &gcp.NetworkArgs{
 				DomainURL:  "myapp.example.com",
@@ -838,9 +841,9 @@ func TestNewFullStack_WithGatewayDefaults(t *testing.T) {
 		assert.Len(t, domains, 1, "Certificate should have exactly one domain")
 		assert.Equal(t, "myapp.example.com", domains[0], "Certificate domain should match the provided domain")
 
-		// Verify NEG configuration
-		neg := fullstack.GetNEG()
-		require.NotNil(t, neg, "NEG should not be nil")
+		// Verify Gateway NEG configuration
+		neg := fullstack.GetGatewayNEG()
+		require.NotNil(t, neg, "Gateway NEG should not be nil")
 
 		// Assert NEG name is set correctly
 		negNameCh := make(chan string, 1)
@@ -1326,8 +1329,7 @@ func TestNewFullStack_WithoutGateway(t *testing.T) {
 				InstanceArgs: &gcp.InstanceArgs{},
 			},
 			Frontend: &gcp.FrontendArgs{
-				InstanceArgs:          &gcp.InstanceArgs{},
-				EnableUnauthenticated: false,
+				InstanceArgs: &gcp.InstanceArgs{},
 			},
 			Network: &gcp.NetworkArgs{
 				DomainURL: "myapp.example.com",
@@ -1385,13 +1387,13 @@ func TestNewFullStack_WithoutGateway(t *testing.T) {
 		require.Nil(t, apiGateway, "API Gateway should not be present")
 
 		// Verify NEG configuration for Cloud Run (when no gateway is present)
-		neg := fullstack.GetNEG()
-		require.NotNil(t, neg, "NEG should not be nil")
+		backendNeg := fullstack.GetBackendNEG()
+		require.NotNil(t, backendNeg, "NEG should not be nil")
 
 		// Assert NEG name is set correctly for Cloud Run
 		negNameCh := make(chan string, 1)
 		defer close(negNameCh)
-		neg.Name.ApplyT(func(name string) error {
+		backendNeg.Name.ApplyT(func(name string) error {
 			negNameCh <- name
 			return nil
 		})
@@ -1401,7 +1403,7 @@ func TestNewFullStack_WithoutGateway(t *testing.T) {
 		negCloudRunCh := make(chan *compute.RegionNetworkEndpointGroupCloudRun, 1)
 		cloudRunServiceCh := make(chan *string, 1)
 		defer close(negCloudRunCh)
-		neg.CloudRun.ApplyT(func(cloudRun *compute.RegionNetworkEndpointGroupCloudRun) error {
+		backendNeg.CloudRun.ApplyT(func(cloudRun *compute.RegionNetworkEndpointGroupCloudRun) error {
 			cloudRunServiceCh <- cloudRun.Service
 			return nil
 		})
@@ -1418,6 +1420,97 @@ func TestNewFullStack_WithoutGateway(t *testing.T) {
 
 		// The NEG should be created with CloudRun pointing to the backend service
 		assert.Equal(t, <-backendServiceNameCh, *actualCloudRunService, "CloudRun NEG service should match the backend service name")
+
+		// Verify frontend NEG configuration for Cloud Run (when no gateway is present)
+		frontendNeg := fullstack.GetFrontendNEG()
+		require.NotNil(t, frontendNeg, "Frontend NEG should not be nil")
+
+		// Assert frontend NEG name is set correctly for Cloud Run
+		frontendNegNameCh := make(chan string, 1)
+		defer close(frontendNegNameCh)
+		frontendNeg.Name.ApplyT(func(name string) error {
+			frontendNegNameCh <- name
+			return nil
+		})
+		assert.Equal(t, "test-fullstack-gcp-lb-frontend-cloudrun-neg", <-frontendNegNameCh, "Frontend NEG name should match Cloud Run convention")
+
+		// Assert frontend NEG has CloudRun configuration (not ServerlessDeployment)
+		frontendCloudRunServiceCh := make(chan *string, 1)
+		defer close(frontendCloudRunServiceCh)
+		frontendNeg.CloudRun.ApplyT(func(cloudRun *compute.RegionNetworkEndpointGroupCloudRun) error {
+			frontendCloudRunServiceCh <- cloudRun.Service
+			return nil
+		})
+		actualFrontendCloudRunService := <-frontendCloudRunServiceCh
+		require.NotNil(t, actualFrontendCloudRunService, "Frontend CloudRun service should not be nil")
+
+		// Get the actual frontend service name to compare against
+		frontendServiceNameCh := make(chan string, 1)
+		defer close(frontendServiceNameCh)
+		frontendService.Name.ApplyT(func(name string) error {
+			frontendServiceNameCh <- name
+			return nil
+		})
+
+		// The frontend NEG should be created with CloudRun pointing to the frontend service
+		assert.Equal(t, <-frontendServiceNameCh, *actualFrontendCloudRunService, "Frontend CloudRun NEG service should match the frontend service name")
+
+		// Verify URL Map configuration
+		urlMap := fullstack.GetURLMap()
+		require.NotNil(t, urlMap, "URL Map should not be nil")
+
+		// Assert URL Map has the correct default service (should be backend service)
+		urlMapDefaultServiceCh := make(chan *string, 1)
+		defer close(urlMapDefaultServiceCh)
+		urlMap.DefaultService.ApplyT(func(defaultService *string) error {
+			urlMapDefaultServiceCh <- defaultService
+			return nil
+		})
+		defaultService := <-urlMapDefaultServiceCh
+		assert.Contains(t, *defaultService, "backend-service", "Default service should point to backend service")
+
+		// Assert URL Map has path matchers configured
+		urlMapPathMatchersCh := make(chan []compute.URLMapPathMatcher, 1)
+		defer close(urlMapPathMatchersCh)
+		urlMap.PathMatchers.ApplyT(func(pathMatchers []compute.URLMapPathMatcher) error {
+			urlMapPathMatchersCh <- pathMatchers
+			return nil
+		})
+		pathMatchers := <-urlMapPathMatchersCh
+		require.Len(t, pathMatchers, 1, "URL Map should have exactly one path matcher")
+
+		// Assert path matcher has correct name
+		assert.Equal(t, "traffic-paths", pathMatchers[0].Name, "Path matcher should be named 'traffic-paths'")
+
+		// Assert path matcher has correct path rules
+		pathRules := pathMatchers[0].PathRules
+		require.Len(t, pathRules, 2, "Path matcher should have exactly 2 path rules")
+
+		// Check API path rule (/api/* -> backend)
+		apiPathRule := pathRules[0]
+		assert.Contains(t, apiPathRule.Paths, "/api/*", "First path rule should match /api/*")
+		assert.Contains(t, *apiPathRule.Service, "backend-service", "API path rule should route to backend service")
+
+		// Check UI path rule (/ui/* -> frontend)
+		uiPathRule := pathRules[1]
+		assert.Contains(t, uiPathRule.Paths, "/ui/*", "Second path rule should match /ui/*")
+		assert.Contains(t, *uiPathRule.Service, "frontend-service", "UI path rule should route to frontend service")
+
+		// Assert URL Map has host rules configured with domain URL (not wildcard)
+		urlMapHostRulesCh := make(chan []compute.URLMapHostRule, 1)
+		defer close(urlMapHostRulesCh)
+		urlMap.HostRules.ApplyT(func(hostRules []compute.URLMapHostRule) error {
+			urlMapHostRulesCh <- hostRules
+			return nil
+		})
+		hostRules := <-urlMapHostRulesCh
+		require.Len(t, hostRules, 1, "URL Map should have exactly one host rule")
+
+		// Assert host rule uses specific domain (not wildcard "*")
+		hostRule := hostRules[0]
+		assert.Equal(t, "myapp.example.com", hostRule.Hosts[0], "Host rule should use the specific domain URL")
+		assert.NotContains(t, hostRule.Hosts, "*", "Host rule should not use wildcard '*' for security")
+		assert.Equal(t, "traffic-paths", hostRule.PathMatcher, "Host rule should reference the correct path matcher")
 
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))

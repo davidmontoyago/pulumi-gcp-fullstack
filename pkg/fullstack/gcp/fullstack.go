@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	apigateway "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/apigateway"
+	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -71,26 +72,11 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 	f.frontendService = frontendService
 	f.frontendAccount = frontendAccount
 
-	// TODO should be removed as we want the frontend to not bypass the API gateway
-	// allow backend to be invoked from frontend
-	// _, err = cloudrunv2.NewServiceIamMember(ctx, fmt.Sprintf("%s-%s-invoker", f.BackendName, f.FrontendName), &cloudrunv2.ServiceIamMemberArgs{
-	// 	Name:     backendService.Name,
-	// 	Project:  pulumi.String(f.Project),
-	// 	Location: pulumi.String(f.Region),
-	// 	Role:     pulumi.String("roles/run.invoker"),
-	// 	Member:   pulumi.Sprintf("serviceAccount:%s", frontendAccount.Email),
-	// })
-	// if err != nil {
-	// 	return err
-	// }
-
-	// Deploy API Gateway (enabled by default, can be disabled)
-
 	var apiGateway *apigateway.Gateway
 	var gatewayArgs *APIGatewayArgs
 
 	if args.Network != nil && args.Network.APIGateway != nil {
-		// Gateway is optional
+		// Deploy API Gateway if enabled
 		gatewayArgs = applyDefaultGatewayArgs(args.Network.APIGateway, backendService.Uri, frontendService.Uri)
 
 		if err := ctx.Log.Info(fmt.Sprintf("Using API Gateway args: %+v", gatewayArgs), nil); err != nil {
@@ -103,6 +89,42 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 		}
 
 		f.apiGateway = apiGateway
+	} else {
+		// If no gateway enabled, traffic goes directly to the cloud run instances. yehaaw!
+
+		_, err = cloudrunv2.NewServiceIamMember(ctx, fmt.Sprintf("%s-allow-unauthenticated", f.FrontendName), &cloudrunv2.ServiceIamMemberArgs{
+			Name:     frontendService.Name,
+			Project:  pulumi.String(args.Project),
+			Location: pulumi.String(args.Region),
+			Role:     pulumi.String("roles/run.invoker"),
+			Member:   pulumi.Sprintf("allUsers"),
+		})
+		if err != nil {
+			return err
+		}
+
+		_, err = cloudrunv2.NewServiceIamMember(ctx, fmt.Sprintf("%s-allow-unauthenticated", f.BackendName), &cloudrunv2.ServiceIamMemberArgs{
+			Name:     backendService.Name,
+			Project:  pulumi.String(args.Project),
+			Location: pulumi.String(args.Region),
+			Role:     pulumi.String("roles/run.invoker"),
+			Member:   pulumi.Sprintf("allUsers"),
+		})
+		if err != nil {
+			return err
+		}
+
+		// _, err = cloudrunv2.NewServiceIamMember(ctx, fmt.Sprintf("%s-%s-invoker", f.BackendName, f.FrontendName), &cloudrunv2.ServiceIamMemberArgs{
+		// 	Name:     backendService.Name,
+		// 	Project:  pulumi.String(f.Project),
+		// 	Location: pulumi.String(f.Region),
+		// 	Role:     pulumi.String("roles/run.invoker"),
+		// 	Member:   pulumi.Sprintf("serviceAccount:%s", frontendAccount.Email),
+		// })
+		// if err != nil {
+		// 	return err
+		// }
+
 	}
 
 	// create an external load balancer and point to a serverless NEG (API gateway or Cloud run)

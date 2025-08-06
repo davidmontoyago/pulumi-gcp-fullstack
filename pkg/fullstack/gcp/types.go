@@ -28,8 +28,6 @@ type FullStack struct {
 	backendAccount  *serviceaccount.Account
 	frontendService *cloudrunv2.Service
 	frontendAccount *serviceaccount.Account
-	apiGateway      *apigateway.Gateway
-	apiConfig       *apigateway.ApiConfig
 
 	// IAM members for API Gateway invoker permissions
 	gatewayServiceAccount    *serviceaccount.Account
@@ -37,10 +35,19 @@ type FullStack struct {
 	frontendGatewayIamMember *cloudrunv2.ServiceIamMember
 
 	// Network infrastructure
-	certificate          *compute.ManagedSslCertificate
-	neg                  *compute.RegionNetworkEndpointGroup
+	apiGateway *apigateway.Gateway
+	apiConfig  *apigateway.ApiConfig
+	// The NEG used when API Gateway is enabled
+	apiGatewayNeg *compute.RegionNetworkEndpointGroup
+	// The NEGs used when API Gateway is disabled
+	backendNeg  *compute.RegionNetworkEndpointGroup
+	frontendNeg *compute.RegionNetworkEndpointGroup
+
 	globalForwardingRule *compute.GlobalForwardingRule
-	dnsRecord            *dns.RecordSet
+
+	certificate *compute.ManagedSslCertificate
+	dnsRecord   *dns.RecordSet
+	urlMap      *compute.URLMap
 }
 
 // GetBackendService returns the backend Cloud Run service.
@@ -78,11 +85,6 @@ func (f *FullStack) GetCertificate() *compute.ManagedSslCertificate {
 	return f.certificate
 }
 
-// GetNEG returns the region network endpoint group for the load balancer.
-func (f *FullStack) GetNEG() *compute.RegionNetworkEndpointGroup {
-	return f.neg
-}
-
 // GetGlobalForwardingRule returns the global forwarding rule for the load balancer.
 func (f *FullStack) GetGlobalForwardingRule() *compute.GlobalForwardingRule {
 	return f.globalForwardingRule
@@ -113,6 +115,26 @@ func (f *FullStack) GetGatewayServiceAccount() *serviceaccount.Account {
 	return f.gatewayServiceAccount
 }
 
+// GetBackendNEG returns the region network endpoint group for the backend service.
+func (f *FullStack) GetBackendNEG() *compute.RegionNetworkEndpointGroup {
+	return f.backendNeg
+}
+
+// GetFrontendNEG returns the region network endpoint group for the frontend service.
+func (f *FullStack) GetFrontendNEG() *compute.RegionNetworkEndpointGroup {
+	return f.frontendNeg
+}
+
+// GetGatewayNEG returns the region network endpoint group for the API Gateway.
+func (f *FullStack) GetGatewayNEG() *compute.RegionNetworkEndpointGroup {
+	return f.apiGatewayNeg
+}
+
+// GetURLMap returns the URL map for the load balancer.
+func (f *FullStack) GetURLMap() *compute.URLMap {
+	return f.urlMap
+}
+
 // FullStackArgs contains configuration arguments for creating a FullStack instance.
 type FullStackArgs struct {
 	Project       string
@@ -136,7 +158,6 @@ type BackendArgs struct {
 // FrontendArgs contains configuration for the frontend service.
 type FrontendArgs struct {
 	*InstanceArgs
-	EnableUnauthenticated bool
 }
 
 // Probe contains configuration for health check probes
@@ -150,15 +171,16 @@ type Probe struct {
 
 // InstanceArgs contains configuration for Cloud Run service instances.
 type InstanceArgs struct {
-	ResourceLimits       pulumi.StringMap
-	SecretConfigFileName string
-	SecretConfigFilePath string
-	EnvVars              map[string]string
-	MaxInstanceCount     int
-	DeletionProtection   bool
-	ContainerPort        int
-	StartupProbe         *Probe
-	LivenessProbe        *Probe
+	ResourceLimits        pulumi.StringMap
+	SecretConfigFileName  string
+	SecretConfigFilePath  string
+	EnvVars               map[string]string
+	MaxInstanceCount      int
+	DeletionProtection    bool
+	ContainerPort         int
+	StartupProbe          *Probe
+	LivenessProbe         *Probe
+	EnableUnauthenticated bool
 }
 
 // NetworkArgs contains configuration for network infrastructure including load balancers and API Gateway.
