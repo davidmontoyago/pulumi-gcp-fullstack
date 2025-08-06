@@ -221,30 +221,6 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context,
 				Service: f.backendService.Name,
 			},
 		})
-		if err != nil {
-			return nil, err
-		}
-
-		// Only create health check for Cloud Run NEGs
-		healthCheckName := f.newResourceName(serviceName, "health-check", 100)
-		healthCheck, err = compute.NewHealthCheck(ctx, healthCheckName, &compute.HealthCheckArgs{
-			Description: pulumi.String(fmt.Sprintf("Health check for %s backend service", serviceName)),
-			Project:     pulumi.String(project),
-			HttpHealthCheck: &compute.HealthCheckHttpHealthCheckArgs{
-				Port: pulumi.Int(443),
-				// TODO make configurable
-				RequestPath: pulumi.String("/api/v1/healthz"),
-			},
-			CheckIntervalSec:   pulumi.Int(5),
-			TimeoutSec:         pulumi.Int(3),
-			HealthyThreshold:   pulumi.Int(2),
-			UnhealthyThreshold: pulumi.Int(3),
-		})
-		if err != nil {
-			return nil, err
-		}
-		ctx.Export("load_balancer_health_check_id", healthCheck.ID())
-		ctx.Export("load_balancer_health_check_uri", healthCheck.SelfLink)
 	}
 	if err != nil {
 		return nil, err
