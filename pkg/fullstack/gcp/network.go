@@ -145,7 +145,13 @@ func (f *FullStack) newHTTPSProxy(ctx *pulumi.Context, serviceName, domainURL, p
 	return nil
 }
 
-func (f *FullStack) newServerlessNEG(ctx *pulumi.Context, policy *compute.SecurityPolicy, serviceName, network, project, region string, apiGateway *apigateway.Gateway) (*compute.URLMap, error) {
+func (f *FullStack) newServerlessNEG(ctx *pulumi.Context,
+	policy *compute.SecurityPolicy,
+	serviceName,
+	network,
+	project,
+	region string,
+	apiGateway *apigateway.Gateway) (*compute.URLMap, error) {
 	// create proxy-only subnet required by Cloud Run to get traffic from the LB
 	// See:
 	// https://cloud.google.com/load-balancing/docs/https#proxy-only-subnet
@@ -204,7 +210,7 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context, policy *compute.Securi
 		}, pulumi.DependsOn([]pulumi.Resource{apiGateway}))
 	} else {
 		// No Gateway. Create NEG for Cloud Run
-		cloudrunNegName := f.newResourceName(serviceName, "cloudrun-neg", 100)
+		cloudrunNegName := f.newResourceName(serviceName, "backend-cloudrun-neg", 100)
 		neg, err = compute.NewRegionNetworkEndpointGroup(ctx, cloudrunNegName, &compute.RegionNetworkEndpointGroupArgs{
 			Description:         pulumi.String(fmt.Sprintf("NEG to route LB traffic to %s", serviceName)),
 			Project:             pulumi.String(project),
@@ -212,7 +218,7 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context, policy *compute.Securi
 			NetworkEndpointType: pulumi.String("SERVERLESS"),
 			CloudRun: &compute.RegionNetworkEndpointGroupCloudRunArgs{
 				// TODO fix. this should be neg per backend/frontend
-				Service: pulumi.String(serviceName),
+				Service: f.backendService.Name,
 			},
 		})
 		if err != nil {
@@ -299,6 +305,7 @@ func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceN
 		"load_balancer": pulumi.String("true"),
 	})
 
+	// reserve an IP address for the LB
 	ipAddressName := f.newResourceName(serviceName, "global-ip", 100)
 	ipAddress, err := compute.NewGlobalAddress(ctx, ipAddressName, &compute.GlobalAddressArgs{
 		Project:     pulumi.String(project),
