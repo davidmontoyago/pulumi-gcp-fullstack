@@ -1333,6 +1333,9 @@ func TestNewFullStack_WithoutGateway(t *testing.T) {
 			},
 			Network: &gcp.NetworkArgs{
 				DomainURL: "myapp.example.com",
+				APIGateway: &gcp.APIGatewayArgs{
+					Disabled: true,
+				},
 			},
 		}
 
