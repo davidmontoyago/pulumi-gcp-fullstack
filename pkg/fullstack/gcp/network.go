@@ -201,88 +201,11 @@ func (f *FullStack) newServerlessNEG(ctx *pulumi.Context,
 		}
 
 	} else {
-		// No Gateway. Create NEGs for backend and frontendCloud Run instances
-
-		cloudrunBackendNegName := f.newResourceName(serviceName, "backend-cloudrun-neg", 100)
-		backendNeg, err := compute.NewRegionNetworkEndpointGroup(ctx, cloudrunBackendNegName, &compute.RegionNetworkEndpointGroupArgs{
-			Description:         pulumi.String(fmt.Sprintf("NEG to route LB traffic to %s", serviceName)),
-			Project:             pulumi.String(project),
-			Region:              pulumi.String(region),
-			NetworkEndpointType: pulumi.String("SERVERLESS"),
-			CloudRun: &compute.RegionNetworkEndpointGroupCloudRunArgs{
-				Service: f.backendService.Name,
-			},
-		})
+		// Create NEGs for Cloud Run instances
+		backendService, frontendService, err := f.createCloudRunNEGs(ctx, policy, serviceName, project, region)
 		if err != nil {
 			return nil, err
 		}
-		f.backendNeg = backendNeg
-		ctx.Export("load_balancer_backend_network_endpoint_group_id", backendNeg.ID())
-		ctx.Export("load_balancer_backend_network_endpoint_group_uri", backendNeg.SelfLink)
-
-		cloudrunFrontendNegName := f.newResourceName(serviceName, "frontend-cloudrun-neg", 100)
-		frontendNeg, err := compute.NewRegionNetworkEndpointGroup(ctx, cloudrunFrontendNegName, &compute.RegionNetworkEndpointGroupArgs{
-			Description:         pulumi.String(fmt.Sprintf("NEG to route LB traffic to %s", serviceName)),
-			Project:             pulumi.String(project),
-			Region:              pulumi.String(region),
-			NetworkEndpointType: pulumi.String("SERVERLESS"),
-			CloudRun: &compute.RegionNetworkEndpointGroupCloudRunArgs{
-				Service: f.frontendService.Name,
-			},
-		})
-		if err != nil {
-			return nil, err
-		}
-		f.frontendNeg = frontendNeg
-		ctx.Export("load_balancer_frontend_network_endpoint_group_id", frontendNeg.ID())
-		ctx.Export("load_balancer_frontend_network_endpoint_group_uri", frontendNeg.SelfLink)
-
-		lbBackendServiceArgs := &compute.BackendServiceArgs{
-			Description:         pulumi.String(fmt.Sprintf("service backend for %s", serviceName)),
-			Project:             pulumi.String(project),
-			LoadBalancingScheme: pulumi.String("EXTERNAL"),
-			Backends: compute.BackendServiceBackendArray{
-				&compute.BackendServiceBackendArgs{
-					// Point the LB backend to the Gateway NEG
-					Group: f.backendNeg.SelfLink,
-				},
-			},
-		}
-
-		lbFrontendServiceArgs := &compute.BackendServiceArgs{
-			Description:         pulumi.String(fmt.Sprintf("service backend for %s", serviceName)),
-			Project:             pulumi.String(project),
-			LoadBalancingScheme: pulumi.String("EXTERNAL"),
-			Backends: compute.BackendServiceBackendArray{
-				&compute.BackendServiceBackendArgs{
-					// Point the LB backend to the Gateway NEG
-					Group: f.frontendNeg.SelfLink,
-				},
-			},
-		}
-
-		// Attach Cloud Armor policy if enabled
-		if policy != nil {
-			lbBackendServiceArgs.SecurityPolicy = policy.SelfLink
-			lbFrontendServiceArgs.SecurityPolicy = policy.SelfLink
-		}
-
-		// Create the LB backends - They'll be attached to the URL map
-		backendServiceName := f.newResourceName(serviceName, "cloudrun-backend-service", 100)
-		backendService, err := compute.NewBackendService(ctx, backendServiceName, lbBackendServiceArgs)
-		if err != nil {
-			return nil, err
-		}
-		ctx.Export("load_balancer_cloud_run_backend_service_id", backendService.ID())
-		ctx.Export("load_balancer_cloud_run_backend_service_uri", backendService.SelfLink)
-
-		frontendServiceName := f.newResourceName(serviceName, "cloudrun-frontend-service", 100)
-		frontendService, err := compute.NewBackendService(ctx, frontendServiceName, lbFrontendServiceArgs)
-		if err != nil {
-			return nil, err
-		}
-		ctx.Export("load_balancer_cloud_run_frontend_service_id", frontendService.ID())
-		ctx.Export("load_balancer_cloud_run_frontend_service_uri", frontendService.SelfLink)
 
 		paths := &compute.URLMapPathMatcherArgs{
 			Name:           pulumi.String("traffic-paths"),
@@ -398,6 +321,99 @@ func (f *FullStack) createGatewayNEG(ctx *pulumi.Context,
 	ctx.Export("load_balancer_gateway_backend_service_uri", lbGatewayBackendService.SelfLink)
 
 	return lbGatewayBackendService, nil
+}
+
+// createCloudRunNEGs creates Network Endpoint Groups (NEGs) for Cloud Run instances
+// and returns the associated backend and frontend services.
+func (f *FullStack) createCloudRunNEGs(ctx *pulumi.Context,
+	policy *compute.SecurityPolicy,
+	serviceName,
+	project,
+	region string) (*compute.BackendService, *compute.BackendService, error) {
+	// No Gateway. Create NEGs for backend and frontendCloud Run instances
+
+	cloudrunBackendNegName := f.newResourceName(serviceName, "backend-cloudrun-neg", 100)
+	backendNeg, err := compute.NewRegionNetworkEndpointGroup(ctx, cloudrunBackendNegName, &compute.RegionNetworkEndpointGroupArgs{
+		Description:         pulumi.String(fmt.Sprintf("NEG to route LB traffic to %s", serviceName)),
+		Project:             pulumi.String(project),
+		Region:              pulumi.String(region),
+		NetworkEndpointType: pulumi.String("SERVERLESS"),
+		CloudRun: &compute.RegionNetworkEndpointGroupCloudRunArgs{
+			Service: f.backendService.Name,
+		},
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	f.backendNeg = backendNeg
+	ctx.Export("load_balancer_backend_network_endpoint_group_id", backendNeg.ID())
+	ctx.Export("load_balancer_backend_network_endpoint_group_uri", backendNeg.SelfLink)
+
+	cloudrunFrontendNegName := f.newResourceName(serviceName, "frontend-cloudrun-neg", 100)
+	frontendNeg, err := compute.NewRegionNetworkEndpointGroup(ctx, cloudrunFrontendNegName, &compute.RegionNetworkEndpointGroupArgs{
+		Description:         pulumi.String(fmt.Sprintf("NEG to route LB traffic to %s", serviceName)),
+		Project:             pulumi.String(project),
+		Region:              pulumi.String(region),
+		NetworkEndpointType: pulumi.String("SERVERLESS"),
+		CloudRun: &compute.RegionNetworkEndpointGroupCloudRunArgs{
+			Service: f.frontendService.Name,
+		},
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	f.frontendNeg = frontendNeg
+	ctx.Export("load_balancer_frontend_network_endpoint_group_id", frontendNeg.ID())
+	ctx.Export("load_balancer_frontend_network_endpoint_group_uri", frontendNeg.SelfLink)
+
+	lbBackendServiceArgs := &compute.BackendServiceArgs{
+		Description:         pulumi.String(fmt.Sprintf("service backend for %s", serviceName)),
+		Project:             pulumi.String(project),
+		LoadBalancingScheme: pulumi.String("EXTERNAL"),
+		Backends: compute.BackendServiceBackendArray{
+			&compute.BackendServiceBackendArgs{
+				// Point the LB backend to the Gateway NEG
+				Group: f.backendNeg.SelfLink,
+			},
+		},
+	}
+
+	lbFrontendServiceArgs := &compute.BackendServiceArgs{
+		Description:         pulumi.String(fmt.Sprintf("service backend for %s", serviceName)),
+		Project:             pulumi.String(project),
+		LoadBalancingScheme: pulumi.String("EXTERNAL"),
+		Backends: compute.BackendServiceBackendArray{
+			&compute.BackendServiceBackendArgs{
+				// Point the LB backend to the Gateway NEG
+				Group: f.frontendNeg.SelfLink,
+			},
+		},
+	}
+
+	// Attach Cloud Armor policy if enabled
+	if policy != nil {
+		lbBackendServiceArgs.SecurityPolicy = policy.SelfLink
+		lbFrontendServiceArgs.SecurityPolicy = policy.SelfLink
+	}
+
+	// Create the LB backends - They'll be attached to the URL map
+	backendServiceName := f.newResourceName(serviceName, "cloudrun-backend-service", 100)
+	backendService, err := compute.NewBackendService(ctx, backendServiceName, lbBackendServiceArgs)
+	if err != nil {
+		return nil, nil, err
+	}
+	ctx.Export("load_balancer_cloud_run_backend_service_id", backendService.ID())
+	ctx.Export("load_balancer_cloud_run_backend_service_uri", backendService.SelfLink)
+
+	frontendServiceName := f.newResourceName(serviceName, "cloudrun-frontend-service", 100)
+	frontendService, err := compute.NewBackendService(ctx, frontendServiceName, lbFrontendServiceArgs)
+	if err != nil {
+		return nil, nil, err
+	}
+	ctx.Export("load_balancer_cloud_run_frontend_service_id", frontendService.ID())
+	ctx.Export("load_balancer_cloud_run_frontend_service_uri", frontendService.SelfLink)
+
+	return backendService, frontendService, nil
 }
 
 // createGlobalInternetEntrypoint creates a global IP address and forwarding rule for external traffic
