@@ -9,8 +9,52 @@ import (
 
 	apigateway "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/apigateway"
 	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/compute"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/dns"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
+
+// FullStack represents a complete fullstack application infrastructure on Google Cloud Platform.
+type FullStack struct {
+	pulumi.ResourceState
+
+	Project       string
+	Region        string
+	BackendName   string
+	BackendImage  pulumi.StringOutput
+	FrontendName  string
+	FrontendImage pulumi.StringOutput
+	Labels        map[string]string
+
+	name           string
+	gatewayEnabled bool
+
+	backendService  *cloudrunv2.Service
+	backendAccount  *serviceaccount.Account
+	frontendService *cloudrunv2.Service
+	frontendAccount *serviceaccount.Account
+
+	// IAM members for API Gateway invoker permissions
+	gatewayServiceAccount    *serviceaccount.Account
+	backendGatewayIamMember  *cloudrunv2.ServiceIamMember
+	frontendGatewayIamMember *cloudrunv2.ServiceIamMember
+
+	// Network infrastructure
+	apiGateway *apigateway.Gateway
+	apiConfig  *apigateway.ApiConfig
+	// The NEG used when API Gateway is enabled
+	apiGatewayNeg *compute.RegionNetworkEndpointGroup
+	// The NEGs used when API Gateway is disabled
+	backendNeg  *compute.RegionNetworkEndpointGroup
+	frontendNeg *compute.RegionNetworkEndpointGroup
+
+	globalForwardingRule *compute.GlobalForwardingRule
+
+	certificate *compute.ManagedSslCertificate
+	dnsRecord   *dns.RecordSet
+	urlMap      *compute.URLMap
+}
 
 // NewFullStack creates a new FullStack instance with the provided configuration.
 func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ...pulumi.ResourceOption) (*FullStack, error) {
@@ -201,4 +245,89 @@ func (f *FullStack) newResourceName(serviceName, resourceType string, maxLength 
 	}
 
 	return resourceName
+}
+
+// GetBackendService returns the backend Cloud Run service.
+func (f *FullStack) GetBackendService() *cloudrunv2.Service {
+	return f.backendService
+}
+
+// GetFrontendService returns the frontend Cloud Run service.
+func (f *FullStack) GetFrontendService() *cloudrunv2.Service {
+	return f.frontendService
+}
+
+// GetAPIGateway returns the API Gateway instance.
+func (f *FullStack) GetAPIGateway() *apigateway.Gateway {
+	return f.apiGateway
+}
+
+// GetAPIConfig returns the API Gateway configuration.
+func (f *FullStack) GetAPIConfig() *apigateway.ApiConfig {
+	return f.apiConfig
+}
+
+// GetBackendGatewayIamMember returns the backend service IAM member for API Gateway invoker permissions.
+func (f *FullStack) GetBackendGatewayIamMember() *cloudrunv2.ServiceIamMember {
+	return f.backendGatewayIamMember
+}
+
+// GetFrontendGatewayIamMember returns the frontend service IAM member for API Gateway invoker permissions.
+func (f *FullStack) GetFrontendGatewayIamMember() *cloudrunv2.ServiceIamMember {
+	return f.frontendGatewayIamMember
+}
+
+// GetCertificate returns the managed SSL certificate for the domain.
+func (f *FullStack) GetCertificate() *compute.ManagedSslCertificate {
+	return f.certificate
+}
+
+// GetGlobalForwardingRule returns the global forwarding rule for the load balancer.
+func (f *FullStack) GetGlobalForwardingRule() *compute.GlobalForwardingRule {
+	return f.globalForwardingRule
+}
+
+// LookupDNSZone finds the appropriate DNS managed zone for the given domain in the current project
+func (f *FullStack) LookupDNSZone(ctx *pulumi.Context, domainURL string) (string, error) {
+	return f.lookupDNSZone(ctx, domainURL)
+}
+
+// GetDNSRecord returns the DNS record created for the load balancer
+func (f *FullStack) GetDNSRecord() *dns.RecordSet {
+	return f.dnsRecord
+}
+
+// GetBackendAccount returns the backend service account.
+func (f *FullStack) GetBackendAccount() *serviceaccount.Account {
+	return f.backendAccount
+}
+
+// GetFrontendAccount returns the frontend service account.
+func (f *FullStack) GetFrontendAccount() *serviceaccount.Account {
+	return f.frontendAccount
+}
+
+// GetGatewayServiceAccount returns the API Gateway service account.
+func (f *FullStack) GetGatewayServiceAccount() *serviceaccount.Account {
+	return f.gatewayServiceAccount
+}
+
+// GetBackendNEG returns the region network endpoint group for the backend service.
+func (f *FullStack) GetBackendNEG() *compute.RegionNetworkEndpointGroup {
+	return f.backendNeg
+}
+
+// GetFrontendNEG returns the region network endpoint group for the frontend service.
+func (f *FullStack) GetFrontendNEG() *compute.RegionNetworkEndpointGroup {
+	return f.frontendNeg
+}
+
+// GetGatewayNEG returns the region network endpoint group for the API Gateway.
+func (f *FullStack) GetGatewayNEG() *compute.RegionNetworkEndpointGroup {
+	return f.apiGatewayNeg
+}
+
+// GetURLMap returns the URL map for the load balancer.
+func (f *FullStack) GetURLMap() *compute.URLMap {
+	return f.urlMap
 }

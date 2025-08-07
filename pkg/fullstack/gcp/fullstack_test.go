@@ -1502,9 +1502,9 @@ func TestNewFullStack_WithoutGateway(t *testing.T) {
 		assert.Contains(t, apiPathRule.Paths, "/api/*", "First path rule should match /api/*")
 		assert.Contains(t, *apiPathRule.Service, "backend-service", "API path rule should route to backend service")
 
-		// Check UI path rule (/ui/* -> frontend)
+		// Check UI path rule (/* -> frontend)
 		uiPathRule := pathRules[1]
-		assert.Contains(t, uiPathRule.Paths, "/ui/*", "Second path rule should match /ui/*")
+		assert.Contains(t, uiPathRule.Paths, "/*", "Second path rule should match /*")
 		assert.Contains(t, *uiPathRule.Service, "frontend-service", "UI path rule should route to frontend service")
 
 		// Assert URL Map has host rules configured with domain URL (not wildcard)
