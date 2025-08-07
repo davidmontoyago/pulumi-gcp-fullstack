@@ -410,7 +410,7 @@ func (f *FullStack) routeTrafficToCloudRunInstances(ctx *pulumi.Context,
 			&compute.URLMapPathMatcherPathRuleArgs{
 				Paths: pulumi.StringArray{
 					// TODO make me configurable
-					pulumi.String("/ui/*"),
+					pulumi.String("/*"),
 				},
 				Service: frontendService.SelfLink,
 			},
