@@ -23,6 +23,7 @@ type FullStackArgs struct {
 // BackendArgs contains configuration for the backend service.
 type BackendArgs struct {
 	*InstanceArgs
+	ProjectIAMRoles []string
 }
 
 // FrontendArgs contains configuration for the frontend service.

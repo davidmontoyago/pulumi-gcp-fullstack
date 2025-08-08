@@ -11,6 +11,7 @@ import (
 	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/compute"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/dns"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/projects"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -55,6 +56,9 @@ type FullStack struct {
 	certificate *compute.ManagedSslCertificate
 	dnsRecord   *dns.RecordSet
 	urlMap      *compute.URLMap
+
+	// Project-level IAM roles bound to the backend service account
+	backendProjectIamMembers []*projects.IAMMember
 }
 
 // NewFullStack creates a new FullStack instance with the provided configuration.
@@ -342,4 +346,9 @@ func (f *FullStack) GetGatewayNEG() *compute.RegionNetworkEndpointGroup {
 // GetURLMap returns the URL map for the load balancer.
 func (f *FullStack) GetURLMap() *compute.URLMap {
 	return f.urlMap
+}
+
+// GetBackendProjectIamMembers returns project-level IAM members bound to the backend service account.
+func (f *FullStack) GetBackendProjectIamMembers() []*projects.IAMMember {
+	return f.backendProjectIamMembers
 }

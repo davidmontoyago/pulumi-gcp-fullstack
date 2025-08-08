@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/projects"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -197,7 +198,37 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 	ctx.Export("cloud_run_service_backend_id", backendService.ID())
 	ctx.Export("cloud_run_service_backend_uri", backendService.Uri)
 
+	err = f.grantProjectLevelIAMRoles(ctx, args.ProjectIAMRoles, backendServiceName, serviceAccount)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to grant project level IAM roles to backend Cloud Run service: %w", err)
+	}
+
 	return backendService, serviceAccount, nil
+}
+
+func (f *FullStack) grantProjectLevelIAMRoles(ctx *pulumi.Context,
+	iamRoles []string,
+	backendServiceName string,
+	serviceAccount *serviceaccount.Account) error {
+
+	if len(iamRoles) > 0 {
+		for _, role := range iamRoles {
+			iamMember, err := projects.NewIAMMember(ctx, fmt.Sprintf("%s-%s", backendServiceName, role), &projects.IAMMemberArgs{
+				Project: pulumi.String(f.Project),
+				Role:    pulumi.String(role),
+				Member:  pulumi.Sprintf("serviceAccount:%s", serviceAccount.Email),
+			})
+			if err != nil {
+				return fmt.Errorf("failed to add IAM role to backend Cloud Run service: %w", err)
+			}
+			// Track created IAM members for testing/inspection
+			f.backendProjectIamMembers = append(f.backendProjectIamMembers, iamMember)
+
+			ctx.Export(fmt.Sprintf("cloud_run_service_backend_iam_role_%s", role), iamMember.ID())
+		}
+	}
+
+	return nil
 }
 
 func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *FrontendArgs, backendURL pulumi.StringOutput) (*cloudrunv2.Service, *serviceaccount.Account, error) {
