@@ -14,7 +14,7 @@ const (
 // newOpenAPISpec creates a new OpenAPI 3.0.1 specification for API Gateway
 // that routes traffic to Cloud Run backend and frontend services.
 func newOpenAPISpec(backendServiceURI, frontendServiceURI string, configArgs *APIConfigArgs, backendJWTConfig *JWTAuth) *openapi3.T {
-	paths := openapi3.Paths{}
+	paths := &openapi3.Paths{}
 	securitySchemes := make(openapi3.SecuritySchemes)
 
 	// Configure JWT authentication if enabled for backend
@@ -47,7 +47,7 @@ func newOpenAPISpec(backendServiceURI, frontendServiceURI string, configArgs *AP
 			pathItem.Delete.Security = &openapi3.SecurityRequirements{{"JWT": []string{}}}
 			// OPTIONS should not require authentication for CORS preflight
 		}
-		paths["/api/v1/{proxy}"] = pathItem
+		paths.Set("/api/v1/{proxy}", pathItem)
 	}
 
 	// Add frontend API paths
@@ -55,7 +55,7 @@ func newOpenAPISpec(backendServiceURI, frontendServiceURI string, configArgs *AP
 		addPaths(paths, configArgs.Frontend.APIPaths, frontendServiceURI, createUIPathItem, nil) // Frontend doesn't need JWT auth
 	} else {
 		// Default frontend path if none specified
-		paths["/ui/{proxy}"] = createUIPathItem(frontendServiceURI, "/ui/v1", AppendPathToAddress)
+		paths.Set("/ui/{proxy}", createUIPathItem(frontendServiceURI, "/ui/v1", AppendPathToAddress))
 	}
 
 	spec := &openapi3.T{
@@ -89,7 +89,7 @@ func newOpenAPISpec(backendServiceURI, frontendServiceURI string, configArgs *AP
 type createUpstreamPath func(serviceURI, upstreamPath, pathTranslation string) *openapi3.PathItem
 
 // addPaths creates OpenAPI paths from a list of path configurations
-func addPaths(paths openapi3.Paths, pathConfigs []*APIPathArgs, serviceURI string, createPathItem createUpstreamPath, jwtAuthConfig *JWTAuth) {
+func addPaths(paths *openapi3.Paths, pathConfigs []*APIPathArgs, serviceURI string, createPathItem createUpstreamPath, jwtAuthConfig *JWTAuth) {
 	for _, pathConfig := range pathConfigs {
 
 		// Always match the remaining of the path (/{proxy}) and pass it to the upstream
@@ -120,7 +120,7 @@ func addPaths(paths openapi3.Paths, pathConfigs []*APIPathArgs, serviceURI strin
 			// OPTIONS should not require authentication for CORS preflight
 		}
 
-		paths[gatewayPath] = pathItem
+		paths.Set(gatewayPath, pathItem)
 	}
 }
 
@@ -180,11 +180,7 @@ func createAPIOperation(operationID, method, serviceURI, upstreamPath, pathTrans
 					Name:     "proxy",
 					In:       "path",
 					Required: true,
-					Schema: &openapi3.SchemaRef{
-						Value: &openapi3.Schema{
-							Type: openapi3.TypeString,
-						},
-					},
+					Schema:   &openapi3.SchemaRef{Value: openapi3.NewStringSchema()},
 				},
 			},
 		},
@@ -203,53 +199,23 @@ func createAPIOperation(operationID, method, serviceURI, upstreamPath, pathTrans
 		operation.RequestBody = &openapi3.RequestBodyRef{
 			Value: &openapi3.RequestBody{
 				Required: false,
-				Content: openapi3.NewContentWithJSONSchema(&openapi3.Schema{
-					Type: openapi3.TypeObject,
-				}),
+				Content:  openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema()),
 			},
 		}
 	}
 
 	// Add responses with proper descriptions for v2 compatibility
-	operation.Responses["200"] = &openapi3.ResponseRef{
-		Value: &openapi3.Response{
-			Description: stringPtr("Successful response"),
-			Content: openapi3.NewContentWithJSONSchema(&openapi3.Schema{
-				Type: openapi3.TypeObject,
-			}),
-		},
-	}
-	operation.Responses["400"] = &openapi3.ResponseRef{
-		Value: &openapi3.Response{
-			Description: stringPtr("Bad request"),
-		},
-	}
-	operation.Responses["401"] = &openapi3.ResponseRef{
-		Value: &openapi3.Response{
-			Description: stringPtr("Unauthorized"),
-		},
-	}
-	operation.Responses["403"] = &openapi3.ResponseRef{
-		Value: &openapi3.Response{
-			Description: stringPtr("Forbidden"),
-		},
-	}
-	operation.Responses["404"] = &openapi3.ResponseRef{
-		Value: &openapi3.Response{
-			Description: stringPtr("Not found"),
-		},
-	}
-	operation.Responses["500"] = &openapi3.ResponseRef{
-		Value: &openapi3.Response{
-			Description: stringPtr("Internal server error"),
-		},
-	}
+	operation.Responses.Set("200", &openapi3.ResponseRef{Value: &openapi3.Response{
+		Description: stringPtr("Successful response"),
+		Content:     openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema()),
+	}})
+	operation.Responses.Set("400", &openapi3.ResponseRef{Value: &openapi3.Response{Description: stringPtr("Bad request")}})
+	operation.Responses.Set("401", &openapi3.ResponseRef{Value: &openapi3.Response{Description: stringPtr("Unauthorized")}})
+	operation.Responses.Set("403", &openapi3.ResponseRef{Value: &openapi3.Response{Description: stringPtr("Forbidden")}})
+	operation.Responses.Set("404", &openapi3.ResponseRef{Value: &openapi3.Response{Description: stringPtr("Not found")}})
+	operation.Responses.Set("500", &openapi3.ResponseRef{Value: &openapi3.Response{Description: stringPtr("Internal server error")}})
 	// Add default response to catch all other cases
-	operation.Responses["default"] = &openapi3.ResponseRef{
-		Value: &openapi3.Response{
-			Description: stringPtr("Default response"),
-		},
-	}
+	operation.Responses.Set("default", &openapi3.ResponseRef{Value: &openapi3.Response{Description: stringPtr("Default response")}})
 
 	return operation
 }
@@ -264,11 +230,7 @@ func createUIOperation(operationID, serviceURI, upstreamPath, pathTranslation st
 					Name:     "proxy",
 					In:       "path",
 					Required: true,
-					Schema: &openapi3.SchemaRef{
-						Value: &openapi3.Schema{
-							Type: openapi3.TypeString,
-						},
-					},
+					Schema:   &openapi3.SchemaRef{Value: openapi3.NewStringSchema()},
 				},
 			},
 		},
@@ -283,24 +245,12 @@ func createUIOperation(operationID, serviceURI, upstreamPath, pathTranslation st
 	}
 
 	// Add responses with proper descriptions for v2 compatibility
-	operation.Responses["200"] = &openapi3.ResponseRef{
-		Value: &openapi3.Response{
-			Description: stringPtr("Successful response"),
-			Content: openapi3.NewContentWithJSONSchema(&openapi3.Schema{
-				Type: openapi3.TypeObject,
-			}),
-		},
-	}
-	operation.Responses["404"] = &openapi3.ResponseRef{
-		Value: &openapi3.Response{
-			Description: stringPtr("Not found"),
-		},
-	}
-	operation.Responses["default"] = &openapi3.ResponseRef{
-		Value: &openapi3.Response{
-			Description: stringPtr("Default response"),
-		},
-	}
+	operation.Responses.Set("200", &openapi3.ResponseRef{Value: &openapi3.Response{
+		Description: stringPtr("Successful response"),
+		Content:     openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema()),
+	}})
+	operation.Responses.Set("404", &openapi3.ResponseRef{Value: &openapi3.Response{Description: stringPtr("Not found")}})
+	operation.Responses.Set("default", &openapi3.ResponseRef{Value: &openapi3.Response{Description: stringPtr("Default response")}})
 
 	return operation
 }
@@ -315,11 +265,7 @@ func createCORSOperation(operationID, serviceURI, upstreamPath, pathTranslation 
 					Name:     "proxy",
 					In:       "path",
 					Required: true,
-					Schema: &openapi3.SchemaRef{
-						Value: &openapi3.Schema{
-							Type: openapi3.TypeString,
-						},
-					},
+					Schema:   &openapi3.SchemaRef{Value: openapi3.NewStringSchema()},
 				},
 			},
 		},
@@ -334,16 +280,8 @@ func createCORSOperation(operationID, serviceURI, upstreamPath, pathTranslation 
 	}
 
 	// Add responses for CORS preflight
-	operation.Responses["200"] = &openapi3.ResponseRef{
-		Value: &openapi3.Response{
-			Description: stringPtr("CORS preflight successful"),
-		},
-	}
-	operation.Responses["default"] = &openapi3.ResponseRef{
-		Value: &openapi3.Response{
-			Description: stringPtr("Default response"),
-		},
-	}
+	operation.Responses.Set("200", &openapi3.ResponseRef{Value: &openapi3.Response{Description: stringPtr("CORS preflight successful")}})
+	operation.Responses.Set("default", &openapi3.ResponseRef{Value: &openapi3.Response{Description: stringPtr("Default response")}})
 
 	return operation
 }
