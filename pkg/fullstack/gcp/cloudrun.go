@@ -5,6 +5,7 @@ import (
 
 	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/projects"
+	secretmanager "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/secretmanager"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -106,15 +107,10 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 	}
 	ctx.Export("cloud_run_service_backend_account_id", serviceAccount.ID())
 
-	// create a secret to hold env vars for the cloud run instance
-	configSecret, err := f.newEnvConfigSecret(ctx,
-		backendName,
-		serviceAccount,
-		args.DeletionProtection,
-		backendLabels,
-	)
+	volumes, volumeMounts, err := f.setupInstanceSecrets(ctx, backendName, serviceAccount,
+		backendLabels, args.InstanceArgs)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create backend config secret: %w", err)
+		return nil, nil, fmt.Errorf("failed to setup instance secrets: %w", err)
 	}
 
 	backendServiceName := f.newResourceName(backendName, "service", 100)
@@ -151,30 +147,11 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 					TimeoutSeconds:      pulumi.Int(args.LivenessProbe.TimeoutSeconds),
 					FailureThreshold:    pulumi.Int(args.LivenessProbe.FailureThreshold),
 				},
-				VolumeMounts: &cloudrunv2.ServiceTemplateContainerVolumeMountArray{
-					cloudrunv2.ServiceTemplateContainerVolumeMountArgs{
-						MountPath: pulumi.String(args.SecretConfigFilePath),
-						Name:      pulumi.String("envconfig"),
-					},
-				},
+				VolumeMounts: volumeMounts,
 			},
 		},
 		ServiceAccount: serviceAccount.Email,
-		Volumes: &cloudrunv2.ServiceTemplateVolumeArray{
-			&cloudrunv2.ServiceTemplateVolumeArgs{
-				Name: pulumi.String("envconfig"),
-				Secret: &cloudrunv2.ServiceTemplateVolumeSecretArgs{
-					Secret: configSecret.SecretId,
-					Items: cloudrunv2.ServiceTemplateVolumeSecretItemArray{
-						&cloudrunv2.ServiceTemplateVolumeSecretItemArgs{
-							Path:    pulumi.String(args.SecretConfigFileName),
-							Version: pulumi.String("latest"),
-							Mode:    pulumi.IntPtr(0500),
-						},
-					},
-				},
-			},
-		},
+		Volumes:        volumes,
 	}
 	if args.PrivateVpcAccessConnector != nil {
 		serviceTemplate.VpcAccess = &cloudrunv2.ServiceTemplateVpcAccessArgs{
@@ -204,6 +181,92 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 	}
 
 	return backendService, serviceAccount, nil
+}
+
+func (f *FullStack) mountSecrets(ctx *pulumi.Context,
+	secrets []SecretVolumeArgs,
+	backendName string,
+	serviceAccountEmail pulumi.StringOutput,
+) (*cloudrunv2.ServiceTemplateVolumeArray, *cloudrunv2.ServiceTemplateContainerVolumeMountArray, error) {
+
+	volumes := &cloudrunv2.ServiceTemplateVolumeArray{}
+	volumeMounts := &cloudrunv2.ServiceTemplateContainerVolumeMountArray{}
+
+	for _, secret := range secrets {
+		// mount secret as a container volume
+		secretVolume := newSecretVolume(secret)
+
+		*volumes = append(*volumes, secretVolume)
+
+		*volumeMounts = append(*volumeMounts, cloudrunv2.ServiceTemplateContainerVolumeMountArgs{
+			MountPath: pulumi.String(secret.Path),
+			Name:      pulumi.String(secret.Name),
+		})
+
+		// Create IAM binding for the secret (similar to secretmanager.go)
+		secretAccessorName := f.newResourceName(backendName, fmt.Sprintf("%s-secret-accessor", secret.Name), 100)
+		_, err := secretmanager.NewSecretIamMember(ctx, secretAccessorName, &secretmanager.SecretIamMemberArgs{
+			Project:  pulumi.String(f.Project),
+			SecretId: secret.SecretID,
+			Role:     pulumi.String("roles/secretmanager.secretAccessor"),
+			Member:   pulumi.Sprintf("serviceAccount:%s", serviceAccountEmail),
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to grant secret accessor for %s: %w", secret.Name, err)
+		}
+	}
+
+	return volumes, volumeMounts, nil
+}
+
+// setupInstanceSecrets creates the configuration secret and sets up all secret volumes and mounts for a service instance
+func (f *FullStack) setupInstanceSecrets(
+	ctx *pulumi.Context,
+	serviceName string,
+	serviceAccount *serviceaccount.Account,
+	labels pulumi.StringMap,
+	args *InstanceArgs,
+) (*cloudrunv2.ServiceTemplateVolumeArray, *cloudrunv2.ServiceTemplateContainerVolumeMountArray, error) {
+
+	// create a secret to hold env vars for the cloud run instance
+	configSecret, err := f.newEnvConfigSecret(ctx,
+		serviceName,
+		serviceAccount,
+		args.DeletionProtection,
+		labels,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create config secret: %w", err)
+	}
+
+	// add the volume for the default config
+	volumes := &cloudrunv2.ServiceTemplateVolumeArray{
+		newSecretVolume(SecretVolumeArgs{
+			SecretID: configSecret.SecretId,
+			Name:     "envconfig",
+			Path:     args.SecretConfigFileName,
+			Version:  "latest",
+		}),
+	}
+
+	volumeMounts := &cloudrunv2.ServiceTemplateContainerVolumeMountArray{
+		cloudrunv2.ServiceTemplateContainerVolumeMountArgs{
+			MountPath: pulumi.String(args.SecretConfigFilePath),
+			Name:      pulumi.String("envconfig"),
+		},
+	}
+
+	// add other secrets passed
+	if len(args.Secrets) > 0 {
+		moreVolumes, moreMounts, err := f.mountSecrets(ctx, args.Secrets, serviceName, serviceAccount.Email)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to mount additional secrets: %w", err)
+		}
+		*volumes = append(*volumes, *moreVolumes...)
+		*volumeMounts = append(*volumeMounts, *moreMounts...)
+	}
+
+	return volumes, volumeMounts, nil
 }
 
 func (f *FullStack) grantProjectLevelIAMRoles(ctx *pulumi.Context,
@@ -265,12 +328,11 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 	}
 	ctx.Export("cloud_run_service_frontend_account_id", serviceAccount.ID())
 
-	// create a secret to hold env vars for the cloud run instance
-	configSecret, err := f.newEnvConfigSecret(ctx, serviceName, serviceAccount, args.DeletionProtection, pulumi.StringMap{
-		"frontend": pulumi.String("true"),
-	})
+	volumes, volumeMounts, err := f.setupInstanceSecrets(ctx, serviceName,
+		serviceAccount, frontendLabels, args.InstanceArgs,
+	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create frontend config secret: %w", err)
+		return nil, nil, fmt.Errorf("failed to setup instance secrets: %w", err)
 	}
 
 	frontendServiceName := f.newResourceName(serviceName, "service", 100)
@@ -314,30 +376,11 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 						TimeoutSeconds:      pulumi.Int(args.LivenessProbe.TimeoutSeconds),
 						FailureThreshold:    pulumi.Int(args.LivenessProbe.FailureThreshold),
 					},
-					VolumeMounts: &cloudrunv2.ServiceTemplateContainerVolumeMountArray{
-						cloudrunv2.ServiceTemplateContainerVolumeMountArgs{
-							MountPath: pulumi.String(args.SecretConfigFilePath),
-							Name:      pulumi.String("envconfig"),
-						},
-					},
+					VolumeMounts: volumeMounts,
 				},
 			},
 			ServiceAccount: serviceAccount.Email,
-			Volumes: &cloudrunv2.ServiceTemplateVolumeArray{
-				&cloudrunv2.ServiceTemplateVolumeArgs{
-					Name: pulumi.String("envconfig"),
-					Secret: &cloudrunv2.ServiceTemplateVolumeSecretArgs{
-						Secret: configSecret.SecretId,
-						Items: cloudrunv2.ServiceTemplateVolumeSecretItemArray{
-							&cloudrunv2.ServiceTemplateVolumeSecretItemArgs{
-								Path:    pulumi.String(args.SecretConfigFileName),
-								Version: pulumi.String("latest"),
-								Mode:    pulumi.IntPtr(0500),
-							},
-						},
-					},
-				},
-			},
+			Volumes:        volumes,
 		},
 		DeletionProtection: pulumi.Bool(args.DeletionProtection),
 	})
@@ -386,4 +429,35 @@ func newBackendEnvVars(args *BackendArgs) cloudrunv2.ServiceTemplateContainerEnv
 	}
 
 	return envVars
+}
+
+func newSecretVolume(secret SecretVolumeArgs) *cloudrunv2.ServiceTemplateVolumeArgs {
+	newVar := &cloudrunv2.ServiceTemplateVolumeArgs{
+		Name: pulumi.String(secret.Name),
+		Secret: &cloudrunv2.ServiceTemplateVolumeSecretArgs{
+			Secret: secret.SecretID,
+			Items: cloudrunv2.ServiceTemplateVolumeSecretItemArray{
+				&cloudrunv2.ServiceTemplateVolumeSecretItemArgs{
+					Path: pulumi.String(func() string {
+						if secret.SecretName != "" {
+							return secret.SecretName
+						}
+
+						return ".env"
+					}()),
+					Version: pulumi.String(func() string {
+						if secret.Version != "" {
+							return secret.Version
+						}
+
+						return "latest"
+					}()),
+
+					Mode: pulumi.IntPtr(0400),
+				},
+			},
+		},
+	}
+
+	return newVar
 }

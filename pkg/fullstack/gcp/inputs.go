@@ -55,6 +55,8 @@ type InstanceArgs struct {
 	// Optional VPC access connector for private traffic.
 	// E.g.: to a memorystore instance
 	PrivateVpcAccessConnector pulumi.StringInput
+	// IDs of additional Secret Manager secrets to mount into the container. Defaults to nil.
+	Secrets []SecretVolumeArgs
 }
 
 // NetworkArgs contains configuration for network infrastructure including load balancers and API Gateway.
@@ -134,4 +136,18 @@ type APIConfigArgs struct {
 	CORSAllowedHeaders []string
 	// OpenAPI specification file path. Optional - defaults to "/openapi.yaml".
 	OpenAPISpecPath string
+}
+
+// SecretVolumeArgs contains configuration for mounting a secret as a volume.
+type SecretVolumeArgs struct {
+	// SecretID is the ID of the secret (can be secret name or secret ID reference).
+	SecretID pulumi.StringInput
+	// Name for the volume mount.
+	Name string
+	// Path to mount the secret in the container.
+	Path string
+	// Secret name. Defaults to ".env".
+	SecretName string
+	// Version of the secret to mount. Defaults to "latest".
+	Version string
 }
