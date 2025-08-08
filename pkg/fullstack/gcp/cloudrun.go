@@ -117,71 +117,78 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 	}
 
 	backendServiceName := f.newResourceName(backendName, "service", 100)
-	backendService, err := cloudrunv2.NewService(ctx, backendServiceName, &cloudrunv2.ServiceArgs{
-		Name:        pulumi.String(backendServiceName),
-		Ingress:     pulumi.String("INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"),
-		Description: pulumi.String(fmt.Sprintf("Serverless instance (%s)", backendName)),
-		Location:    pulumi.String(f.Region),
-		Project:     pulumi.String(f.Project),
-		Labels:      backendLabels,
-		Template: &cloudrunv2.ServiceTemplateArgs{
-			Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
-				MaxInstanceCount: pulumi.Int(args.MaxInstanceCount),
-			},
-			Containers: cloudrunv2.ServiceTemplateContainerArray{
-				&cloudrunv2.ServiceTemplateContainerArgs{
-					Image: f.BackendImage,
-					Envs:  newBackendEnvVars(args),
-					Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
-						Limits: args.ResourceLimits,
+	serviceTemplate := &cloudrunv2.ServiceTemplateArgs{
+		Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
+			MaxInstanceCount: pulumi.Int(args.MaxInstanceCount),
+		},
+		Containers: cloudrunv2.ServiceTemplateContainerArray{
+			&cloudrunv2.ServiceTemplateContainerArgs{
+				Image: f.BackendImage,
+				Envs:  newBackendEnvVars(args),
+				Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
+					Limits: args.ResourceLimits,
+				},
+				Ports: cloudrunv2.ServiceTemplateContainerPortsArgs{
+					ContainerPort: pulumi.Int(args.ContainerPort),
+				},
+				StartupProbe: &cloudrunv2.ServiceTemplateContainerStartupProbeArgs{
+					TcpSocket: &cloudrunv2.ServiceTemplateContainerStartupProbeTcpSocketArgs{
+						Port: pulumi.Int(args.ContainerPort),
 					},
-					Ports: cloudrunv2.ServiceTemplateContainerPortsArgs{
-						ContainerPort: pulumi.Int(args.ContainerPort),
+					InitialDelaySeconds: pulumi.Int(args.StartupProbe.InitialDelaySeconds),
+					PeriodSeconds:       pulumi.Int(args.StartupProbe.PeriodSeconds),
+					TimeoutSeconds:      pulumi.Int(args.StartupProbe.TimeoutSeconds),
+					FailureThreshold:    pulumi.Int(args.StartupProbe.FailureThreshold),
+				},
+				LivenessProbe: &cloudrunv2.ServiceTemplateContainerLivenessProbeArgs{
+					HttpGet: &cloudrunv2.ServiceTemplateContainerLivenessProbeHttpGetArgs{
+						Path: pulumi.String(fmt.Sprintf("/%s", args.LivenessProbe.Path)),
+						Port: pulumi.Int(args.ContainerPort),
 					},
-					StartupProbe: &cloudrunv2.ServiceTemplateContainerStartupProbeArgs{
-						TcpSocket: &cloudrunv2.ServiceTemplateContainerStartupProbeTcpSocketArgs{
-							Port: pulumi.Int(args.ContainerPort),
-						},
-						InitialDelaySeconds: pulumi.Int(args.StartupProbe.InitialDelaySeconds),
-						PeriodSeconds:       pulumi.Int(args.StartupProbe.PeriodSeconds),
-						TimeoutSeconds:      pulumi.Int(args.StartupProbe.TimeoutSeconds),
-						FailureThreshold:    pulumi.Int(args.StartupProbe.FailureThreshold),
-					},
-					LivenessProbe: &cloudrunv2.ServiceTemplateContainerLivenessProbeArgs{
-						HttpGet: &cloudrunv2.ServiceTemplateContainerLivenessProbeHttpGetArgs{
-							Path: pulumi.String(fmt.Sprintf("/%s", args.LivenessProbe.Path)),
-							Port: pulumi.Int(args.ContainerPort),
-						},
-						InitialDelaySeconds: pulumi.Int(args.LivenessProbe.InitialDelaySeconds),
-						PeriodSeconds:       pulumi.Int(args.LivenessProbe.PeriodSeconds),
-						TimeoutSeconds:      pulumi.Int(args.LivenessProbe.TimeoutSeconds),
-						FailureThreshold:    pulumi.Int(args.LivenessProbe.FailureThreshold),
-					},
-					VolumeMounts: &cloudrunv2.ServiceTemplateContainerVolumeMountArray{
-						cloudrunv2.ServiceTemplateContainerVolumeMountArgs{
-							MountPath: pulumi.String(args.SecretConfigFilePath),
-							Name:      pulumi.String("envconfig"),
-						},
+					InitialDelaySeconds: pulumi.Int(args.LivenessProbe.InitialDelaySeconds),
+					PeriodSeconds:       pulumi.Int(args.LivenessProbe.PeriodSeconds),
+					TimeoutSeconds:      pulumi.Int(args.LivenessProbe.TimeoutSeconds),
+					FailureThreshold:    pulumi.Int(args.LivenessProbe.FailureThreshold),
+				},
+				VolumeMounts: &cloudrunv2.ServiceTemplateContainerVolumeMountArray{
+					cloudrunv2.ServiceTemplateContainerVolumeMountArgs{
+						MountPath: pulumi.String(args.SecretConfigFilePath),
+						Name:      pulumi.String("envconfig"),
 					},
 				},
 			},
-			ServiceAccount: serviceAccount.Email,
-			Volumes: &cloudrunv2.ServiceTemplateVolumeArray{
-				&cloudrunv2.ServiceTemplateVolumeArgs{
-					Name: pulumi.String("envconfig"),
-					Secret: &cloudrunv2.ServiceTemplateVolumeSecretArgs{
-						Secret: configSecret.SecretId,
-						Items: cloudrunv2.ServiceTemplateVolumeSecretItemArray{
-							&cloudrunv2.ServiceTemplateVolumeSecretItemArgs{
-								Path:    pulumi.String(args.SecretConfigFileName),
-								Version: pulumi.String("latest"),
-								Mode:    pulumi.IntPtr(0500),
-							},
+		},
+		ServiceAccount: serviceAccount.Email,
+		Volumes: &cloudrunv2.ServiceTemplateVolumeArray{
+			&cloudrunv2.ServiceTemplateVolumeArgs{
+				Name: pulumi.String("envconfig"),
+				Secret: &cloudrunv2.ServiceTemplateVolumeSecretArgs{
+					Secret: configSecret.SecretId,
+					Items: cloudrunv2.ServiceTemplateVolumeSecretItemArray{
+						&cloudrunv2.ServiceTemplateVolumeSecretItemArgs{
+							Path:    pulumi.String(args.SecretConfigFileName),
+							Version: pulumi.String("latest"),
+							Mode:    pulumi.IntPtr(0500),
 						},
 					},
 				},
 			},
 		},
+	}
+	if args.PrivateVpcAccessConnector != nil {
+		serviceTemplate.VpcAccess = &cloudrunv2.ServiceTemplateVpcAccessArgs{
+			Connector: args.PrivateVpcAccessConnector,
+			Egress:    pulumi.String("PRIVATE_RANGES_ONLY"),
+		}
+	}
+	backendService, err := cloudrunv2.NewService(ctx, backendServiceName, &cloudrunv2.ServiceArgs{
+		Name:               pulumi.String(backendServiceName),
+		Ingress:            pulumi.String("INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"),
+		Description:        pulumi.String(fmt.Sprintf("Serverless instance (%s)", backendName)),
+		Location:           pulumi.String(f.Region),
+		Project:            pulumi.String(f.Project),
+		Labels:             backendLabels,
+		Template:           serviceTemplate,
 		DeletionProtection: pulumi.Bool(args.DeletionProtection),
 	})
 	if err != nil {
