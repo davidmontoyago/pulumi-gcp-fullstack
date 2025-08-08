@@ -72,6 +72,8 @@ type NetworkArgs struct {
 	EnablePrivateTrafficOnly bool
 	// API Gateway configuration. If provided, traffic will be routed through API Gateway.
 	APIGateway *APIGatewayArgs
+	// Whether to enable global forwarding rule and global IP address for the load balancer.
+	EnableGlobalEntrypoint bool
 }
 
 // APIGatewayArgs contains configuration for Google API Gateway

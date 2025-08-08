@@ -49,7 +49,8 @@ type FullStack struct {
 	backendNeg  *compute.RegionNetworkEndpointGroup
 	frontendNeg *compute.RegionNetworkEndpointGroup
 
-	globalForwardingRule *compute.GlobalForwardingRule
+	globalForwardingRule   *compute.GlobalForwardingRule
+	regionalForwardingRule *compute.ForwardingRule
 
 	certificate *compute.ManagedSslCertificate
 	dnsRecord   *dns.RecordSet
@@ -291,6 +292,11 @@ func (f *FullStack) GetCertificate() *compute.ManagedSslCertificate {
 // GetGlobalForwardingRule returns the global forwarding rule for the load balancer.
 func (f *FullStack) GetGlobalForwardingRule() *compute.GlobalForwardingRule {
 	return f.globalForwardingRule
+}
+
+// GetRegionalForwardingRule returns the regional forwarding rule for the load balancer when regional entrypoint is enabled.
+func (f *FullStack) GetRegionalForwardingRule() *compute.ForwardingRule {
+	return f.regionalForwardingRule
 }
 
 // LookupDNSZone finds the appropriate DNS managed zone for the given domain in the current project
