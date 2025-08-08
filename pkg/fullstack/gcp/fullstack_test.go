@@ -1615,3 +1615,144 @@ func TestNewFullStack_WithoutGateway(t *testing.T) {
 		t.Fatalf("Pulumi WithMocks failed: %v", err)
 	}
 }
+
+func TestNewFullStack_WithSecrets(t *testing.T) {
+	t.Parallel()
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		args := &gcp.FullStackArgs{
+			Project:       testProjectName,
+			Region:        testRegion,
+			BackendName:   backendServiceName,
+			BackendImage:  pulumi.String("gcr.io/test-project/backend:latest"),
+			FrontendName:  frontendServiceName,
+			FrontendImage: pulumi.String("gcr.io/test-project/frontend:latest"),
+			Backend: &gcp.BackendArgs{
+				InstanceArgs: &gcp.InstanceArgs{
+					Secrets: []gcp.SecretVolumeArgs{
+						{
+							SecretID:   pulumi.String("backend-db-secret"),
+							Name:       "db-credentials",
+							Path:       "/app/secrets/db",
+							SecretName: "database.json",
+							Version:    "1",
+						},
+						{
+							SecretID: pulumi.String("backend-api-key"),
+							Name:     "api-key",
+							Path:     "/app/secrets/api",
+							Version:  "latest",
+						},
+					},
+				},
+			},
+			Frontend: &gcp.FrontendArgs{
+				InstanceArgs: &gcp.InstanceArgs{},
+			},
+			Network: &gcp.NetworkArgs{
+				DomainURL: "myapp.example.com",
+			},
+		}
+
+		fullstack, err := gcp.NewFullStack(ctx, "test-fullstack", args)
+		require.NoError(t, err)
+
+		// Verify backend service secret configurations
+		backendService := fullstack.GetBackendService()
+		require.NotNil(t, backendService, "Backend service should not be nil")
+
+		// Verify backend volumes for secrets
+		backendVolumesCh := make(chan []cloudrunv2.ServiceTemplateVolume, 1)
+		defer close(backendVolumesCh)
+		backendService.Template.Volumes().ApplyT(func(volumes []cloudrunv2.ServiceTemplateVolume) error {
+			backendVolumesCh <- volumes
+
+			return nil
+		})
+		backendVolumes := <-backendVolumesCh
+
+		// Should have 3 volumes: 1 for envconfig + 2 for secrets
+		require.Len(t, backendVolumes, 3, "Backend should have 3 volumes (1 envconfig + 2 secrets)")
+
+		// Find the secret volumes (not the envconfig volume)
+		var dbSecretVolume, apiKeySecretVolume *cloudrunv2.ServiceTemplateVolume
+		for i := range backendVolumes {
+			switch backendVolumes[i].Name {
+			case "db-credentials":
+				dbSecretVolume = &backendVolumes[i]
+			case "api-key":
+				apiKeySecretVolume = &backendVolumes[i]
+			}
+		}
+
+		// Verify db-credentials secret volume
+		require.NotNil(t, dbSecretVolume, "DB credentials secret volume should be present")
+		assert.Equal(t, "db-credentials", dbSecretVolume.Name, "DB secret volume name should match")
+		assert.NotNil(t, dbSecretVolume.Secret, "DB secret volume should have secret configuration")
+		assert.NotNil(t, dbSecretVolume.Secret.Items, "DB secret volume should have items")
+		assert.Len(t, dbSecretVolume.Secret.Items, 1, "DB secret volume should have exactly one item")
+
+		dbSecretItem := dbSecretVolume.Secret.Items[0]
+		assert.Equal(t, "database.json", dbSecretItem.Path, "DB secret item path should match the secret name")
+		assert.Equal(t, "1", *dbSecretItem.Version, "DB secret item version should be '1'")
+		assert.Equal(t, 0400, *dbSecretItem.Mode, "DB secret item mode should be 0400 for read-only access")
+
+		// Verify api-key secret volume
+		require.NotNil(t, apiKeySecretVolume, "API key secret volume should be present")
+		assert.Equal(t, "api-key", apiKeySecretVolume.Name, "API key volume name should match")
+		assert.NotNil(t, apiKeySecretVolume.Secret, "API key volume should have secret configuration")
+		assert.NotNil(t, apiKeySecretVolume.Secret.Items, "API key volume should have items")
+		assert.Len(t, apiKeySecretVolume.Secret.Items, 1, "API key volume should have exactly one item")
+
+		apiKeySecretItem := apiKeySecretVolume.Secret.Items[0]
+		assert.Equal(t, ".env", apiKeySecretItem.Path, "API key secret item path should match the secret name")
+		assert.Equal(t, "latest", *apiKeySecretItem.Version, "API key secret item version should be 'latest'")
+		assert.Equal(t, 0400, *apiKeySecretItem.Mode, "API key secret item mode should be 0400 for read-only access")
+
+		// Verify backend volume mounts for secrets
+		backendVolumeMountsCh := make(chan []cloudrunv2.ServiceTemplateContainerVolumeMount, 1)
+		defer close(backendVolumeMountsCh)
+		backendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
+			if len(containers) > 0 {
+				backendVolumeMountsCh <- containers[0].VolumeMounts
+			}
+
+			return nil
+		})
+		backendVolumeMounts := <-backendVolumeMountsCh
+
+		// Should have 3 volume mounts: 1 for envconfig + 2 for secrets
+		require.Len(t, backendVolumeMounts, 3, "Backend should have 3 volume mounts (1 envconfig + 2 secrets)")
+
+		// Find the secret volume mounts (not the envconfig mount)
+		var dbSecretMount, apiKeySecretMount *cloudrunv2.ServiceTemplateContainerVolumeMount
+		for i := range backendVolumeMounts {
+			switch backendVolumeMounts[i].Name {
+			case "db-credentials":
+				dbSecretMount = &backendVolumeMounts[i]
+			case "api-key":
+				apiKeySecretMount = &backendVolumeMounts[i]
+			}
+		}
+
+		// Verify db-credentials volume mount
+		require.NotNil(t, dbSecretMount, "DB credentials volume mount should be present")
+		assert.Equal(t, "db-credentials", dbSecretMount.Name, "DB secret mount name should match")
+		assert.Equal(t, "/app/secrets/db", dbSecretMount.MountPath, "DB secret mount path should match specified path")
+
+		// Verify api-key volume mount
+		require.NotNil(t, apiKeySecretMount, "API key volume mount should be present")
+		assert.Equal(t, "api-key", apiKeySecretMount.Name, "API key mount name should match")
+		assert.Equal(t, "/app/secrets/api", apiKeySecretMount.MountPath, "API key mount path should match specified path")
+
+		// Verify basic backend service configuration
+		assert.Equal(t, testProjectName, fullstack.Project, "Project should match")
+		assert.Equal(t, testRegion, fullstack.Region, "Region should match")
+
+		return nil
+	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
+
+	if err != nil {
+		t.Fatalf("Pulumi WithMocks failed: %v", err)
+	}
+}
