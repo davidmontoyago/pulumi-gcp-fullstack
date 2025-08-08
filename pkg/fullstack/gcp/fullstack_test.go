@@ -118,7 +118,27 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 		outputs["selfLink"] = "https://www.googleapis.com/compute/v1/projects/" + testProjectName + "/global/addresses/" + args.Name
 		// Expected outputs: name, project, address, description, ipVersion, creationTimestamp, labelFingerprint, selfLink
 	case "gcp:compute/globalForwardingRule:GlobalForwardingRule":
+		// Reflect ipAddress from inputs for assertions
+		if ip, ok := args.Inputs["ipAddress"]; ok {
+			outputs["ipAddress"] = ip
+		} else {
+			outputs["ipAddress"] = "34.102.136.185"
+		}
+		outputs["selfLink"] = "https://www.googleapis.com/compute/v1/projects/" + testProjectName + "/global/forwardingRules/" + args.Name
 		// Expected outputs: name, project, description, portRange, loadBalancingScheme, ipAddress, target
+	case "gcp:compute/address:Address":
+		// Regional address
+		outputs["address"] = "35.201.123.45"
+		outputs["selfLink"] = "https://www.googleapis.com/compute/v1/projects/" + testProjectName + "/regions/" + testRegion + "/addresses/" + args.Name
+		// Expected outputs: name, project, address, selfLink, region
+	case "gcp:compute/forwardingRule:ForwardingRule":
+		// Reflect ipAddress from inputs
+		if ip, ok := args.Inputs["ipAddress"]; ok {
+			outputs["ipAddress"] = ip
+		} else {
+			outputs["ipAddress"] = "35.201.123.45"
+		}
+		outputs["selfLink"] = "https://www.googleapis.com/compute/v1/projects/" + testProjectName + "/regions/" + testRegion + "/forwardingRules/" + args.Name
 	case "gcp:compute/targetHttpsProxy:TargetHttpsProxy":
 		// Expected outputs: name, project, description, urlMap, sslCertificates
 	case "gcp:compute/backendService:BackendService":
@@ -480,6 +500,25 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		// Verify API Gateway service account
 		gatewayAccount := fullstack.GetGatewayServiceAccount()
 		require.NotNil(t, gatewayAccount, "API Gateway service account should not be nil")
+
+		// Regional vs Global LB assertions (EnableGlobalEntrypoint defaults to false)
+		// Global forwarding rule should NOT be present
+		assert.Nil(t, fullstack.GetGlobalForwardingRule(), "Global forwarding rule should be nil when using regional entrypoint")
+
+		// Regional forwarding rule SHOULD be present
+		regionalFR := fullstack.GetRegionalForwardingRule()
+		require.NotNil(t, regionalFR, "Regional forwarding rule should not be nil")
+
+		// Assert regional forwarding rule has a non-empty IP address
+		regionalIPCh := make(chan string, 1)
+		defer close(regionalIPCh)
+		regionalFR.IpAddress.ApplyT(func(ip string) error {
+			regionalIPCh <- ip
+
+			return nil
+		})
+		regionalIP := <-regionalIPCh
+		assert.NotEmpty(t, regionalIP, "Regional forwarding rule IP address should not be empty")
 
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
@@ -901,7 +940,8 @@ func TestNewFullStack_WithGlobalInternetLoadBalancer(t *testing.T) {
 				InstanceArgs: &gcp.InstanceArgs{},
 			},
 			Network: &gcp.NetworkArgs{
-				DomainURL: "myapp.example.com",
+				DomainURL:              "myapp.example.com",
+				EnableGlobalEntrypoint: true,
 			},
 		}
 

@@ -97,7 +97,7 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, args *Networ
 		return fmt.Errorf("failed to setup traffic router: %w", err)
 	}
 
-	err = f.newHTTPSProxy(ctx, endpointName, args.DomainURL, args.EnablePrivateTrafficOnly, lbRouteURLMap)
+	err = f.newHTTPSProxy(ctx, endpointName, args.DomainURL, args.EnablePrivateTrafficOnly, args.EnableGlobalEntrypoint, lbRouteURLMap)
 	if err != nil {
 		return fmt.Errorf("failed to create HTTPS proxy: %w", err)
 	}
@@ -105,7 +105,7 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, args *Networ
 	return nil
 }
 
-func (f *FullStack) newHTTPSProxy(ctx *pulumi.Context, serviceName, domainURL string, privateTraffic bool, backendURLMap *compute.URLMap) error {
+func (f *FullStack) newHTTPSProxy(ctx *pulumi.Context, serviceName, domainURL string, privateTraffic bool, enableGlobalEntrypoint bool, backendURLMap *compute.URLMap) error {
 	tlsCertName := f.newResourceName(serviceName, "tls-cert", 100)
 	certificate, err := compute.NewManagedSslCertificate(ctx, tlsCertName, &compute.ManagedSslCertificateArgs{
 		Description: pulumi.String(fmt.Sprintf("TLS cert for %s", serviceName)),
@@ -139,10 +139,22 @@ func (f *FullStack) newHTTPSProxy(ctx *pulumi.Context, serviceName, domainURL st
 	ctx.Export("load_balancer_https_proxy_uri", httpsProxy.SelfLink)
 
 	if !privateTraffic {
-		err = f.createGlobalInternetEntrypoint(ctx, serviceName, domainURL, httpsProxy)
-		if err != nil {
-			return fmt.Errorf("failed to create global internet entrypoint: %w", err)
+		var lbIPAddress pulumi.StringOutput
+		if enableGlobalEntrypoint {
+			lbIPAddress, err = f.createGlobalInternetEntrypoint(ctx, serviceName, httpsProxy)
+		} else {
+			lbIPAddress, err = f.createRegionalInternetEntrypoint(ctx, serviceName, httpsProxy)
 		}
+		if err != nil {
+			return fmt.Errorf("failed to create internet entrypoint: %w", err)
+		}
+
+		// Create DNS record for the LB IP address
+		dnsRecord, dnsErr := f.createDNSRecord(ctx, serviceName, domainURL, lbIPAddress)
+		if dnsErr != nil {
+			return fmt.Errorf("failed to create DNS record: %w", dnsErr)
+		}
+		f.dnsRecord = dnsRecord
 	}
 
 	return nil
@@ -447,7 +459,7 @@ func (f *FullStack) routeTrafficToCloudRunInstances(ctx *pulumi.Context,
 }
 
 // createGlobalInternetEntrypoint creates a global IP address and forwarding rule for external traffic
-func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceName, domainURL string, httpsProxy *compute.TargetHttpsProxy) error {
+func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceName string, httpsProxy *compute.TargetHttpsProxy) (pulumi.StringOutput, error) {
 	labels := mergeLabels(f.Labels, pulumi.StringMap{
 		"load_balancer": pulumi.String("true"),
 	})
@@ -461,7 +473,7 @@ func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceN
 		Labels:      labels,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to reserve global IP address: %w", err)
+		return pulumi.StringOutput{}, fmt.Errorf("failed to reserve global IP address: %w", err)
 	}
 	ctx.Export("load_balancer_global_address_id", ipAddress.ID())
 	ctx.Export("load_balancer_global_address_uri", ipAddress.SelfLink)
@@ -479,7 +491,7 @@ func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceN
 		Labels:              labels,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create global forwarding rule: %w", err)
+		return pulumi.StringOutput{}, fmt.Errorf("failed to create global forwarding rule: %w", err)
 	}
 	ctx.Export("load_balancer_global_forwarding_rule_id", trafficRule.ID())
 	ctx.Export("load_balancer_global_forwarding_rule_uri", trafficRule.SelfLink)
@@ -488,14 +500,58 @@ func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceN
 	// Store the forwarding rule in the FullStack struct
 	f.globalForwardingRule = trafficRule
 
-	// Create DNS record for the global IP address
-	dnsRecord, err := f.createDNSRecord(ctx, serviceName, domainURL, ipAddress.Address)
-	if err != nil {
-		return fmt.Errorf("failed to create DNS record: %w", err)
-	}
-	f.dnsRecord = dnsRecord
+	return ipAddress.Address, nil
+}
 
-	return nil
+// createRegionalInternetEntrypoint creates a regional IP address and regional forwarding rule
+// for external traffic (Classic Application Load Balancer in Standard Tier)
+func (f *FullStack) createRegionalInternetEntrypoint(ctx *pulumi.Context, serviceName string, httpsProxy *compute.TargetHttpsProxy) (pulumi.StringOutput, error) {
+	labels := mergeLabels(f.Labels, pulumi.StringMap{
+		"load_balancer": pulumi.String("true"),
+	})
+
+	// Reserve a regional IP address for the LB (Standard Network Tier)
+	ipAddressName := f.newResourceName(serviceName, "regional-ip", 100)
+	ipAddress, err := compute.NewAddress(ctx, ipAddressName, &compute.AddressArgs{
+		Project:     pulumi.String(f.Project),
+		Region:      pulumi.String(f.Region),
+		Description: pulumi.String(fmt.Sprintf("Regional IP address for %s", serviceName)),
+		// Classic ALB with regional FR requires Standard tier
+		NetworkTier: pulumi.StringPtr("STANDARD"),
+		Labels:      labels,
+	})
+	if err != nil {
+		return pulumi.StringOutput{}, fmt.Errorf("failed to reserve regional IP address: %w", err)
+	}
+	ctx.Export("load_balancer_regional_address_id", ipAddress.ID())
+	ctx.Export("load_balancer_regional_address_uri", ipAddress.SelfLink)
+	ctx.Export("load_balancer_regional_address_ip_address", ipAddress.Address)
+
+	// Create a regional forwarding rule pointing to the global Target HTTPS Proxy (classic ALB)
+	forwardingRuleName := f.newResourceName(serviceName, "regional-https-forwarding", 100)
+	trafficRule, err := compute.NewForwardingRule(ctx, forwardingRuleName, &compute.ForwardingRuleArgs{
+		Description:         pulumi.String(fmt.Sprintf("HTTPS forwarding rule to LB traffic for %s", serviceName)),
+		Project:             pulumi.String(f.Project),
+		Region:              pulumi.String(f.Region),
+		PortRange:           pulumi.String("443"),
+		LoadBalancingScheme: pulumi.String("EXTERNAL"),
+		Target:              httpsProxy.SelfLink,
+		IpAddress:           ipAddress.Address,
+		// Classic ALB regional requires Standard tier
+		NetworkTier: pulumi.StringPtr("STANDARD"),
+		Labels:      labels,
+	})
+	if err != nil {
+		return pulumi.StringOutput{}, fmt.Errorf("failed to create regional forwarding rule: %w", err)
+	}
+	ctx.Export("load_balancer_regional_forwarding_rule_id", trafficRule.ID())
+	ctx.Export("load_balancer_regional_forwarding_rule_uri", trafficRule.SelfLink)
+	ctx.Export("load_balancer_regional_forwarding_rule_ip_address", trafficRule.IpAddress)
+
+	// Store the forwarding rule in the FullStack struct
+	f.regionalForwardingRule = trafficRule
+
+	return ipAddress.Address, nil
 }
 
 // lookupDNSZone finds the appropriate DNS managed zone for the given domain

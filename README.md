@@ -11,7 +11,7 @@ Features:
     - Env config loaded from Secret Manager
 1. A frontend Cloud Run instance.
     - Env config loaded from Secret Manager
-1. An global HTTPs load balancer ([Classic Application Load Balancer](https://cloud.google.com/load-balancing/docs/https#global-classic-connections)) pointed to a gateway, and the gateway pointed to the frontend and the backend.
+2. An regional or global HTTPs load balancer ([Classic Application Load Balancer](https://cloud.google.com/load-balancing/docs/https#global-classic-connections)), with an optional gateway before the frontend and backend instances (See: [Load Balancer Recipe](#load-balancer-recipe)).
     - A Google-managed certificate.
     - Optional: default best-practice Cloud Armor policy.
     - Optional: restrict access to an allowlist of IPs.
@@ -128,10 +128,11 @@ mystack, err := gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
 
 ## Architecture
 
-### Load Balancer Recipe
+### Load Balancer
 
 ```
-    [Forwarding Rule]
+    [Global or Regional
+      Forwarding Rule]
             |
             v
     [Target HTTPS Proxy]
@@ -140,10 +141,11 @@ mystack, err := gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
         [URL Map]
             |
             v
-   [LB Backend Services]
+     [Load Balancer
+    Backend Services]
             |
             v
-    [Serverless NEG]
+    [Serverless NEGs]
             |
             v
 [API Gateway - Optional]
