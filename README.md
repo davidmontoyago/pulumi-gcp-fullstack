@@ -52,6 +52,7 @@ mystack, err := gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
         EnableCloudArmor:         cfg.EnableCloudArmor,
         ClientIPAllowlist:        cfg.ClientIPAllowlist,
         EnablePrivateTrafficOnly: cfg.EnablePrivateTrafficOnly,
+        EnableGlobalEntrypoint:   false,
         APIGateway: &gcp.APIGatewayArgs{
             // In GCP preview
             Disabled: true,
@@ -95,6 +96,9 @@ mystack, err := gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
             EnvVars: map[string]string{
                 "ENV":               "prod",
             },
+        },
+        ProjectIAMRoles: []string{
+            "roles/redis.editor",
         },
     },
     Frontend: &gcp.FrontendArgs{

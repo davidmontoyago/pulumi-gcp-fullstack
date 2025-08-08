@@ -208,6 +208,9 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 					DeletionProtection: true,
 					ContainerPort:      8080,
 				},
+				ProjectIAMRoles: []string{
+					"roles/redis.editor",
+				},
 			},
 			Frontend: &gcp.FrontendArgs{
 				InstanceArgs: &gcp.InstanceArgs{
@@ -492,6 +495,47 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		// Verify backend service account
 		backendAccount := fullstack.GetBackendAccount()
 		require.NotNil(t, backendAccount, "Backend service account should not be nil")
+
+		// Assert project-level IAM roles are bound to backend service account when provided
+		backendAccountEmailCh := make(chan string, 1)
+		defer close(backendAccountEmailCh)
+		backendAccount.Email.ApplyT(func(email string) error {
+			backendAccountEmailCh <- email
+
+			return nil
+		})
+		expectedBackendMember := "serviceAccount:" + <-backendAccountEmailCh
+
+		backendProjectIamMembers := fullstack.GetBackendProjectIamMembers()
+		require.NotNil(t, backendProjectIamMembers, "Backend project IAM members should not be nil")
+		assert.Len(t, backendProjectIamMembers, 1, "Exactly one backend project IAM member should be created")
+
+		roleCh := make(chan string, 1)
+		memberCh := make(chan string, 1)
+		projectCh := make(chan string, 1)
+		defer close(roleCh)
+		defer close(memberCh)
+		defer close(projectCh)
+
+		backendProjectIamMembers[0].Role.ApplyT(func(role string) error {
+			roleCh <- role
+
+			return nil
+		})
+		backendProjectIamMembers[0].Member.ApplyT(func(member string) error {
+			memberCh <- member
+
+			return nil
+		})
+		backendProjectIamMembers[0].Project.ApplyT(func(project string) error {
+			projectCh <- project
+
+			return nil
+		})
+
+		assert.Equal(t, "roles/redis.editor", <-roleCh, "Backend project IAM role should match the requested role")
+		assert.Equal(t, expectedBackendMember, <-memberCh, "Backend project IAM member should be the backend service account")
+		assert.Equal(t, testProjectName, <-projectCh, "Backend project IAM member project should match")
 
 		// Verify frontend service account
 		frontendAccount := fullstack.GetFrontendAccount()
