@@ -51,6 +51,9 @@ type InstanceArgs struct {
 	StartupProbe          *Probe
 	LivenessProbe         *Probe
 	EnableUnauthenticated bool
+	// Optional VPC access connector for private traffic.
+	// E.g.: to a memorystore instance
+	PrivateVpcAccessConnector pulumi.StringInput
 }
 
 // NetworkArgs contains configuration for network infrastructure including load balancers and API Gateway.
