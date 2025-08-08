@@ -26,7 +26,7 @@ func (f *FullStack) newEnvConfigSecret(ctx *pulumi.Context, serviceName string, 
 		DeletionProtection: pulumi.Bool(deletionProtection),
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create secret: %w", err)
 	}
 
 	// allow the instance GSA to access the secret
@@ -38,7 +38,7 @@ func (f *FullStack) newEnvConfigSecret(ctx *pulumi.Context, serviceName string, 
 		Member:   pulumi.Sprintf("serviceAccount:%s", serviceAccount.Email),
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to grant secret accessor: %w", err)
 	}
 
 	// Create initial empty secret version
