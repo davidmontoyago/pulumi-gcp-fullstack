@@ -40,7 +40,7 @@ func (f *FullStack) newCloudArmorPolicy(ctx *pulumi.Context, policyName string, 
 		Type:        pulumi.String("CLOUD_ARMOR"),
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create Cloud Armor policy: %w", err)
 	}
 	ctx.Export("cloud_armor_security_policy_id", policy.ID())
 	ctx.Export("cloud_armor_security_policy_uri", policy.SelfLink)

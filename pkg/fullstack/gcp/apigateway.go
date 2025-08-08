@@ -41,7 +41,7 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 	// Create API Gateway IAM resources (service account and permissions)
 	gatewayServiceAccount, err := f.createAPIGatewayIAM(ctx, args.Name)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create API Gateway IAM: %w", err)
 	}
 
 	apiID := f.newResourceName(args.Name, "api", 50)
@@ -58,14 +58,14 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 		Labels:      gatewayLabels,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create API: %w", err)
 	}
 	ctx.Export("api_gateway_api_id", api.ApiId)
 	ctx.Export("api_gateway_api_name", api.Name)
 
 	apiConfig, err := f.createAPIConfig(ctx, apiID, args.Config, api, gatewayServiceAccount.Email, gatewayLabels)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to deploy API config: %w", err)
 	}
 	ctx.Export("api_gateway_config_id", apiConfig.ApiConfigId)
 	ctx.Export("api_gateway_config_name", apiConfig.Name)
@@ -88,7 +88,7 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 		Labels:      gatewayLabels,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create Gateway: %w", err)
 	}
 	ctx.Export("api_gateway_gateway_id", gateway.GatewayId)
 	ctx.Export("api_gateway_gateway_name", gateway.Name)
@@ -122,7 +122,7 @@ func (f *FullStack) createAPIGatewayIAM(ctx *pulumi.Context, gatewayName string)
 	// Grant API Gateway service account permission to invoke Cloud Run services
 	err = f.grantAPIGatewayInvokerPermissions(ctx, serviceAccount.Email, gatewayName)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to grant API Gateway invoker permissions: %w", err)
 	}
 
 	return serviceAccount, nil
@@ -216,7 +216,7 @@ func (f *FullStack) createAPIConfig(ctx *pulumi.Context,
 		Labels: gatewayLabels,
 	}, pulumi.ReplaceOnChanges([]string{"*"}))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create API config resource: %w", err)
 	}
 	f.apiConfig = apiConfig
 

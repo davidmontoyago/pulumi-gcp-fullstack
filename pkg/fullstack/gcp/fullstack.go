@@ -83,18 +83,18 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 	}
 	err := ctx.RegisterComponentResource("pulumi-fullstack:gcp:FullStack", name, fullStack, opts...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to register component resource: %w", err)
 	}
 
 	// proceed to provision
 	err = fullStack.deploy(ctx, args)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to deploy full stack: %w", err)
 	}
 
 	err = ctx.RegisterResourceOutputs(fullStack, pulumi.Map{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to register resource outputs: %w", err)
 	}
 
 	return fullStack, nil
@@ -103,7 +103,7 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 	backendService, backendAcccount, err := f.deployBackendCloudRunInstance(ctx, args.Backend)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to deploy backend Cloud Run: %w", err)
 	}
 
 	f.backendService = backendService
@@ -111,7 +111,7 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 
 	frontendService, frontendAccount, err := f.deployFrontendCloudRunInstance(ctx, args.Frontend, backendService.Uri)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to deploy frontend Cloud Run: %w", err)
 	}
 
 	f.frontendService = frontendService
@@ -125,17 +125,23 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 		gatewayArgs = applyDefaultGatewayArgs(args.Network.APIGateway, backendService.Uri, frontendService.Uri)
 
 		apiGateway, err = f.deployAPIGateway(ctx, gatewayArgs)
+		if err != nil {
+			return fmt.Errorf("failed to deploy API Gateway: %w", err)
+		}
 	} else {
 		err = f.createCloudRunInstancesIAM(ctx, frontendService, backendService)
-	}
-	if err != nil {
-		return err
+		if err != nil {
+			return fmt.Errorf("failed to create Cloud Run IAM: %w", err)
+		}
 	}
 
 	// create an external load balancer and point to a serverless NEG (API gateway or Cloud run)
 	err = f.deployExternalLoadBalancer(ctx, args.Network, apiGateway)
+	if err != nil {
+		return fmt.Errorf("failed to deploy external load balancer: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 // createCloudRunInstancesIAM creates IAM members to allow unauthenticated access to Cloud Run instances
@@ -153,7 +159,7 @@ func (f *FullStack) createCloudRunInstancesIAM(ctx *pulumi.Context, frontendServ
 		Member:   pulumi.Sprintf("allUsers"),
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to grant frontend invoker: %w", err)
 	}
 
 	_, err = cloudrunv2.NewServiceIamMember(ctx, fmt.Sprintf("%s-allow-unauthenticated", f.BackendName), &cloudrunv2.ServiceIamMemberArgs{
@@ -164,7 +170,7 @@ func (f *FullStack) createCloudRunInstancesIAM(ctx *pulumi.Context, frontendServ
 		Member:   pulumi.Sprintf("allUsers"),
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to grant backend invoker: %w", err)
 	}
 
 	// _, err = cloudrunv2.NewServiceIamMember(ctx, fmt.Sprintf("%s-%s-invoker", f.BackendName, f.FrontendName), &cloudrunv2.ServiceIamMemberArgs{

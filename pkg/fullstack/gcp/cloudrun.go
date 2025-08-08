@@ -101,7 +101,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 		Project:     pulumi.String(f.Project),
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to create backend service account: %w", err)
 	}
 	ctx.Export("cloud_run_service_backend_account_id", serviceAccount.ID())
 
@@ -113,7 +113,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 		backendLabels,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to create backend config secret: %w", err)
 	}
 
 	backendServiceName := f.newResourceName(backendName, "service", 100)
@@ -185,7 +185,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 		DeletionProtection: pulumi.Bool(args.DeletionProtection),
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to create backend Cloud Run service: %w", err)
 	}
 	ctx.Export("cloud_run_service_backend_id", backendService.ID())
 	ctx.Export("cloud_run_service_backend_uri", backendService.Uri)
@@ -223,7 +223,7 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 		Project:     pulumi.String(project),
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to create frontend service account: %w", err)
 	}
 	ctx.Export("cloud_run_service_frontend_account_id", serviceAccount.ID())
 
@@ -232,7 +232,7 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 		"frontend": pulumi.String("true"),
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to create frontend config secret: %w", err)
 	}
 
 	frontendServiceName := f.newResourceName(serviceName, "service", 100)
@@ -304,7 +304,7 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 		DeletionProtection: pulumi.Bool(args.DeletionProtection),
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to create frontend Cloud Run service: %w", err)
 	}
 	ctx.Export("cloud_run_service_frontend_id", frontendService.ID())
 	ctx.Export("cloud_run_service_frontend_uri", frontendService.Uri)
