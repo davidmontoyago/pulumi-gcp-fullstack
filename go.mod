@@ -3,7 +3,7 @@ module github.com/davidmontoyago/pulumi-gcp-fullstack
 go 1.24.0
 
 require (
-	github.com/getkin/kin-openapi v0.113.0
+	github.com/getkin/kin-openapi v0.132.0
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/pulumi/pulumi-gcp/sdk/v8 v8.39.0
 	github.com/pulumi/pulumi/sdk/v3 v3.187.0
@@ -48,7 +48,6 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/hcl/v2 v2.24.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/invopop/yaml v0.1.0 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
@@ -63,6 +62,8 @@ require (
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
+	github.com/oasdiff/yaml v0.0.0-20250309154309-f31be36b4037 // indirect
+	github.com/oasdiff/yaml3 v0.0.0-20250309153720-d2182401db90 // indirect
 	github.com/opentracing/basictracer-go v1.1.0 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
