@@ -12,7 +12,10 @@ import (
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/compute"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/dns"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/projects"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/redis"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/secretmanager"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/serviceaccount"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/vpcaccess"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -59,6 +62,12 @@ type FullStack struct {
 
 	// Project-level IAM roles bound to the backend service account
 	backendProjectIamMembers []*projects.IAMMember
+
+	// Cache infrastructure
+	redisInstance          *redis.Instance
+	vpcConnector           *vpcaccess.Connector
+	cacheFirewall          *compute.Firewall
+	cacheCredentialsSecret *secretmanager.SecretVersion
 }
 
 // NewFullStack creates a new FullStack instance with the provided configuration.
@@ -121,6 +130,14 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 
 	f.frontendService = frontendService
 	f.frontendAccount = frontendAccount
+
+	if args.Backend != nil && args.Backend.CacheConfig != nil {
+		// Deploy cache companion for backend
+		err = f.deployCache(ctx, args.Backend.CacheConfig)
+		if err != nil {
+			return fmt.Errorf("failed to deploy cache: %w", err)
+		}
+	}
 
 	var apiGateway *apigateway.Gateway
 	var gatewayArgs *APIGatewayArgs
@@ -351,4 +368,24 @@ func (f *FullStack) GetURLMap() *compute.URLMap {
 // GetBackendProjectIamMembers returns project-level IAM members bound to the backend service account.
 func (f *FullStack) GetBackendProjectIamMembers() []*projects.IAMMember {
 	return f.backendProjectIamMembers
+}
+
+// GetRedisInstance returns the Redis cache instance.
+func (f *FullStack) GetRedisInstance() *redis.Instance {
+	return f.redisInstance
+}
+
+// GetVPCConnector returns the VPC access connector for cache connectivity.
+func (f *FullStack) GetVPCConnector() *vpcaccess.Connector {
+	return f.vpcConnector
+}
+
+// GetCacheFirewall returns the firewall rule for cache connectivity.
+func (f *FullStack) GetCacheFirewall() *compute.Firewall {
+	return f.cacheFirewall
+}
+
+// GetCacheSecretVersion returns the secret version containing Redis credentials.
+func (f *FullStack) GetCacheSecretVersion() *secretmanager.SecretVersion {
+	return f.cacheCredentialsSecret
 }
