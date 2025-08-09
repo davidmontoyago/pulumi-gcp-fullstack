@@ -1,0 +1,241 @@
+// Package gcp provides Google Cloud Platform infrastructure components for fullstack applications.
+package gcp
+
+import (
+	"encoding/base64"
+	"fmt"
+	"log"
+	"strings"
+
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/compute"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/projects"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/redis"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/secretmanager"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/vpcaccess"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+)
+
+// deployCache creates a Redis cache instance with private VPC access and firewall rules
+func (f *FullStack) deployCache(ctx *pulumi.Context, config *CacheConfigArgs) error {
+	if err := ctx.Log.Debug("Deploying Redis cache with config: %v", &pulumi.LogArgs{
+		Resource: f,
+	}); err != nil {
+		log.Printf("failed to log Redis cache deployment with pulumi context: %v", err)
+	}
+
+	redisAPI, err := f.enableRedisAPI(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to enable Redis API: %w", err)
+	}
+
+	instance, err := f.createRedisInstance(ctx, config, redisAPI)
+	if err != nil {
+		return fmt.Errorf("failed to create Redis instance: %w", err)
+	}
+
+	// Create VPC access connector for Cloud Run to reach Redis' private IP
+	connector, err := f.createVPCAccessConnector(ctx, instance.AuthorizedNetwork)
+	if err != nil {
+		return fmt.Errorf("failed to create VPC access connector: %w", err)
+	}
+
+	// Create firewall rule to allow Cloud Run to connect to Redis
+	firewall, err := f.createCacheFirewallRule(ctx, connector, instance.Port, instance.AuthorizedNetwork)
+	if err != nil {
+		return fmt.Errorf("failed to create cache firewall rule: %w", err)
+	}
+
+	// Store Redis credentials in Secret Manager
+	// Cloud run instance will automatically mount it as a volume
+	secretVersion, err := f.secureCacheCredentials(ctx, instance)
+	if err != nil {
+		return fmt.Errorf("failed to secure cache credentials: %w", err)
+	}
+
+	f.redisInstance = instance
+	f.vpcConnector = connector
+	f.cacheFirewall = firewall
+	f.cacheCredentialsSecret = secretVersion
+
+	return nil
+}
+
+// enableRedisAPI enables the Redis API service
+func (f *FullStack) enableRedisAPI(ctx *pulumi.Context) (*projects.Service, error) {
+	return projects.NewService(ctx, f.newResourceName("cache", "redis-api", 63), &projects.ServiceArgs{
+		Project: pulumi.String(f.Project),
+		Service: pulumi.String("redis.googleapis.com"),
+	}, pulumi.Parent(f))
+}
+
+// createVPCAccessConnector creates a Serverless VPC Access connector for Cloud Run to reach private resources
+func (f *FullStack) createVPCAccessConnector(ctx *pulumi.Context, cacheNetwork pulumi.StringOutput) (*vpcaccess.Connector, error) {
+	// Enable VPC Access API
+	vpcAPI, err := projects.NewService(ctx, f.newResourceName("cache", "vpcaccess-api", 63), &projects.ServiceArgs{
+		Project: pulumi.String(f.Project),
+		Service: pulumi.String("vpcaccess.googleapis.com"),
+	}, pulumi.Parent(f))
+	if err != nil {
+		return nil, err
+	}
+
+	connectorName := f.newResourceName("cache", "vpc-connector", 63)
+
+	return vpcaccess.NewConnector(ctx, connectorName, &vpcaccess.ConnectorArgs{
+		Name:    pulumi.String(connectorName),
+		Project: pulumi.String(f.Project),
+		Region:  pulumi.String(f.Region),
+		Network: cacheNetwork.ApplyT(func(network string) pulumi.StringInput {
+			return pulumi.String(network)
+		}).(pulumi.StringInput),
+		IpCidrRange:  pulumi.String("10.8.0.0/28"),
+		MinInstances: pulumi.Int(2),
+		MaxInstances: pulumi.Int(3),
+	}, pulumi.Parent(f), pulumi.DependsOn([]pulumi.Resource{vpcAPI}))
+}
+
+// createCacheFirewallRule creates a firewall rule to allow Cloud Run to connect to Redis
+func (f *FullStack) createCacheFirewallRule(ctx *pulumi.Context, connector *vpcaccess.Connector,
+	instancePort pulumi.IntOutput,
+	cacheNetwork pulumi.StringOutput) (*compute.Firewall, error) {
+
+	firewall, err := compute.NewFirewall(ctx, f.newResourceName("cache", "firewall", 63), &compute.FirewallArgs{
+		Name:    pulumi.String(f.newResourceName("cache", "allow-cloudrun-to-redis", 63)),
+		Project: pulumi.String(f.Project),
+		Network: cacheNetwork.ApplyT(func(network string) pulumi.StringInput {
+			return pulumi.String(network)
+		}).(pulumi.StringInput),
+		Direction: pulumi.String("INGRESS"),
+		Priority:  pulumi.Int(1000),
+		Allows: compute.FirewallAllowArray{
+			&compute.FirewallAllowArgs{
+				Protocol: pulumi.String("tcp"),
+				Ports: pulumi.StringArray{instancePort.ApplyT(func(port int) string {
+					return fmt.Sprintf("%d", port)
+				}).(pulumi.StringOutput)},
+			},
+		},
+		SourceRanges: pulumi.StringArray{
+			connector.IpCidrRange.ApplyT(func(ipCidrRange *string) string {
+				if ipCidrRange != nil {
+					return *ipCidrRange
+				}
+
+				if err := ctx.Log.Warn("No IP CIDR range found for connector, using fallback", nil); err != nil {
+					log.Printf("failed to log IP CIDR details with pulumi context: %v", err)
+				}
+
+				return "10.8.0.0/28" // fallback
+			}).(pulumi.StringOutput),
+		},
+		Description: pulumi.String("Allow TCP on Redis instace port from Cloud Run VPC Connector subnet"),
+	}, pulumi.Parent(f))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cache firewall rule: %w", err)
+	}
+
+	return firewall, nil
+}
+
+// createRedisInstance creates a Redis instance with auth and TLS enabled
+func (f *FullStack) createRedisInstance(ctx *pulumi.Context, config *CacheConfigArgs, redisAPI *projects.Service) (*redis.Instance, error) {
+	// Set defaults if not provided
+	redisVersion := config.RedisVersion
+	if redisVersion == "" {
+		redisVersion = "REDIS_7_0"
+	}
+
+	tier := config.Tier
+	if tier == "" {
+		tier = "BASIC"
+	}
+
+	memorySizeGb := config.MemorySizeGb
+	if memorySizeGb == 0 {
+		memorySizeGb = 1
+	}
+
+	network := config.AuthorizedNetwork
+	if network == "" {
+		network = "default"
+	}
+
+	return redis.NewInstance(ctx, f.newResourceName("cache", "instance", 63), &redis.InstanceArgs{
+		Name:                  pulumi.String(f.newResourceName("cache", "instance", 63)),
+		Project:               pulumi.String(f.Project),
+		Region:                pulumi.String(f.Region),
+		Tier:                  pulumi.String(tier),
+		MemorySizeGb:          pulumi.Int(memorySizeGb),
+		RedisVersion:          pulumi.String(redisVersion),
+		Labels:                mergeLabels(f.Labels, pulumi.StringMap{"cache": pulumi.String("true")}),
+		AuthorizedNetwork:     pulumi.String(network),
+		AuthEnabled:           pulumi.Bool(true),
+		TransitEncryptionMode: pulumi.String("SERVER_AUTHENTICATION"),
+	}, pulumi.Parent(f), pulumi.DependsOn([]pulumi.Resource{redisAPI}))
+}
+
+// secureCacheCredentials stores Redis connection details in Secret Manager
+func (f *FullStack) secureCacheCredentials(ctx *pulumi.Context, instance *redis.Instance) (*secretmanager.SecretVersion, error) {
+	// Enable Secret Manager API
+	secretManagerAPI, err := projects.NewService(ctx, f.newResourceName("cache", "secretmanager-api", 63), &projects.ServiceArgs{
+		Project: pulumi.String(f.Project),
+		Service: pulumi.String("secretmanager.googleapis.com"),
+	}, pulumi.Parent(f))
+	if err != nil {
+		return nil, err
+	}
+
+	// Create secret to store Redis credentials
+	secret, err := secretmanager.NewSecret(ctx, f.newResourceName("cache", "credentials", 63), &secretmanager.SecretArgs{
+		Project:            pulumi.String(f.Project),
+		SecretId:           pulumi.String(f.newResourceName("cache", "credentials", 63)),
+		DeletionProtection: pulumi.Bool(false),
+		Replication: &secretmanager.SecretReplicationArgs{
+			Auto: &secretmanager.SecretReplicationAutoArgs{},
+		},
+		Labels: mergeLabels(f.Labels, pulumi.StringMap{"cache-credentials": pulumi.String("true")}),
+	}, pulumi.Parent(f), pulumi.DependsOn([]pulumi.Resource{secretManagerAPI}))
+	if err != nil {
+		return nil, err
+	}
+
+	// Create dotenv format with Redis connection details
+	dotenvData := pulumi.All(
+		instance.Host,
+		instance.Port,
+		instance.ReadEndpoint,
+		instance.ReadEndpointPort,
+		instance.AuthString,
+		instance.ServerCaCerts,
+	).ApplyT(func(args []interface{}) string {
+		host := args[0].(string)
+		port := args[1].(int)
+		readEndpoint := args[2].(string)
+		readEndpointPort := args[3].(int)
+		authString := args[4].(string)
+		serverCaCerts := args[5].([]redis.InstanceServerCaCert)
+
+		// Concatenate all CA certificates if available
+		var allCerts []string
+		for _, cert := range serverCaCerts {
+			if cert.Cert != nil && *cert.Cert != "" {
+				allCerts = append(allCerts, *cert.Cert)
+			}
+		}
+
+		concatenatedCerts := strings.Join(allCerts, "\n")
+		// Base64 encode the concatenated certificates to avoid .env parsing issues
+		encodedCerts := base64.StdEncoding.EncodeToString([]byte(concatenatedCerts))
+
+		return fmt.Sprintf("REDIS_HOST=%s\nREDIS_PORT=%d\nREDIS_READ_HOST=%s\nREDIS_READ_PORT=%d\nREDIS_AUTH_STRING=%s\nREDIS_TLS_CA_CERTS=%s",
+			host, port, readEndpoint, readEndpointPort, authString, encodedCerts)
+	}).(pulumi.StringOutput)
+
+	// Create secret version with Redis credentials marked as sensitive
+	return secretmanager.NewSecretVersion(ctx, f.newResourceName("cache", "credentials-version", 63), &secretmanager.SecretVersionArgs{
+		Secret: secret.ID(),
+		SecretData: pulumi.ToSecret(dotenvData).(pulumi.StringOutput).ApplyT(func(s string) *string {
+			return &s
+		}).(pulumi.StringPtrOutput),
+	}, pulumi.Parent(f), pulumi.DependsOn([]pulumi.Resource{secret}))
+}

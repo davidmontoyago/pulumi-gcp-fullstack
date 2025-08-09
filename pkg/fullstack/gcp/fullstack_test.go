@@ -11,6 +11,9 @@ import (
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/apigateway"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/compute"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/redis"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/secretmanager"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/vpcaccess"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/assert"
@@ -29,6 +32,11 @@ const (
 type fullstackMocks struct{}
 
 func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
+	// Ensure imported types are referenced to avoid linter warnings
+	_ = redis.Instance{}
+	_ = secretmanager.Secret{}
+	_ = vpcaccess.Connector{}
+
 	outputs := map[string]interface{}{}
 	for k, v := range args.Inputs {
 		outputs[string(k)] = v
@@ -153,6 +161,28 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 		// Expected outputs: name, project, description, type
 	case "gcp:dns/recordSet:RecordSet":
 		// Expected outputs: name, managedZone, type, ttl, rrdatas, project
+	case "gcp:projects/service:Service":
+		outputs["service"] = args.Inputs["service"]
+		// Expected outputs: project, service
+	case "gcp:redis/instance:Instance":
+		outputs["host"] = "10.0.0.3"
+		outputs["port"] = 6379
+		outputs["readEndpoint"] = "10.0.0.3"
+		outputs["readEndpointPort"] = 6379
+		outputs["authString"] = "mock-auth-string-12345"
+		outputs["serverCaCerts"] = []map[string]interface{}{
+			{
+				"cert": "-----BEGIN CERTIFICATE-----\nMOCK_CERT_DATA\n-----END CERTIFICATE-----",
+			},
+		}
+		// Expected outputs: name, project, region, host, port, readEndpoint, readEndpointPort, authString, serverCaCerts
+	case "gcp:vpcaccess/connector:Connector":
+		outputs["ipCidrRange"] = "10.8.0.0/28"
+		// Expected outputs: name, project, region, ipCidrRange
+	case "gcp:compute/firewall:Firewall":
+		outputs["name"] = args.Name
+		outputs["network"] = "default"
+		// Expected outputs: name, project, network
 	}
 
 	return args.Name + "_id", resource.NewPropertyMapFromMap(outputs), nil
@@ -1748,6 +1778,157 @@ func TestNewFullStack_WithSecrets(t *testing.T) {
 		// Verify basic backend service configuration
 		assert.Equal(t, testProjectName, fullstack.Project, "Project should match")
 		assert.Equal(t, testRegion, fullstack.Region, "Region should match")
+
+		return nil
+	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
+
+	if err != nil {
+		t.Fatalf("Pulumi WithMocks failed: %v", err)
+	}
+}
+
+func TestNewFullStack_WithCache(t *testing.T) {
+	t.Parallel()
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		args := &gcp.FullStackArgs{
+			Project:       testProjectName,
+			Region:        testRegion,
+			BackendName:   backendServiceName,
+			BackendImage:  pulumi.String("gcr.io/test-project/backend:latest"),
+			FrontendName:  frontendServiceName,
+			FrontendImage: pulumi.String("gcr.io/test-project/frontend:latest"),
+			Backend: &gcp.BackendArgs{
+				InstanceArgs: &gcp.InstanceArgs{},
+				CacheConfig: &gcp.CacheConfigArgs{
+					RedisVersion: "REDIS_7_0",
+					Tier:         "BASIC",
+					MemorySizeGb: 2,
+				},
+			},
+			Frontend: &gcp.FrontendArgs{
+				InstanceArgs: &gcp.InstanceArgs{},
+			},
+			Network: &gcp.NetworkArgs{
+				DomainURL: "myapp.example.com",
+			},
+		}
+
+		fullstack, err := gcp.NewFullStack(ctx, "test-fullstack", args)
+		require.NoError(t, err)
+
+		// Verify basic properties
+		assert.Equal(t, testProjectName, fullstack.Project)
+		assert.Equal(t, testRegion, fullstack.Region)
+		assert.Equal(t, backendServiceName, fullstack.BackendName)
+		assert.Equal(t, frontendServiceName, fullstack.FrontendName)
+
+		// Verify Redis instance configuration
+		redisInstance := fullstack.GetRedisInstance()
+		require.NotNil(t, redisInstance, "Redis instance should not be nil")
+
+		// Assert Redis instance basic properties
+		redisProjectCh := make(chan string, 1)
+		defer close(redisProjectCh)
+		redisInstance.Project.ApplyT(func(project string) error {
+			redisProjectCh <- project
+
+			return nil
+		})
+		assert.Equal(t, testProjectName, <-redisProjectCh, "Redis instance project should match")
+
+		redisRegionCh := make(chan string, 1)
+		defer close(redisRegionCh)
+		redisInstance.Region.ApplyT(func(region string) error {
+			redisRegionCh <- region
+
+			return nil
+		})
+		assert.Equal(t, testRegion, <-redisRegionCh, "Redis instance region should match")
+
+		// Assert Redis instance connection details
+		redisHostCh := make(chan string, 1)
+		defer close(redisHostCh)
+		redisInstance.Host.ApplyT(func(host string) error {
+			redisHostCh <- host
+
+			return nil
+		})
+		assert.Equal(t, "10.0.0.3", <-redisHostCh, "Redis host should match mock value")
+
+		redisPortCh := make(chan int, 1)
+		defer close(redisPortCh)
+		redisInstance.Port.ApplyT(func(port int) error {
+			redisPortCh <- port
+
+			return nil
+		})
+		assert.Equal(t, 6379, <-redisPortCh, "Redis port should be 6379")
+
+		// Verify VPC connector configuration
+		vpcConnector := fullstack.GetVPCConnector()
+		require.NotNil(t, vpcConnector, "VPC connector should not be nil")
+
+		vpcProjectCh := make(chan string, 1)
+		defer close(vpcProjectCh)
+		vpcConnector.Project.ApplyT(func(project string) error {
+			vpcProjectCh <- project
+
+			return nil
+		})
+		assert.Equal(t, testProjectName, <-vpcProjectCh, "VPC connector project should match")
+
+		vpcRegionCh := make(chan string, 1)
+		defer close(vpcRegionCh)
+		vpcConnector.Region.ApplyT(func(region string) error {
+			vpcRegionCh <- region
+
+			return nil
+		})
+		assert.Equal(t, testRegion, <-vpcRegionCh, "VPC connector region should match")
+
+		vpcCidrCh := make(chan *string, 1)
+		defer close(vpcCidrCh)
+		vpcConnector.IpCidrRange.ApplyT(func(cidr *string) error {
+			vpcCidrCh <- cidr
+
+			return nil
+		})
+		cidr := <-vpcCidrCh
+		require.NotNil(t, cidr, "VPC connector CIDR should not be nil")
+		assert.Equal(t, "10.8.0.0/28", *cidr, "VPC connector CIDR should match expected value")
+
+		// Verify cache firewall rule configuration
+		cacheFirewall := fullstack.GetCacheFirewall()
+		require.NotNil(t, cacheFirewall, "Cache firewall should not be nil")
+
+		firewallProjectCh := make(chan string, 1)
+		defer close(firewallProjectCh)
+		cacheFirewall.Project.ApplyT(func(project string) error {
+			firewallProjectCh <- project
+
+			return nil
+		})
+		assert.Equal(t, testProjectName, <-firewallProjectCh, "Firewall project should match")
+
+		// Verify cache secret version configuration
+		cacheSecret := fullstack.GetCacheSecretVersion()
+		require.NotNil(t, cacheSecret, "Cache secret version should not be nil")
+
+		// Assert secret data contains Redis connection details (async pattern)
+		secretDataCh := make(chan *string, 1)
+		defer close(secretDataCh)
+		cacheSecret.SecretData.ApplyT(func(data *string) error {
+			secretDataCh <- data
+
+			return nil
+		})
+		secretData := <-secretDataCh
+		require.NotNil(t, secretData, "Secret data should not be nil")
+		assert.Contains(t, *secretData, "REDIS_HOST=10.0.0.3", "Secret should contain Redis host")
+		assert.Contains(t, *secretData, "REDIS_PORT=6379", "Secret should contain Redis port")
+		assert.Contains(t, *secretData, "REDIS_AUTH_STRING=mock-auth-string-12345", "Secret should contain auth string")
+		assert.Contains(t, *secretData, "REDIS_TLS_CA_CERTS=", "Secret should contain TLS CA certs field")
 
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))

@@ -24,6 +24,7 @@ type FullStackArgs struct {
 type BackendArgs struct {
 	*InstanceArgs
 	ProjectIAMRoles []string
+	CacheConfig     *CacheConfigArgs
 }
 
 // FrontendArgs contains configuration for the frontend service.
@@ -150,4 +151,13 @@ type SecretVolumeArgs struct {
 	SecretName string
 	// Version of the secret to mount. Defaults to "latest".
 	Version string
+}
+
+// CacheConfigArgs contains configuration for Redis cache deployment.
+type CacheConfigArgs struct {
+	RedisVersion string
+	Tier         string
+	MemorySizeGb int
+	// Authorized network for the Redis instance, firewall and VPC connector. Defaults to "default".
+	AuthorizedNetwork string
 }
