@@ -169,6 +169,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 		ServiceAccount: serviceAccount.Email,
 		Volumes:        volumes,
 	}
+
 	if f.vpcConnector != nil {
 		// Access to cache instance with private IP
 		serviceTemplate.VpcAccess = &cloudrunv2.ServiceTemplateVpcAccessArgs{
@@ -176,6 +177,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 			Egress:    pulumi.String("PRIVATE_RANGES_ONLY"),
 		}
 	}
+
 	backendService, err := cloudrunv2.NewService(ctx, backendServiceName, &cloudrunv2.ServiceArgs{
 		Name:               pulumi.String(backendServiceName),
 		Ingress:            pulumi.String("INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"),
@@ -293,8 +295,14 @@ func (f *FullStack) grantProjectLevelIAMRoles(ctx *pulumi.Context,
 	backendServiceName string,
 	serviceAccount *serviceaccount.Account) error {
 
-	if len(iamRoles) > 0 {
-		for _, role := range iamRoles {
+	instanceRoles := iamRoles
+	if f.redisInstance != nil {
+		// Allow backend to write to Redis instance
+		instanceRoles = append(instanceRoles, "roles/redis.editor")
+	}
+
+	if len(instanceRoles) > 0 {
+		for _, role := range instanceRoles {
 			iamMember, err := projects.NewIAMMember(ctx, fmt.Sprintf("%s-%s", backendServiceName, role), &projects.IAMMemberArgs{
 				Project: pulumi.String(f.Project),
 				Role:    pulumi.String(role),
@@ -306,7 +314,7 @@ func (f *FullStack) grantProjectLevelIAMRoles(ctx *pulumi.Context,
 			// Track created IAM members for testing/inspection
 			f.backendProjectIamMembers = append(f.backendProjectIamMembers, iamMember)
 
-			ctx.Export(fmt.Sprintf("cloud_run_service_backend_iam_role_%s", role), iamMember.ID())
+			ctx.Export(fmt.Sprintf("cloud_run_service_backend_iam_member_%s", role), iamMember.ID())
 		}
 	}
 

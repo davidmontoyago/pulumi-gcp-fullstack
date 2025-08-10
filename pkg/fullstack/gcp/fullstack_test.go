@@ -1806,6 +1806,7 @@ func TestNewFullStack_WithCache(t *testing.T) {
 					Tier:         "BASIC",
 					MemorySizeGb: 2,
 				},
+				ProjectIAMRoles: []string{"roles/some-other-special-role"},
 			},
 			Frontend: &gcp.FrontendArgs{
 				InstanceArgs: &gcp.InstanceArgs{},
@@ -1940,6 +1941,7 @@ func TestNewFullStack_WithCache(t *testing.T) {
 		defer close(backendVpcAccessCh)
 		backendService.Template.VpcAccess().ApplyT(func(vpcAccess *cloudrunv2.ServiceTemplateVpcAccess) error {
 			backendVpcAccessCh <- vpcAccess
+
 			return nil
 		})
 		vpcAccess := <-backendVpcAccessCh
@@ -1960,6 +1962,7 @@ func TestNewFullStack_WithCache(t *testing.T) {
 			if len(containers) > 0 {
 				backendVolumeMountsCh <- containers[0].VolumeMounts
 			}
+
 			return nil
 		})
 		backendVolumeMounts := <-backendVolumeMountsCh
@@ -1969,6 +1972,7 @@ func TestNewFullStack_WithCache(t *testing.T) {
 		for _, mount := range backendVolumeMounts {
 			if mount.Name == "cache-credentials" {
 				cacheCredentialsMount = &mount
+
 				break
 			}
 		}
@@ -1983,6 +1987,7 @@ func TestNewFullStack_WithCache(t *testing.T) {
 		defer close(backendVolumesCh)
 		backendService.Template.Volumes().ApplyT(func(volumes []cloudrunv2.ServiceTemplateVolume) error {
 			backendVolumesCh <- volumes
+
 			return nil
 		})
 		backendVolumes := <-backendVolumesCh
@@ -1992,6 +1997,7 @@ func TestNewFullStack_WithCache(t *testing.T) {
 		for i := range backendVolumes {
 			if backendVolumes[i].Name == "cache-credentials" {
 				cacheCredentialsVolume = &backendVolumes[i]
+
 				break
 			}
 		}
@@ -2006,6 +2012,27 @@ func TestNewFullStack_WithCache(t *testing.T) {
 		cacheSecretItem := cacheCredentialsVolume.Secret.Items[0]
 		assert.Equal(t, ".env", cacheSecretItem.Path, "Cache credentials secret item should be named .env")
 		assert.Equal(t, 0400, *cacheSecretItem.Mode, "Cache credentials secret item should have read-only permissions")
+
+		// Verify backend service has redis.editor IAM role
+		backendProjectIamMembers := fullstack.GetBackendProjectIamMembers()
+		require.NotNil(t, backendProjectIamMembers, "Backend project IAM members should not be nil")
+		assert.Len(t, backendProjectIamMembers, 2, "Exactly one backend project IAM member should be created")
+
+		roleCh := make(chan string, 2)
+		defer close(roleCh)
+		backendProjectIamMembers[0].Role.ApplyT(func(role string) error {
+			roleCh <- role
+
+			return nil
+		})
+		assert.Equal(t, "roles/some-other-special-role", <-roleCh, "Backend project IAM roles passed should be honored")
+
+		backendProjectIamMembers[1].Role.ApplyT(func(role string) error {
+			roleCh <- role
+
+			return nil
+		})
+		assert.Equal(t, "roles/redis.editor", <-roleCh, "Backend project IAM role should allow redis editor")
 
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
