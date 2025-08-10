@@ -131,9 +131,9 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 	f.frontendService = frontendService
 	f.frontendAccount = frontendAccount
 
-	if args.Backend != nil && args.Backend.CacheConfig != nil {
+	if args.Backend != nil && args.Backend.CacheInstance != nil {
 		// Deploy cache companion for backend
-		err = f.deployCache(ctx, args.Backend.CacheConfig)
+		err = f.deployCache(ctx, args.Backend.CacheInstance)
 		if err != nil {
 			return fmt.Errorf("failed to deploy cache: %w", err)
 		}

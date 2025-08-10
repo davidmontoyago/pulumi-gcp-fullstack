@@ -1800,7 +1800,7 @@ func TestNewFullStack_WithCache(t *testing.T) {
 			FrontendImage: pulumi.String("gcr.io/test-project/frontend:latest"),
 			Backend: &gcp.BackendArgs{
 				InstanceArgs: &gcp.InstanceArgs{},
-				CacheConfig: &gcp.CacheConfigArgs{
+				CacheInstance: &gcp.CacheInstanceArgs{
 					RedisVersion: "REDIS_7_0",
 					Tier:         "BASIC",
 					MemorySizeGb: 2,

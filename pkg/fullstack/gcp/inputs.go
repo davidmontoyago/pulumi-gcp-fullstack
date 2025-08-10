@@ -24,7 +24,7 @@ type FullStackArgs struct {
 type BackendArgs struct {
 	*InstanceArgs
 	ProjectIAMRoles []string
-	CacheConfig     *CacheConfigArgs
+	CacheInstance   *CacheInstanceArgs
 }
 
 // FrontendArgs contains configuration for the frontend service.
@@ -153,8 +153,8 @@ type SecretVolumeArgs struct {
 	Version string
 }
 
-// CacheConfigArgs contains configuration for Redis cache deployment.
-type CacheConfigArgs struct {
+// CacheInstanceArgs contains configuration for Redis cache deployment.
+type CacheInstanceArgs struct {
 	RedisVersion string
 	Tier         string
 	MemorySizeGb int
