@@ -165,9 +165,9 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 		outputs["service"] = args.Inputs["service"]
 		// Expected outputs: project, service
 	case "gcp:redis/instance:Instance":
-		outputs["host"] = "10.0.0.3"
+		outputs["host"] = "100.0.0.3"
 		outputs["port"] = 6379
-		outputs["readEndpoint"] = "10.0.0.3"
+		outputs["readEndpoint"] = "100.0.0.3"
 		outputs["readEndpointPort"] = 6379
 		outputs["authString"] = "mock-auth-string-12345"
 		outputs["serverCaCerts"] = []map[string]interface{}{
@@ -177,7 +177,6 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 		}
 		// Expected outputs: name, project, region, host, port, readEndpoint, readEndpointPort, authString, serverCaCerts
 	case "gcp:vpcaccess/connector:Connector":
-		outputs["ipCidrRange"] = "10.8.0.0/28"
 		outputs["selfLink"] = "https://www.googleapis.com/compute/v1/projects/" + testProjectName + "/regions/" + testRegion + "/connectors/" + args.Name
 		// Expected outputs: name, project, region, ipCidrRange
 	case "gcp:compute/firewall:Firewall":
@@ -1802,9 +1801,10 @@ func TestNewFullStack_WithCache(t *testing.T) {
 			Backend: &gcp.BackendArgs{
 				InstanceArgs: &gcp.InstanceArgs{},
 				CacheInstance: &gcp.CacheInstanceArgs{
-					RedisVersion: "REDIS_7_0",
-					Tier:         "BASIC",
-					MemorySizeGb: 2,
+					RedisVersion:         "REDIS_7_0",
+					Tier:                 "BASIC",
+					MemorySizeGb:         2,
+					ConnectorIPCidrRange: "10.9.0.0/28",
 				},
 				ProjectIAMRoles: []string{"roles/some-other-special-role"},
 			},
@@ -1856,7 +1856,7 @@ func TestNewFullStack_WithCache(t *testing.T) {
 
 			return nil
 		})
-		assert.Equal(t, "10.0.0.3", <-redisHostCh, "Redis host should match mock value")
+		assert.Equal(t, "100.0.0.3", <-redisHostCh, "Redis host should match mock value")
 
 		redisPortCh := make(chan int, 1)
 		defer close(redisPortCh)
@@ -1898,7 +1898,7 @@ func TestNewFullStack_WithCache(t *testing.T) {
 		})
 		cidr := <-vpcCidrCh
 		require.NotNil(t, cidr, "VPC connector CIDR should not be nil")
-		assert.Equal(t, "10.8.0.0/28", *cidr, "VPC connector CIDR should match expected value")
+		assert.Equal(t, "10.9.0.0/28", *cidr, "VPC connector CIDR should match expected value")
 
 		// Verify cache firewall rule configuration
 		cacheFirewall := fullstack.GetCacheFirewall()
@@ -1927,7 +1927,7 @@ func TestNewFullStack_WithCache(t *testing.T) {
 		})
 		secretData := <-secretDataCh
 		require.NotNil(t, secretData, "Secret data should not be nil")
-		assert.Contains(t, *secretData, "REDIS_HOST=10.0.0.3", "Secret should contain Redis host")
+		assert.Contains(t, *secretData, "REDIS_HOST=100.0.0.3", "Secret should contain Redis host")
 		assert.Contains(t, *secretData, "REDIS_PORT=6379", "Secret should contain Redis port")
 		assert.Contains(t, *secretData, "REDIS_AUTH_STRING=mock-auth-string-12345", "Secret should contain auth string")
 		assert.Contains(t, *secretData, "REDIS_TLS_CA_CERTS=", "Secret should contain TLS CA certs field")
@@ -1949,7 +1949,7 @@ func TestNewFullStack_WithCache(t *testing.T) {
 
 		// Assert VPC connector is set correctly
 		require.NotNil(t, vpcAccess.Connector, "VPC connector should be configured")
-		assert.Contains(t, *vpcAccess.Connector, "vpc-connector", "VPC connector should be configured for cache access")
+		assert.Contains(t, *vpcAccess.Connector, "test-full-c-private-conne", "VPC connector should be configured for cache access")
 
 		// Assert egress is set to private ranges only
 		require.NotNil(t, vpcAccess.Egress, "VPC egress should be configured")

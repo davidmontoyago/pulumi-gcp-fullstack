@@ -9,6 +9,7 @@ Features:
 
 1. A backend Cloud Run instance.
     - Env config loaded from Secret Manager
+    - A companion Redis cache with auto-configured AuthN & TLS.
 1. A frontend Cloud Run instance.
     - Env config loaded from Secret Manager
 2. An regional or global HTTPs load balancer ([Classic Application Load Balancer](https://cloud.google.com/load-balancing/docs/https#global-classic-connections)), with an optional gateway before the frontend and backend instances (See: [Load Balancer Recipe](#load-balancer-recipe)).
@@ -97,9 +98,14 @@ mystack, err := gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
                 "ENV":               "prod",
             },
         },
-        CacheInstanceArgs: &gcp.CacheInstanceArgs{},
+        CacheInstance: &gcp.CacheInstanceArgs{
+            RedisVersion: "REDIS_7_0",
+            Tier:         "BASIC",
+            MemorySizeGb: 2,
+            IpCidrRange:  "10.9.0.0/28",
+        },
         ProjectIAMRoles: []string{
-            "roles/redis.editor",
+            "roles/pubsub.admin",
         },
     },
     Frontend: &gcp.FrontendArgs{

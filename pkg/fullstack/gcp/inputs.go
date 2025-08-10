@@ -157,4 +157,6 @@ type CacheInstanceArgs struct {
 	MemorySizeGb int
 	// Authorized network for the Redis instance, firewall and VPC connector. Defaults to "default".
 	AuthorizedNetwork string
+	// IP CIDR range for the private traffic VPC connector. Defaults to "10.8.0.0/28".
+	ConnectorIPCidrRange string
 }

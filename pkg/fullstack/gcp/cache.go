@@ -28,7 +28,7 @@ const (
 )
 
 // deployCache creates a Redis cache instance with private VPC access and firewall rules
-func (f *FullStack) deployCache(ctx *pulumi.Context, config *CacheInstanceArgs) error {
+func (f *FullStack) deployCache(ctx *pulumi.Context, args *CacheInstanceArgs) error {
 	if err := ctx.Log.Debug("Deploying Redis cache with config: %v", &pulumi.LogArgs{
 		Resource: f,
 	}); err != nil {
@@ -40,13 +40,13 @@ func (f *FullStack) deployCache(ctx *pulumi.Context, config *CacheInstanceArgs) 
 		return fmt.Errorf("failed to enable Redis API: %w", err)
 	}
 
-	instance, err := f.createRedisInstance(ctx, config, redisAPI)
+	instance, err := f.createRedisInstance(ctx, args, redisAPI)
 	if err != nil {
 		return fmt.Errorf("failed to create Redis instance: %w", err)
 	}
 
 	// Create VPC access connector for Cloud Run to reach Redis' private IP
-	connector, err := f.createVPCAccessConnector(ctx, instance.AuthorizedNetwork)
+	connector, err := f.createVPCAccessConnector(ctx, instance.AuthorizedNetwork, args.ConnectorIPCidrRange)
 	if err != nil {
 		return fmt.Errorf("failed to create VPC access connector: %w", err)
 	}
@@ -81,7 +81,7 @@ func (f *FullStack) enableRedisAPI(ctx *pulumi.Context) (*projects.Service, erro
 }
 
 // createVPCAccessConnector creates a Serverless VPC Access connector for Cloud Run to reach private resources
-func (f *FullStack) createVPCAccessConnector(ctx *pulumi.Context, cacheNetwork pulumi.StringOutput) (*vpcaccess.Connector, error) {
+func (f *FullStack) createVPCAccessConnector(ctx *pulumi.Context, cacheNetwork pulumi.StringOutput, ipCidrRange string) (*vpcaccess.Connector, error) {
 	// Enable VPC Access API
 	vpcAPI, err := projects.NewService(ctx, f.newResourceName("cache", "vpcaccess-api", 63), &projects.ServiceArgs{
 		Project: pulumi.String(f.Project),
@@ -91,7 +91,7 @@ func (f *FullStack) createVPCAccessConnector(ctx *pulumi.Context, cacheNetwork p
 		return nil, fmt.Errorf("failed to enable VPC access API: %w", err)
 	}
 
-	connectorName := f.newResourceName("cache", "vpc-connector", 63)
+	connectorName := f.newResourceName("cache", "private-connector", 25)
 
 	return vpcaccess.NewConnector(ctx, connectorName, &vpcaccess.ConnectorArgs{
 		Name:    pulumi.String(connectorName),
@@ -100,7 +100,13 @@ func (f *FullStack) createVPCAccessConnector(ctx *pulumi.Context, cacheNetwork p
 		Network: cacheNetwork.ApplyT(func(network string) pulumi.StringInput {
 			return pulumi.String(network)
 		}).(pulumi.StringInput),
-		IpCidrRange:  pulumi.String("10.8.0.0/28"),
+		IpCidrRange: pulumi.String(func() string {
+			if ipCidrRange == "" {
+				return "10.8.0.0/28"
+			}
+
+			return ipCidrRange
+		}()),
 		MinInstances: pulumi.Int(2),
 		MaxInstances: pulumi.Int(3),
 	}, pulumi.Parent(f), pulumi.DependsOn([]pulumi.Resource{vpcAPI}))
@@ -180,15 +186,19 @@ func (f *FullStack) secureCacheCredentials(ctx *pulumi.Context, instance *redis.
 	}
 
 	// Create secret to store Redis credentials
-	secret, err := secretmanager.NewSecret(ctx, f.newResourceName("cache", "credentials", 63), &secretmanager.SecretArgs{
-		Project:            pulumi.String(f.Project),
-		SecretId:           pulumi.String(f.newResourceName("cache", "credentials", 63)),
-		DeletionProtection: pulumi.Bool(false),
+	secretID := f.newResourceName("cache", "creds", 100)
+	secret, err := secretmanager.NewSecret(ctx, secretID, &secretmanager.SecretArgs{
+		Project: pulumi.String(f.Project),
 		Replication: &secretmanager.SecretReplicationArgs{
+			// With google-managed default encryption
 			Auto: &secretmanager.SecretReplicationAutoArgs{},
 		},
-		Labels: mergeLabels(f.Labels, pulumi.StringMap{"cache-credentials": pulumi.String("true")}),
-	}, pulumi.Parent(f), pulumi.DependsOn([]pulumi.Resource{secretManagerAPI}))
+		SecretId:           pulumi.String(secretID),
+		DeletionProtection: pulumi.Bool(false),
+		Labels:             mergeLabels(f.Labels, pulumi.StringMap{"cache-credentials": pulumi.String("true")}),
+	}, pulumi.Parent(f),
+		pulumi.DependsOn([]pulumi.Resource{secretManagerAPI}),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cache credentials secret: %w", err)
 	}
