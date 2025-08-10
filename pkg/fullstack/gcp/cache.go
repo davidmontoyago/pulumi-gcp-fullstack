@@ -28,7 +28,7 @@ const (
 )
 
 // deployCache creates a Redis cache instance with private VPC access and firewall rules
-func (f *FullStack) deployCache(ctx *pulumi.Context, config *CacheConfigArgs) error {
+func (f *FullStack) deployCache(ctx *pulumi.Context, config *CacheInstanceArgs) error {
 	if err := ctx.Log.Debug("Deploying Redis cache with config: %v", &pulumi.LogArgs{
 		Resource: f,
 	}); err != nil {
@@ -150,37 +150,19 @@ func (f *FullStack) createCacheFirewallRule(ctx *pulumi.Context, connector *vpca
 }
 
 // createRedisInstance creates a Redis instance with auth and TLS enabled
-func (f *FullStack) createRedisInstance(ctx *pulumi.Context, config *CacheConfigArgs, redisAPI *projects.Service) (*redis.Instance, error) {
+func (f *FullStack) createRedisInstance(ctx *pulumi.Context, config *CacheInstanceArgs, redisAPI *projects.Service) (*redis.Instance, error) {
 	// Set defaults if not provided
-	redisVersion := config.RedisVersion
-	if redisVersion == "" {
-		redisVersion = "REDIS_7_0"
-	}
-
-	tier := config.Tier
-	if tier == "" {
-		tier = "BASIC"
-	}
-
-	memorySizeGb := config.MemorySizeGb
-	if memorySizeGb == 0 {
-		memorySizeGb = 1
-	}
-
-	network := config.AuthorizedNetwork
-	if network == "" {
-		network = "default"
-	}
+	applyCacheConfigDefaults(config)
 
 	return redis.NewInstance(ctx, f.newResourceName("cache", "instance", 63), &redis.InstanceArgs{
 		Name:                  pulumi.String(f.newResourceName("cache", "instance", 63)),
 		Project:               pulumi.String(f.Project),
 		Region:                pulumi.String(f.Region),
-		Tier:                  pulumi.String(tier),
-		MemorySizeGb:          pulumi.Int(memorySizeGb),
-		RedisVersion:          pulumi.String(redisVersion),
+		Tier:                  pulumi.String(config.Tier),
+		MemorySizeGb:          pulumi.Int(config.MemorySizeGb),
+		RedisVersion:          pulumi.String(config.RedisVersion),
 		Labels:                mergeLabels(f.Labels, pulumi.StringMap{"cache": pulumi.String("true")}),
-		AuthorizedNetwork:     pulumi.String(network),
+		AuthorizedNetwork:     pulumi.String(config.AuthorizedNetwork),
 		AuthEnabled:           pulumi.Bool(true),
 		TransitEncryptionMode: pulumi.String("SERVER_AUTHENTICATION"),
 	}, pulumi.Parent(f), pulumi.DependsOn([]pulumi.Resource{redisAPI}))
@@ -260,4 +242,22 @@ func createDotEnvSecretData(instance *redis.Instance) pulumi.StringOutput {
 			REDIS_AUTH_STRING, authString,
 			REDIS_TLS_CA_CERTS, encodedCerts)
 	}).(pulumi.StringOutput)
+}
+
+func applyCacheConfigDefaults(config *CacheInstanceArgs) {
+	if config.RedisVersion == "" {
+		config.RedisVersion = "REDIS_7_0"
+	}
+
+	if config.Tier == "" {
+		config.Tier = "BASIC"
+	}
+
+	if config.MemorySizeGb == 0 {
+		config.MemorySizeGb = 1
+	}
+
+	if config.AuthorizedNetwork == "" {
+		config.AuthorizedNetwork = "default"
+	}
 }
