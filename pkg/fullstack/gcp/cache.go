@@ -15,6 +15,18 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
+// Env vars for Secret with Redis cache configuration
+//
+//nolint:revive // Environment variable names should match their actual env var names
+const (
+	REDIS_HOST         = "REDIS_HOST"
+	REDIS_PORT         = "REDIS_PORT"
+	REDIS_READ_HOST    = "REDIS_READ_HOST"
+	REDIS_READ_PORT    = "REDIS_READ_PORT"
+	REDIS_AUTH_STRING  = "REDIS_AUTH_STRING"
+	REDIS_TLS_CA_CERTS = "REDIS_TLS_CA_CERTS"
+)
+
 // deployCache creates a Redis cache instance with private VPC access and firewall rules
 func (f *FullStack) deployCache(ctx *pulumi.Context, config *CacheConfigArgs) error {
 	if err := ctx.Log.Debug("Deploying Redis cache with config: %v", &pulumi.LogArgs{
@@ -76,7 +88,7 @@ func (f *FullStack) createVPCAccessConnector(ctx *pulumi.Context, cacheNetwork p
 		Service: pulumi.String("vpcaccess.googleapis.com"),
 	}, pulumi.Parent(f))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to enable VPC access API: %w", err)
 	}
 
 	connectorName := f.newResourceName("cache", "vpc-connector", 63)
@@ -182,7 +194,7 @@ func (f *FullStack) secureCacheCredentials(ctx *pulumi.Context, instance *redis.
 		Service: pulumi.String("secretmanager.googleapis.com"),
 	}, pulumi.Parent(f))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to enable Secret Manager API: %w", err)
 	}
 
 	// Create secret to store Redis credentials
@@ -196,11 +208,24 @@ func (f *FullStack) secureCacheCredentials(ctx *pulumi.Context, instance *redis.
 		Labels: mergeLabels(f.Labels, pulumi.StringMap{"cache-credentials": pulumi.String("true")}),
 	}, pulumi.Parent(f), pulumi.DependsOn([]pulumi.Resource{secretManagerAPI}))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create cache credentials secret: %w", err)
 	}
 
 	// Create dotenv format with Redis connection details
-	dotenvData := pulumi.All(
+	dotenvData := createDotEnvSecretData(instance)
+
+	// Create secret version with Redis credentials marked as sensitive
+	return secretmanager.NewSecretVersion(ctx, f.newResourceName("cache", "credentials-version", 63), &secretmanager.SecretVersionArgs{
+		Secret: secret.ID(),
+		SecretData: pulumi.ToSecret(dotenvData).(pulumi.StringOutput).ApplyT(func(s string) *string {
+			return &s
+		}).(pulumi.StringPtrOutput),
+	}, pulumi.Parent(f), pulumi.DependsOn([]pulumi.Resource{secret}))
+}
+
+// createDotEnvSecretData creates dotenv format with Redis connection details
+func createDotEnvSecretData(instance *redis.Instance) pulumi.StringOutput {
+	return pulumi.All(
 		instance.Host,
 		instance.Port,
 		instance.ReadEndpoint,
@@ -227,15 +252,12 @@ func (f *FullStack) secureCacheCredentials(ctx *pulumi.Context, instance *redis.
 		// Base64 encode the concatenated certificates to avoid .env parsing issues
 		encodedCerts := base64.StdEncoding.EncodeToString([]byte(concatenatedCerts))
 
-		return fmt.Sprintf("REDIS_HOST=%s\nREDIS_PORT=%d\nREDIS_READ_HOST=%s\nREDIS_READ_PORT=%d\nREDIS_AUTH_STRING=%s\nREDIS_TLS_CA_CERTS=%s",
-			host, port, readEndpoint, readEndpointPort, authString, encodedCerts)
+		return fmt.Sprintf("%s=%s\n%s=%d\n%s=%s\n%s=%d\n%s=%s\n%s=%s",
+			REDIS_HOST, host,
+			REDIS_PORT, port,
+			REDIS_READ_HOST, readEndpoint,
+			REDIS_READ_PORT, readEndpointPort,
+			REDIS_AUTH_STRING, authString,
+			REDIS_TLS_CA_CERTS, encodedCerts)
 	}).(pulumi.StringOutput)
-
-	// Create secret version with Redis credentials marked as sensitive
-	return secretmanager.NewSecretVersion(ctx, f.newResourceName("cache", "credentials-version", 63), &secretmanager.SecretVersionArgs{
-		Secret: secret.ID(),
-		SecretData: pulumi.ToSecret(dotenvData).(pulumi.StringOutput).ApplyT(func(s string) *string {
-			return &s
-		}).(pulumi.StringPtrOutput),
-	}, pulumi.Parent(f), pulumi.DependsOn([]pulumi.Resource{secret}))
 }
