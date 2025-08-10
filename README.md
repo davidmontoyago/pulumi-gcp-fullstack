@@ -97,6 +97,7 @@ mystack, err := gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
                 "ENV":               "prod",
             },
         },
+        CacheInstanceArgs: &gcp.CacheInstanceArgs{},
         ProjectIAMRoles: []string{
             "roles/redis.editor",
         },

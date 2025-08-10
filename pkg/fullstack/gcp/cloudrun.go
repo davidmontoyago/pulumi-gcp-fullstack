@@ -74,6 +74,10 @@ func setInstanceDefaults(args *InstanceArgs, defaults InstanceDefaults) *Instanc
 		}
 	}
 
+	if args.Secrets == nil {
+		args.Secrets = []*SecretVolumeArgs{}
+	}
+
 	return args
 }
 
@@ -107,7 +111,19 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 	}
 	ctx.Export("cloud_run_service_backend_account_id", serviceAccount.ID())
 
-	volumes, volumeMounts, err := f.setupInstanceSecrets(ctx, backendName, serviceAccount,
+	additionalSecrets := args.Secrets
+	if f.cacheCredentialsSecret != nil {
+		// if enabled, append secret with cache credentials
+		additionalSecrets = append(additionalSecrets, &SecretVolumeArgs{
+			SecretID:   f.cacheCredentialsSecret.Secret,
+			Name:       "cache-credentials",
+			Path:       "/app/cache-config",
+			SecretName: ".env",
+			Version:    f.cacheCredentialsSecret.Version,
+		})
+	}
+
+	volumes, volumeMounts, err := f.setupInstanceSecrets(ctx, backendName, additionalSecrets, serviceAccount,
 		backendLabels, args.InstanceArgs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to setup instance secrets: %w", err)
@@ -153,9 +169,10 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 		ServiceAccount: serviceAccount.Email,
 		Volumes:        volumes,
 	}
-	if args.PrivateVpcAccessConnector != nil {
+	if f.vpcConnector != nil {
+		// Access to cache instance with private IP
 		serviceTemplate.VpcAccess = &cloudrunv2.ServiceTemplateVpcAccessArgs{
-			Connector: args.PrivateVpcAccessConnector,
+			Connector: f.vpcConnector.SelfLink,
 			Egress:    pulumi.String("PRIVATE_RANGES_ONLY"),
 		}
 	}
@@ -184,7 +201,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 }
 
 func (f *FullStack) mountSecrets(ctx *pulumi.Context,
-	secrets []SecretVolumeArgs,
+	secrets []*SecretVolumeArgs,
 	backendName string,
 	serviceAccountEmail pulumi.StringOutput,
 ) (*cloudrunv2.ServiceTemplateVolumeArray, *cloudrunv2.ServiceTemplateContainerVolumeMountArray, error) {
@@ -205,7 +222,7 @@ func (f *FullStack) mountSecrets(ctx *pulumi.Context,
 
 		// Create IAM binding for the secret (similar to secretmanager.go)
 		secretAccessorName := f.newResourceName(backendName, fmt.Sprintf("%s-secret-accessor", secret.Name), 100)
-		_, err := secretmanager.NewSecretIamMember(ctx, secretAccessorName, &secretmanager.SecretIamMemberArgs{
+		secretAccessor, err := secretmanager.NewSecretIamMember(ctx, secretAccessorName, &secretmanager.SecretIamMemberArgs{
 			Project:  pulumi.String(f.Project),
 			SecretId: secret.SecretID,
 			Role:     pulumi.String("roles/secretmanager.secretAccessor"),
@@ -214,6 +231,7 @@ func (f *FullStack) mountSecrets(ctx *pulumi.Context,
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to grant secret accessor for %s: %w", secret.Name, err)
 		}
+		ctx.Export(fmt.Sprintf("cloud_run_service_backend_secret_member_%s_id", secret.Name), secretAccessor.ID())
 	}
 
 	return volumes, volumeMounts, nil
@@ -223,6 +241,7 @@ func (f *FullStack) mountSecrets(ctx *pulumi.Context,
 func (f *FullStack) setupInstanceSecrets(
 	ctx *pulumi.Context,
 	serviceName string,
+	secrets []*SecretVolumeArgs,
 	serviceAccount *serviceaccount.Account,
 	labels pulumi.StringMap,
 	args *InstanceArgs,
@@ -241,11 +260,11 @@ func (f *FullStack) setupInstanceSecrets(
 
 	// add the volume for the default config
 	volumes := &cloudrunv2.ServiceTemplateVolumeArray{
-		newSecretVolume(SecretVolumeArgs{
+		newSecretVolume(&SecretVolumeArgs{
 			SecretID: configSecret.SecretId,
 			Name:     "envconfig",
 			Path:     args.SecretConfigFileName,
-			Version:  "latest",
+			Version:  pulumi.String("latest"),
 		}),
 	}
 
@@ -257,8 +276,8 @@ func (f *FullStack) setupInstanceSecrets(
 	}
 
 	// add other secrets passed
-	if len(args.Secrets) > 0 {
-		moreVolumes, moreMounts, err := f.mountSecrets(ctx, args.Secrets, serviceName, serviceAccount.Email)
+	if len(secrets) > 0 {
+		moreVolumes, moreMounts, err := f.mountSecrets(ctx, secrets, serviceName, serviceAccount.Email)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to mount additional secrets: %w", err)
 		}
@@ -328,9 +347,7 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 	}
 	ctx.Export("cloud_run_service_frontend_account_id", serviceAccount.ID())
 
-	volumes, volumeMounts, err := f.setupInstanceSecrets(ctx, serviceName,
-		serviceAccount, frontendLabels, args.InstanceArgs,
-	)
+	volumes, volumeMounts, err := f.setupInstanceSecrets(ctx, serviceName, args.Secrets, serviceAccount, frontendLabels, args.InstanceArgs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to setup instance secrets: %w", err)
 	}
@@ -431,7 +448,7 @@ func newBackendEnvVars(args *BackendArgs) cloudrunv2.ServiceTemplateContainerEnv
 	return envVars
 }
 
-func newSecretVolume(secret SecretVolumeArgs) *cloudrunv2.ServiceTemplateVolumeArgs {
+func newSecretVolume(secret *SecretVolumeArgs) *cloudrunv2.ServiceTemplateVolumeArgs {
 	newVar := &cloudrunv2.ServiceTemplateVolumeArgs{
 		Name: pulumi.String(secret.Name),
 		Secret: &cloudrunv2.ServiceTemplateVolumeSecretArgs{
@@ -445,15 +462,8 @@ func newSecretVolume(secret SecretVolumeArgs) *cloudrunv2.ServiceTemplateVolumeA
 
 						return ".env"
 					}()),
-					Version: pulumi.String(func() string {
-						if secret.Version != "" {
-							return secret.Version
-						}
-
-						return "latest"
-					}()),
-
-					Mode: pulumi.IntPtr(0400),
+					Version: secret.Version,
+					Mode:    pulumi.IntPtr(0400),
 				},
 			},
 		},

@@ -53,11 +53,8 @@ type InstanceArgs struct {
 	StartupProbe          *Probe
 	LivenessProbe         *Probe
 	EnableUnauthenticated bool
-	// Optional VPC access connector for private traffic.
-	// E.g.: to a memorystore instance
-	PrivateVpcAccessConnector pulumi.StringInput
 	// IDs of additional Secret Manager secrets to mount into the container. Defaults to nil.
-	Secrets []SecretVolumeArgs
+	Secrets []*SecretVolumeArgs
 }
 
 // NetworkArgs contains configuration for network infrastructure including load balancers and API Gateway.
@@ -150,7 +147,7 @@ type SecretVolumeArgs struct {
 	// Secret name. Defaults to ".env".
 	SecretName string
 	// Version of the secret to mount. Defaults to "latest".
-	Version string
+	Version pulumi.StringInput
 }
 
 // CacheInstanceArgs contains configuration for Redis cache deployment.

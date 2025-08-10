@@ -115,6 +115,14 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 }
 
 func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
+	if args.Backend != nil && args.Backend.CacheInstance != nil {
+		// Deploy cache companion for backend
+		err := f.deployCache(ctx, args.Backend.CacheInstance)
+		if err != nil {
+			return fmt.Errorf("failed to deploy cache: %w", err)
+		}
+	}
+
 	backendService, backendAcccount, err := f.deployBackendCloudRunInstance(ctx, args.Backend)
 	if err != nil {
 		return fmt.Errorf("failed to deploy backend Cloud Run: %w", err)
@@ -130,14 +138,6 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 
 	f.frontendService = frontendService
 	f.frontendAccount = frontendAccount
-
-	if args.Backend != nil && args.Backend.CacheInstance != nil {
-		// Deploy cache companion for backend
-		err = f.deployCache(ctx, args.Backend.CacheInstance)
-		if err != nil {
-			return fmt.Errorf("failed to deploy cache: %w", err)
-		}
-	}
 
 	var apiGateway *apigateway.Gateway
 	var gatewayArgs *APIGatewayArgs

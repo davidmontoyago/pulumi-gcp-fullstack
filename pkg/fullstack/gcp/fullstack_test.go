@@ -178,6 +178,7 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 		// Expected outputs: name, project, region, host, port, readEndpoint, readEndpointPort, authString, serverCaCerts
 	case "gcp:vpcaccess/connector:Connector":
 		outputs["ipCidrRange"] = "10.8.0.0/28"
+		outputs["selfLink"] = "https://www.googleapis.com/compute/v1/projects/" + testProjectName + "/regions/" + testRegion + "/connectors/" + args.Name
 		// Expected outputs: name, project, region, ipCidrRange
 	case "gcp:compute/firewall:Firewall":
 		outputs["name"] = args.Name
@@ -1659,19 +1660,19 @@ func TestNewFullStack_WithSecrets(t *testing.T) {
 			FrontendImage: pulumi.String("gcr.io/test-project/frontend:latest"),
 			Backend: &gcp.BackendArgs{
 				InstanceArgs: &gcp.InstanceArgs{
-					Secrets: []gcp.SecretVolumeArgs{
+					Secrets: []*gcp.SecretVolumeArgs{
 						{
 							SecretID:   pulumi.String("backend-db-secret"),
 							Name:       "db-credentials",
 							Path:       "/app/secrets/db",
 							SecretName: "database.json",
-							Version:    "1",
+							Version:    pulumi.String("1"),
 						},
 						{
 							SecretID: pulumi.String("backend-api-key"),
 							Name:     "api-key",
 							Path:     "/app/secrets/api",
-							Version:  "latest",
+							Version:  pulumi.String("latest"),
 						},
 					},
 				},
@@ -1929,6 +1930,82 @@ func TestNewFullStack_WithCache(t *testing.T) {
 		assert.Contains(t, *secretData, "REDIS_PORT=6379", "Secret should contain Redis port")
 		assert.Contains(t, *secretData, "REDIS_AUTH_STRING=mock-auth-string-12345", "Secret should contain auth string")
 		assert.Contains(t, *secretData, "REDIS_TLS_CA_CERTS=", "Secret should contain TLS CA certs field")
+
+		// Verify backend service has VPC access connector configured
+		backendService := fullstack.GetBackendService()
+		require.NotNil(t, backendService, "Backend service should not be nil")
+
+		// Assert VPC access is configured for private connectivity to Redis
+		backendVpcAccessCh := make(chan *cloudrunv2.ServiceTemplateVpcAccess, 1)
+		defer close(backendVpcAccessCh)
+		backendService.Template.VpcAccess().ApplyT(func(vpcAccess *cloudrunv2.ServiceTemplateVpcAccess) error {
+			backendVpcAccessCh <- vpcAccess
+			return nil
+		})
+		vpcAccess := <-backendVpcAccessCh
+		require.NotNil(t, vpcAccess, "Backend service should have VPC access configured")
+
+		// Assert VPC connector is set correctly
+		require.NotNil(t, vpcAccess.Connector, "VPC connector should be configured")
+		assert.Contains(t, *vpcAccess.Connector, "vpc-connector", "VPC connector should be configured for cache access")
+
+		// Assert egress is set to private ranges only
+		require.NotNil(t, vpcAccess.Egress, "VPC egress should be configured")
+		assert.Equal(t, "PRIVATE_RANGES_ONLY", *vpcAccess.Egress, "VPC egress should be set to private ranges only")
+
+		// Verify backend service has cache credentials volume mount
+		backendVolumeMountsCh := make(chan []cloudrunv2.ServiceTemplateContainerVolumeMount, 1)
+		defer close(backendVolumeMountsCh)
+		backendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
+			if len(containers) > 0 {
+				backendVolumeMountsCh <- containers[0].VolumeMounts
+			}
+			return nil
+		})
+		backendVolumeMounts := <-backendVolumeMountsCh
+
+		// Find the cache credentials volume mount
+		var cacheCredentialsMount *cloudrunv2.ServiceTemplateContainerVolumeMount
+		for _, mount := range backendVolumeMounts {
+			if mount.Name == "cache-credentials" {
+				cacheCredentialsMount = &mount
+				break
+			}
+		}
+
+		// Assert cache credentials volume mount exists and is configured correctly
+		require.NotNil(t, cacheCredentialsMount, "Backend should have cache credentials volume mount")
+		assert.Equal(t, "cache-credentials", cacheCredentialsMount.Name, "Cache credentials mount name should match")
+		assert.Equal(t, "/app/cache-config", cacheCredentialsMount.MountPath, "Cache credentials should be mounted at /app/cache-config")
+
+		// Verify backend service has cache credentials volume
+		backendVolumesCh := make(chan []cloudrunv2.ServiceTemplateVolume, 1)
+		defer close(backendVolumesCh)
+		backendService.Template.Volumes().ApplyT(func(volumes []cloudrunv2.ServiceTemplateVolume) error {
+			backendVolumesCh <- volumes
+			return nil
+		})
+		backendVolumes := <-backendVolumesCh
+
+		// Find the cache credentials volume
+		var cacheCredentialsVolume *cloudrunv2.ServiceTemplateVolume
+		for i := range backendVolumes {
+			if backendVolumes[i].Name == "cache-credentials" {
+				cacheCredentialsVolume = &backendVolumes[i]
+				break
+			}
+		}
+
+		// Assert cache credentials volume exists and is configured correctly
+		require.NotNil(t, cacheCredentialsVolume, "Backend should have cache credentials volume")
+		assert.Equal(t, "cache-credentials", cacheCredentialsVolume.Name, "Cache credentials volume name should match")
+		assert.NotNil(t, cacheCredentialsVolume.Secret, "Cache credentials volume should have secret configuration")
+		assert.NotNil(t, cacheCredentialsVolume.Secret.Items, "Cache credentials volume should have secret items")
+		assert.Len(t, cacheCredentialsVolume.Secret.Items, 1, "Cache credentials volume should have exactly one secret item")
+
+		cacheSecretItem := cacheCredentialsVolume.Secret.Items[0]
+		assert.Equal(t, ".env", cacheSecretItem.Path, "Cache credentials secret item should be named .env")
+		assert.Equal(t, 0400, *cacheSecretItem.Mode, "Cache credentials secret item should have read-only permissions")
 
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
