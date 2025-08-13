@@ -1,7 +1,7 @@
 # pulumi-gcp-fullstack
 
 [![Develop](https://github.com/davidmontoyago/pulumi-gcp-fullstack/actions/workflows/develop.yaml/badge.svg)](https://github.com/davidmontoyago/pulumi-gcp-fullstack/actions/workflows/develop.yaml)
-[![Go Coverage](https://github.com/davidmontoyago/pulumi-gcp-pullstack/wiki/coverage.svg)](https://raw.githack.com/wiki/davidmontoyago/pulumi-gcp-fullstack/coverage.html)
+[![Go Coverage](https://raw.githubusercontent.com/wiki/davidmontoyago/pulumi-gcp-fullstack/coverage.svg)](https://raw.githack.com/wiki/davidmontoyago/pulumi-gcp-fullstack/coverage.html)
 
 Pulumi [Component](https://www.pulumi.com/docs/concepts/resources/components/#component-resources) to easily deploy a serverless fullstack app (frontend and backend) in GCP, and securely publish it to the internet.
 
@@ -99,6 +99,7 @@ mystack, err := gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
             },
         },
         CacheInstance: &gcp.CacheInstanceArgs{
+            // Backend creds, certs, host and port will be auto-configured for the backend
             RedisVersion: "REDIS_7_0",
             Tier:         "BASIC",
             MemorySizeGb: 2,
