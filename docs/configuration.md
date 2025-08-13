@@ -31,6 +31,15 @@
 
 **Note**: JWT authentication is designed for service-to-service authentication where only the frontend service account can access the backend API. This is not for user authentication.
 
+## CacheInstanceArgs
+- **RedisVersion**: Redis version to deploy (defaults to "REDIS_7_0")
+- **Tier**: Redis tier - "BASIC" or "STANDARD_HA" (defaults to "BASIC")
+- **MemorySizeGb**: Memory size in GB for the Redis instance (defaults to 1)
+- **AuthorizedNetwork**: VPC network for Redis access (defaults to "default")
+- **ConnectorIPCidrRange**: IP CIDR range for VPC connector (defaults to "10.8.0.0/28")
+
+**Note**: Cache instances are automatically configured with auth and TLS enabled. Backend services get VPC access and cache credentials mounted at `/app/cache-config/.env`.
+
 Resource names are automatically generated using the backend service name as a base, ensuring proper prefixing and length limits.
 
 ## JWT Authentication Example
@@ -67,6 +76,69 @@ When JWT authentication is enabled:
 - All backend API endpoints require a valid JWT token from the frontend service account
 - The frontend can generate JWT tokens using its service account credentials
 - Only requests with valid JWT tokens from the frontend service account can access the backend API
+
+## Cache Configuration Example
+
+To enable a Redis cache for the backend service:
+
+```go
+fullstack, err := gcp.NewFullStack(ctx, "my-stack", &gcp.FullStackArgs{
+    Project:       "my-project",
+    Region:        "us-central1",
+    BackendName:   "backend",
+    BackendImage:  pulumi.String("gcr.io/my-project/backend:latest"),
+    FrontendName:  "frontend",
+    FrontendImage: pulumi.String("gcr.io/my-project/frontend:latest"),
+    Backend: &gcp.BackendArgs{
+        CacheInstance: &gcp.CacheInstanceArgs{
+            RedisVersion: "REDIS_7_0",
+            Tier:         "BASIC",
+            MemorySizeGb: 2,
+        },
+    },
+})
+```
+
+When cache is enabled:
+- Redis instance is deployed with private IP and auth/TLS enabled
+- VPC connector allows backend to reach Redis privately
+- Cache credentials are automatically mounted at `/app/cache-config/.env`
+
+### Environment Variables
+
+| Variable             | Description                          |
+| -------------------- | ------------------------------------ |
+| `REDIS_HOST`         | Redis instance primary endpoint      |
+| `REDIS_PORT`         | Redis instance port (6378 for TLS  ) |
+| `REDIS_READ_HOST`    | Redis read replica endpoint          |
+| `REDIS_READ_PORT`    | Redis read replica port              |
+| `REDIS_AUTH_STRING`  | Redis authentication password        |
+| `REDIS_TLS_CA_CERTS` | Base64-encoded TLS CA certificates   |
+
+**Note**: `REDIS_TLS_CA_CERTS` requires base64 decoding:
+
+```go
+caCerts, err := base64.StdEncoding.DecodeString(caCertsB64)
+if err != nil {
+    slog.Error("Failed to base64 decode CA certificates", "error", err)
+    return nil
+}
+
+caCertsPool := x509.NewCertPool()
+caCertsPool.AppendCertsFromPEM(caCerts)
+
+tlsConfig := &tls.Config{
+    MinVersion: tls.VersionTLS12,
+    RootCAs:    caCertsPool,
+}
+
+client := redis.NewClient(&redis.Options{
+    Addr:      addr,
+    Password:  auth,
+    DB:        0,
+    TLSConfig: tlsConfig,
+})
+```
 
 # Resource Naming Convention
 

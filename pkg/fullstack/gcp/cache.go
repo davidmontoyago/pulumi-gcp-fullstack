@@ -102,7 +102,7 @@ func (f *FullStack) createVPCAccessConnector(ctx *pulumi.Context, cacheNetwork p
 		}).(pulumi.StringInput),
 		IpCidrRange: pulumi.String(func() string {
 			if ipCidrRange == "" {
-				return "10.8.0.0/28"
+				return "10.8.0.0/28" // fallback to default
 			}
 
 			return ipCidrRange
@@ -143,7 +143,7 @@ func (f *FullStack) createCacheFirewallRule(ctx *pulumi.Context, connector *vpca
 					log.Printf("failed to log IP CIDR details with pulumi context: %v", err)
 				}
 
-				return "10.8.0.0/28" // fallback
+				return "10.8.0.0/28" // fallback to default
 			}).(pulumi.StringOutput),
 		},
 		Description: pulumi.String("Allow TCP on Redis instace port from Cloud Run VPC Connector subnet"),
