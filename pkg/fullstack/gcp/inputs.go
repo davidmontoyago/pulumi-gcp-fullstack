@@ -159,4 +159,8 @@ type CacheInstanceArgs struct {
 	AuthorizedNetwork string
 	// IP CIDR range for the private traffic VPC connector. Defaults to "10.8.0.0/28".
 	ConnectorIPCidrRange string
+	// Minimum number of instances for the VPC connector. Defaults to the lowest allowed value of 2.
+	ConnectorMinInstances int
+	// Maximum number of instances for the VPC connector. Defaults to the lowest allowed value of 3.
+	ConnectorMaxInstances int
 }

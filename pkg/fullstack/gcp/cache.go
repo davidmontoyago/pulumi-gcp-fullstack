@@ -46,7 +46,7 @@ func (f *FullStack) deployCache(ctx *pulumi.Context, args *CacheInstanceArgs) er
 	}
 
 	// Create VPC access connector for Cloud Run to reach Redis' private IP
-	connector, err := f.createVPCAccessConnector(ctx, instance.AuthorizedNetwork, args.ConnectorIPCidrRange)
+	connector, err := f.createVPCAccessConnector(ctx, instance.AuthorizedNetwork, args)
 	if err != nil {
 		return fmt.Errorf("failed to create VPC access connector: %w", err)
 	}
@@ -81,7 +81,7 @@ func (f *FullStack) enableRedisAPI(ctx *pulumi.Context) (*projects.Service, erro
 }
 
 // createVPCAccessConnector creates a Serverless VPC Access connector for Cloud Run to reach private resources
-func (f *FullStack) createVPCAccessConnector(ctx *pulumi.Context, cacheNetwork pulumi.StringOutput, ipCidrRange string) (*vpcaccess.Connector, error) {
+func (f *FullStack) createVPCAccessConnector(ctx *pulumi.Context, cacheNetwork pulumi.StringOutput, args *CacheInstanceArgs) (*vpcaccess.Connector, error) {
 	// Enable VPC Access API
 	vpcAPI, err := projects.NewService(ctx, f.newResourceName("cache", "vpcaccess-api", 63), &projects.ServiceArgs{
 		Project: pulumi.String(f.Project),
@@ -101,14 +101,14 @@ func (f *FullStack) createVPCAccessConnector(ctx *pulumi.Context, cacheNetwork p
 			return pulumi.String(network)
 		}).(pulumi.StringInput),
 		IpCidrRange: pulumi.String(func() string {
-			if ipCidrRange == "" {
+			if args.ConnectorIPCidrRange == "" {
 				return "10.8.0.0/28" // fallback to default
 			}
 
-			return ipCidrRange
+			return args.ConnectorIPCidrRange
 		}()),
-		MinInstances: pulumi.Int(2),
-		MaxInstances: pulumi.Int(3),
+		MinInstances: pulumi.Int(args.ConnectorMinInstances),
+		MaxInstances: pulumi.Int(args.ConnectorMaxInstances),
 	}, pulumi.Parent(f), pulumi.DependsOn([]pulumi.Resource{vpcAPI}))
 }
 
@@ -269,5 +269,13 @@ func applyCacheConfigDefaults(config *CacheInstanceArgs) {
 
 	if config.AuthorizedNetwork == "" {
 		config.AuthorizedNetwork = "default"
+	}
+
+	if config.ConnectorMinInstances == 0 {
+		config.ConnectorMinInstances = 2
+	}
+
+	if config.ConnectorMaxInstances == 0 {
+		config.ConnectorMaxInstances = 3
 	}
 }
