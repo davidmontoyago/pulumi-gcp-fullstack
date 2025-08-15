@@ -1801,10 +1801,12 @@ func TestNewFullStack_WithCache(t *testing.T) {
 			Backend: &gcp.BackendArgs{
 				InstanceArgs: &gcp.InstanceArgs{},
 				CacheInstance: &gcp.CacheInstanceArgs{
-					RedisVersion:         "REDIS_7_0",
-					Tier:                 "BASIC",
-					MemorySizeGb:         2,
-					ConnectorIPCidrRange: "10.9.0.0/28",
+					RedisVersion:          "REDIS_7_0",
+					Tier:                  "BASIC",
+					MemorySizeGb:          2,
+					ConnectorIPCidrRange:  "10.9.0.0/28",
+					ConnectorMinInstances: 3,
+					ConnectorMaxInstances: 9,
 				},
 				ProjectIAMRoles: []string{"roles/some-other-special-role"},
 			},
@@ -1899,6 +1901,29 @@ func TestNewFullStack_WithCache(t *testing.T) {
 		cidr := <-vpcCidrCh
 		require.NotNil(t, cidr, "VPC connector CIDR should not be nil")
 		assert.Equal(t, "10.9.0.0/28", *cidr, "VPC connector CIDR should match expected value")
+
+		// Verify VPC connector min and max instances configuration
+		vpcMinInstancesCh := make(chan int, 1)
+		defer close(vpcMinInstancesCh)
+		vpcConnector.MinInstances.ApplyT(func(minInstances int) error {
+			vpcMinInstancesCh <- minInstances
+
+			return nil
+		})
+		minInstances := <-vpcMinInstancesCh
+		require.NotNil(t, minInstances, "VPC connector min instances should not be nil")
+		assert.Equal(t, 3, minInstances, "VPC connector min instances should match expected value")
+
+		vpcMaxInstancesCh := make(chan int, 1)
+		defer close(vpcMaxInstancesCh)
+		vpcConnector.MaxInstances.ApplyT(func(maxInstances int) error {
+			vpcMaxInstancesCh <- maxInstances
+
+			return nil
+		})
+		maxInstances := <-vpcMaxInstancesCh
+		require.NotNil(t, maxInstances, "VPC connector max instances should not be nil")
+		assert.Equal(t, 9, maxInstances, "VPC connector max instances should match expected value")
 
 		// Verify cache firewall rule configuration
 		cacheFirewall := fullstack.GetCacheFirewall()

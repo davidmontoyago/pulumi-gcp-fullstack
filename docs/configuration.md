@@ -37,6 +37,8 @@
 - **MemorySizeGb**: Memory size in GB for the Redis instance (defaults to 1)
 - **AuthorizedNetwork**: VPC network for Redis access (defaults to "default")
 - **ConnectorIPCidrRange**: IP CIDR range for VPC connector (defaults to "10.8.0.0/28")
+- **ConnectorMinInstances**: Minimum number of instances for the VPC connector (defaults to 2)
+- **ConnectorMaxInstances**: Maximum number of instances for the VPC connector (defaults to 3)
 
 **Note**: Cache instances are automatically configured with auth and TLS enabled. Backend services get VPC access and cache credentials mounted at `/app/cache-config/.env`.
 
