@@ -1,7 +1,7 @@
 # pulumi-gcp-fullstack
 
-[![Develop](https://github.com/davidmontoyago/pulumi-gcp-fullstack/actions/workflows/develop.yaml/badge.svg)](https://github.com/davidmontoyago/pulumi-gcp-fullstack/actions/workflows/develop.yaml)
-[![Go Coverage](https://raw.githubusercontent.com/wiki/davidmontoyago/pulumi-gcp-fullstack/coverage.svg)](https://raw.githack.com/wiki/davidmontoyago/pulumi-gcp-fullstack/coverage.html)
+[![Develop](https://github.com/davidmontoyago/pulumi-gcp-fullstack/actions/workflows/develop.yaml/badge.svg)](https://github.com/davidmontoyago/pulumi-gcp-fullstack/actions/workflows/develop.yaml) [![Go Coverage](https://raw.githubusercontent.com/wiki/davidmontoyago/pulumi-gcp-fullstack/coverage.svg)](https://raw.githack.com/wiki/davidmontoyago/pulumi-gcp-fullstack/coverage.html) [![Go Reference](https://pkg.go.dev/badge/github.com/davidmontoyago/pulumi-gcp-fullstack.svg)](https://pkg.go.dev/github.com/davidmontoyago/pulumi-gcp-fullstack)
+
 
 Pulumi [Component](https://www.pulumi.com/docs/concepts/resources/components/#component-resources) to easily deploy a serverless fullstack app (frontend and backend) in GCP, and securely publish it to the internet.
 
