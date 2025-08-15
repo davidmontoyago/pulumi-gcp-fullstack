@@ -6,7 +6,7 @@ require (
 	github.com/getkin/kin-openapi v0.132.0
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/pulumi/pulumi-gcp/sdk/v8 v8.40.0
-	github.com/pulumi/pulumi/sdk/v3 v3.188.0
+	github.com/pulumi/pulumi/sdk/v3 v3.190.0
 	github.com/stretchr/testify v1.10.0
 )
 
