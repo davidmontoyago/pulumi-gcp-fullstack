@@ -78,6 +78,9 @@ type NetworkArgs struct {
 	APIGateway *APIGatewayArgs
 	// Whether to enable global forwarding rule and global IP address for the load balancer.
 	EnableGlobalEntrypoint bool
+	// Whether to secure the frontend and backend instances with an external WAF using Cloud Run Domain Mapping.
+	// Set to true to disable the external load balancer. Defaults to false.
+	EnableExternalWAF bool
 }
 
 // APIGatewayArgs contains configuration for Google API Gateway

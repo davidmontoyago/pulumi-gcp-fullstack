@@ -3,11 +3,9 @@ package gcp
 
 import (
 	"fmt"
-	"log"
-	"math"
-	"strings"
 
 	apigateway "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/apigateway"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrun"
 	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/compute"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/dns"
@@ -31,8 +29,9 @@ type FullStack struct {
 	FrontendImage pulumi.StringOutput
 	Labels        map[string]string
 
-	name           string
-	gatewayEnabled bool
+	name                string
+	gatewayEnabled      bool
+	loadBalancerEnabled bool
 
 	backendService  *cloudrunv2.Service
 	backendAccount  *serviceaccount.Account
@@ -47,11 +46,17 @@ type FullStack struct {
 	// Network infrastructure
 	apiGateway *apigateway.Gateway
 	apiConfig  *apigateway.ApiConfig
+
 	// The NEG used when API Gateway is enabled
 	apiGatewayNeg *compute.RegionNetworkEndpointGroup
+
 	// The NEGs used when API Gateway is disabled
 	backendNeg  *compute.RegionNetworkEndpointGroup
 	frontendNeg *compute.RegionNetworkEndpointGroup
+
+	// Domain mappings to use when the external LB is disabled and External WAF is used
+	backendDomainMapping  *cloudrun.DomainMapping
+	frontendDomainMapping *cloudrun.DomainMapping // TODO: implement frontend domain mapping
 
 	globalForwardingRule   *compute.GlobalForwardingRule
 	regionalForwardingRule *compute.ForwardingRule
@@ -92,8 +97,9 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 		FrontendName:  frontendName,
 		Labels:        args.Labels,
 
-		name:           name,
-		gatewayEnabled: args.Network != nil && args.Network.APIGateway != nil && !args.Network.APIGateway.Disabled,
+		name:                name,
+		gatewayEnabled:      args.Network != nil && args.Network.APIGateway != nil && !args.Network.APIGateway.Disabled,
+		loadBalancerEnabled: args.Network != nil && !args.Network.EnableExternalWAF,
 	}
 	err := ctx.RegisterComponentResource("pulumi-fullstack:gcp:FullStack", name, fullStack, opts...)
 	if err != nil {
@@ -157,122 +163,36 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 		}
 	}
 
-	// create an external load balancer and point to a serverless NEG (API gateway or Cloud run)
-	err = f.deployExternalLoadBalancer(ctx, args.Network, apiGateway)
-	if err != nil {
-		return fmt.Errorf("failed to deploy external load balancer: %w", err)
-	}
-
-	return nil
-}
-
-// createCloudRunInstancesIAM creates IAM members to allow unauthenticated access to Cloud Run instances
-func (f *FullStack) createCloudRunInstancesIAM(ctx *pulumi.Context, frontendService, backendService *cloudrunv2.Service) error {
-	if err := ctx.Log.Info(fmt.Sprintf("Routing traffic to Cloud Run instances: %v and %v", frontendService.Uri, backendService.Uri), nil); err != nil {
-		log.Println("failed to log routing details with Pulumi context: %w", err)
-	}
-
-	// If no gateway enabled, traffic goes directly to the cloud run instances. yehaaw!
-	_, err := cloudrunv2.NewServiceIamMember(ctx, fmt.Sprintf("%s-allow-unauthenticated", f.FrontendName), &cloudrunv2.ServiceIamMemberArgs{
-		Name:     frontendService.Name,
-		Project:  pulumi.String(f.Project),
-		Location: pulumi.String(f.Region),
-		Role:     pulumi.String("roles/run.invoker"),
-		Member:   pulumi.Sprintf("allUsers"),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to grant frontend invoker: %w", err)
-	}
-
-	_, err = cloudrunv2.NewServiceIamMember(ctx, fmt.Sprintf("%s-allow-unauthenticated", f.BackendName), &cloudrunv2.ServiceIamMemberArgs{
-		Name:     backendService.Name,
-		Project:  pulumi.String(f.Project),
-		Location: pulumi.String(f.Region),
-		Role:     pulumi.String("roles/run.invoker"),
-		Member:   pulumi.Sprintf("allUsers"),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to grant backend invoker: %w", err)
-	}
-
-	// _, err = cloudrunv2.NewServiceIamMember(ctx, fmt.Sprintf("%s-%s-invoker", f.BackendName, f.FrontendName), &cloudrunv2.ServiceIamMemberArgs{
-	// 	Name:     backendService.Name,
-	// 	Project:  pulumi.String(f.Project),
-	// 	Location: pulumi.String(f.Region),
-	// 	Role:     pulumi.String("roles/run.invoker"),
-	// 	Member:   pulumi.Sprintf("serviceAccount:%s", frontendAccount.Email),
-	// })
-	// if err != nil {
-	// 	return err
-	// }
-
-	return nil
-}
-
-func (f *FullStack) newResourceName(serviceName, resourceType string, maxLength int) string {
-	var resourceName string
-	if resourceType == "" {
-		resourceName = fmt.Sprintf("%s-%s", f.name, serviceName)
-	} else {
-		resourceName = fmt.Sprintf("%s-%s-%s", f.name, serviceName, resourceType)
-	}
-
-	if len(resourceName) <= maxLength {
-		return resourceName
-	}
-
-	surplus := len(resourceName) - maxLength
-
-	// Calculate how much to truncate from each part
-	var prefixSurplus, serviceSurplus, typeSurplus int
-	if resourceType == "" {
-		// Only two parts to truncate
-		prefixSurplus = int(math.Ceil(float64(surplus) / 2))
-		serviceSurplus = surplus - prefixSurplus
-		typeSurplus = 0
-	} else {
-		prefixSurplus = int(math.Ceil(float64(surplus) / 3))
-		serviceSurplus = int(math.Ceil(float64(surplus-prefixSurplus) / 2))
-		typeSurplus = surplus - prefixSurplus - serviceSurplus
-	}
-
-	// Truncate each part, ensuring we don't truncate more than the part's length
-	// and we keep at least one character to avoid leading dashes
-	var shortPrefix string
-	if prefixSurplus < len(f.name) {
-		shortPrefix = f.name[:len(f.name)-prefixSurplus]
-	} else {
-		shortPrefix = f.name[:1]
-	}
-
-	var shortServiceName string
-	if serviceSurplus < len(serviceName) {
-		shortServiceName = serviceName[:len(serviceName)-serviceSurplus]
-	} else {
-		shortServiceName = serviceName[:1]
-	}
-
-	if resourceType == "" {
-		resourceName = fmt.Sprintf("%s-%s",
-			strings.TrimSuffix(shortPrefix, "-"),
-			strings.TrimSuffix(shortServiceName, "-"),
-		)
-	} else {
-		var shortResourceType string
-		if typeSurplus < len(resourceType) {
-			shortResourceType = resourceType[:len(resourceType)-typeSurplus]
-		} else {
-			shortResourceType = resourceType[:1]
+	if f.loadBalancerEnabled {
+		// create an external load balancer and point to a serverless NEG (API gateway or Cloud run)
+		err = f.deployExternalLoadBalancer(ctx, args.Network, apiGateway)
+		if err != nil {
+			return fmt.Errorf("failed to deploy external load balancer: %w", err)
 		}
+	} else if args.Network.EnableExternalWAF {
+		// create domain mappings for the backend and frontend services
+		domainMappingName := f.newResourceName(f.BackendName, "domain-mapping", 100)
+		backendDomainMapping, err := cloudrun.NewDomainMapping(ctx, domainMappingName, &cloudrun.DomainMappingArgs{
+			Location: pulumi.String(f.Region),
+			// Domain must be verified
+			Name: pulumi.String(args.Network.DomainURL),
+			Metadata: &cloudrun.DomainMappingMetadataArgs{
+				Namespace: pulumi.String(f.Project),
+			},
+			Spec: &cloudrun.DomainMappingSpecArgs{
+				RouteName: backendService.Name,
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create custom domain mapping: %w", err)
+		}
+		f.backendDomainMapping = backendDomainMapping
 
-		resourceName = fmt.Sprintf("%s-%s-%s",
-			strings.TrimSuffix(shortPrefix, "-"),
-			strings.TrimSuffix(shortServiceName, "-"),
-			strings.TrimSuffix(shortResourceType, "-"),
-		)
+		// TODO add frontend domain mapping after testing backend
+		// TODO allow backend and frontend to have separate URLs
 	}
 
-	return resourceName
+	return nil
 }
 
 // GetBackendService returns the backend Cloud Run service.
@@ -388,4 +308,15 @@ func (f *FullStack) GetCacheFirewall() *compute.Firewall {
 // GetCacheSecretVersion returns the secret version containing Redis credentials.
 func (f *FullStack) GetCacheSecretVersion() *secretmanager.SecretVersion {
 	return f.cacheCredentialsSecret
+}
+
+// GetBackendDomainMapping returns the backend domain mapping for External WAF.
+func (f *FullStack) GetBackendDomainMapping() *cloudrun.DomainMapping {
+	return f.backendDomainMapping
+}
+
+// GetFrontendDomainMapping returns the frontend domain mapping for External WAF.
+// TODO: implement frontend domain mapping functionality
+func (f *FullStack) GetFrontendDomainMapping() *cloudrun.DomainMapping {
+	return f.frontendDomainMapping
 }
