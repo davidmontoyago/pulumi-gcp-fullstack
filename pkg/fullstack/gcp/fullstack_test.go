@@ -9,6 +9,7 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/apigateway"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrun"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/compute"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/redis"
@@ -36,6 +37,7 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 	_ = redis.Instance{}
 	_ = secretmanager.Secret{}
 	_ = vpcaccess.Connector{}
+	_ = cloudrun.DomainMapping{}
 
 	outputs := map[string]interface{}{}
 	for k, v := range args.Inputs {
@@ -183,6 +185,9 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 		outputs["name"] = args.Name
 		outputs["network"] = "default"
 		// Expected outputs: name, project, network
+	case "gcp:cloudrun/domainMapping:DomainMapping":
+		outputs["location"] = testRegion
+		// Expected outputs: name, location, status
 	}
 
 	return args.Name + "_id", resource.NewPropertyMapFromMap(outputs), nil
@@ -2058,6 +2063,105 @@ func TestNewFullStack_WithCache(t *testing.T) {
 			return nil
 		})
 		assert.Equal(t, "roles/redis.editor", <-roleCh, "Backend project IAM role should allow redis editor")
+
+		return nil
+	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
+
+	if err != nil {
+		t.Fatalf("Pulumi WithMocks failed: %v", err)
+	}
+}
+
+func TestNewFullStack_WithExternalWAFAndNoGoogleLoadBalancer(t *testing.T) {
+	t.Parallel()
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		args := &gcp.FullStackArgs{
+			Project:       testProjectName,
+			Region:        testRegion,
+			BackendName:   backendServiceName,
+			BackendImage:  pulumi.String("gcr.io/test-project/backend:latest"),
+			FrontendName:  frontendServiceName,
+			FrontendImage: pulumi.String("gcr.io/test-project/frontend:latest"),
+			Backend: &gcp.BackendArgs{
+				InstanceArgs: &gcp.InstanceArgs{},
+			},
+			Frontend: &gcp.FrontendArgs{
+				InstanceArgs: &gcp.InstanceArgs{},
+			},
+			Network: &gcp.NetworkArgs{
+				DomainURL:         "myapp.example.com",
+				EnableExternalWAF: true,
+			},
+		}
+
+		fullstack, err := gcp.NewFullStack(ctx, "test-fullstack", args)
+		require.NoError(t, err)
+
+		// Verify basic properties
+		assert.Equal(t, testProjectName, fullstack.Project)
+		assert.Equal(t, testRegion, fullstack.Region)
+		assert.Equal(t, backendServiceName, fullstack.BackendName)
+		assert.Equal(t, frontendServiceName, fullstack.FrontendName)
+
+		// Verify no load balancer infrastructure was created
+		assert.Nil(t, fullstack.GetGlobalForwardingRule(), "Global forwarding rule should be nil when using External WAF")
+		assert.Nil(t, fullstack.GetRegionalForwardingRule(), "Regional forwarding rule should be nil when using External WAF")
+		assert.Nil(t, fullstack.GetCertificate(), "Certificate should be nil when using External WAF")
+		assert.Nil(t, fullstack.GetURLMap(), "URL Map should be nil when using External WAF")
+		assert.Nil(t, fullstack.GetDNSRecord(), "DNS record should be nil when using External WAF")
+
+		// Verify NEG infrastructure was not created
+		assert.Nil(t, fullstack.GetBackendNEG(), "Backend NEG should be nil when using External WAF")
+		assert.Nil(t, fullstack.GetFrontendNEG(), "Frontend NEG should be nil when using External WAF")
+		assert.Nil(t, fullstack.GetGatewayNEG(), "Gateway NEG should be nil when using External WAF")
+
+		// Verify backend domain mapping was created
+		backendDomainMapping := fullstack.GetBackendDomainMapping()
+		require.NotNil(t, backendDomainMapping, "Backend domain mapping should not be nil when using External WAF")
+
+		// Assert domain mapping name matches the expected domain
+		domainMappingNameCh := make(chan string, 1)
+		defer close(domainMappingNameCh)
+		backendDomainMapping.Name.ApplyT(func(name string) error {
+			domainMappingNameCh <- name
+
+			return nil
+		})
+		assert.Equal(t, "myapp.example.com", <-domainMappingNameCh, "Domain mapping name should match the provided domain")
+
+		// Assert domain mapping location matches the region
+		domainMappingLocationCh := make(chan string, 1)
+		defer close(domainMappingLocationCh)
+		backendDomainMapping.Location.ApplyT(func(location string) error {
+			domainMappingLocationCh <- location
+
+			return nil
+		})
+		assert.Equal(t, testRegion, <-domainMappingLocationCh, "Domain mapping location should match the region")
+
+		// Assert domain mapping spec route name points to backend service
+		domainMappingRouteNameCh := make(chan string, 1)
+		defer close(domainMappingRouteNameCh)
+		backendDomainMapping.Spec.RouteName().ApplyT(func(routeName string) error {
+			domainMappingRouteNameCh <- routeName
+
+			return nil
+		})
+		backendServiceNameCh := make(chan string, 1)
+		defer close(backendServiceNameCh)
+		fullstack.GetBackendService().Name.ApplyT(func(name string) error {
+			backendServiceNameCh <- name
+
+			return nil
+		})
+		assert.Equal(t, <-backendServiceNameCh, <-domainMappingRouteNameCh, "Domain mapping should route to backend service")
+
+		// TODO: Verify frontend domain mapping when implemented
+		// frontendDomainMapping := fullstack.GetFrontendDomainMapping()
+		// assert.NotNil(t, frontendDomainMapping, "Frontend domain mapping should not be nil when using External WAF")
+
+		// TODO: Add assertions for frontend domain mapping configuration
 
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
