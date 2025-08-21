@@ -43,16 +43,21 @@ type Probe struct {
 
 // InstanceArgs contains configuration for Cloud Run service instances.
 type InstanceArgs struct {
-	ResourceLimits        pulumi.StringMap
-	SecretConfigFileName  string
-	SecretConfigFilePath  string
-	EnvVars               map[string]string
-	MaxInstanceCount      int
-	DeletionProtection    bool
-	ContainerPort         int
-	StartupProbe          *Probe
-	LivenessProbe         *Probe
-	EnableUnauthenticated bool
+	ResourceLimits       pulumi.StringMap
+	SecretConfigFileName string
+	SecretConfigFilePath string
+	EnvVars              map[string]string
+	MaxInstanceCount     int
+	DeletionProtection   bool
+	ContainerPort        int
+	StartupProbe         *Probe
+	LivenessProbe        *Probe
+	// Whether to enable public ingress. Defaults to false.
+	// Set to true if EnableExternalWAF is true to allow the instance to be
+	// reachable from the WAF proxy. Make sure to allow-list the WAF proxy IPs
+	// at the application level to ensure only the WAF proxy can access the
+	// instance.
+	EnablePublicIngress bool
 	// IDs of additional Secret Manager secrets to mount into the container. Defaults to nil.
 	Secrets []*SecretVolumeArgs
 }

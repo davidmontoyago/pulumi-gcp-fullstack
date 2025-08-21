@@ -260,10 +260,10 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 						"NEXT_PUBLIC_API_URL": "https://api.example.com",
 						"ANALYTICS_ID":        "GA-123456789",
 					},
-					MaxInstanceCount:      3,
-					DeletionProtection:    false,
-					ContainerPort:         3000,
-					EnableUnauthenticated: false,
+					MaxInstanceCount:    3,
+					DeletionProtection:  false,
+					ContainerPort:       3000,
+					EnablePublicIngress: false,
 				},
 			},
 			Network: &gcp.NetworkArgs{
@@ -649,7 +649,7 @@ func TestNewFullStack_WithGatewayDefaults(t *testing.T) {
 					// MaxInstanceCount:   3,
 					// DeletionProtection: false,
 					// ContainerPort:      3000,
-					EnableUnauthenticated: false,
+					EnablePublicIngress: false,
 				},
 			},
 			Network: &gcp.NetworkArgs{
@@ -1481,6 +1481,16 @@ func TestNewFullStack_WithoutGateway(t *testing.T) {
 		})
 		assert.Equal(t, "gcr.io/test-project/backend:latest", <-backendImageCh, "Backend image should match the provided image")
 
+		// Verify backend service has private ingress
+		backendServiceIngressCh := make(chan string, 1)
+		defer close(backendServiceIngressCh)
+		fullstack.GetBackendService().Ingress.ApplyT(func(ingress string) error {
+			backendServiceIngressCh <- ingress
+
+			return nil
+		})
+		assert.Equal(t, "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER", <-backendServiceIngressCh, "Backend service should have private ingress")
+
 		// Verify frontend service configuration
 		frontendService := fullstack.GetFrontendService()
 		require.NotNil(t, frontendService, "Frontend service should not be nil")
@@ -2084,7 +2094,9 @@ func TestNewFullStack_WithExternalWAFAndNoGoogleLoadBalancer(t *testing.T) {
 			FrontendName:  frontendServiceName,
 			FrontendImage: pulumi.String("gcr.io/test-project/frontend:latest"),
 			Backend: &gcp.BackendArgs{
-				InstanceArgs: &gcp.InstanceArgs{},
+				InstanceArgs: &gcp.InstanceArgs{
+					EnablePublicIngress: true,
+				},
 			},
 			Frontend: &gcp.FrontendArgs{
 				InstanceArgs: &gcp.InstanceArgs{},
@@ -2156,6 +2168,16 @@ func TestNewFullStack_WithExternalWAFAndNoGoogleLoadBalancer(t *testing.T) {
 			return nil
 		})
 		assert.Equal(t, <-backendServiceNameCh, <-domainMappingRouteNameCh, "Domain mapping should route to backend service")
+
+		// Verify backend service has public ingress
+		backendServiceIngressCh := make(chan string, 1)
+		defer close(backendServiceIngressCh)
+		fullstack.GetBackendService().Ingress.ApplyT(func(ingress string) error {
+			backendServiceIngressCh <- ingress
+
+			return nil
+		})
+		assert.Equal(t, "INGRESS_TRAFFIC_ALL", <-backendServiceIngressCh, "Backend service should have public ingress")
 
 		// TODO: Verify frontend domain mapping when implemented
 		// frontendDomainMapping := fullstack.GetFrontendDomainMapping()
