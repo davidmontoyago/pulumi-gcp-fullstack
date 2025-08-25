@@ -111,7 +111,6 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create backend service account: %w", err)
 	}
-	ctx.Export("cloud_run_service_backend_account_id", serviceAccount.ID())
 
 	additionalSecrets := args.Secrets
 	if f.cacheCredentialsSecret != nil {
@@ -199,8 +198,6 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create backend Cloud Run service: %w", err)
 	}
-	ctx.Export("cloud_run_service_backend_id", backendService.ID())
-	ctx.Export("cloud_run_service_backend_uri", backendService.Uri)
 
 	err = f.grantProjectLevelIAMRoles(ctx, args.ProjectIAMRoles, backendServiceName, serviceAccount)
 	if err != nil {
@@ -232,7 +229,7 @@ func (f *FullStack) mountSecrets(ctx *pulumi.Context,
 
 		// Create IAM binding for the secret (similar to secretmanager.go)
 		secretAccessorName := f.newResourceName(backendName, fmt.Sprintf("%s-secret-accessor", secret.Name), 100)
-		secretAccessor, err := secretmanager.NewSecretIamMember(ctx, secretAccessorName, &secretmanager.SecretIamMemberArgs{
+		_, err := secretmanager.NewSecretIamMember(ctx, secretAccessorName, &secretmanager.SecretIamMemberArgs{
 			Project:  pulumi.String(f.Project),
 			SecretId: secret.SecretID,
 			Role:     pulumi.String("roles/secretmanager.secretAccessor"),
@@ -241,7 +238,7 @@ func (f *FullStack) mountSecrets(ctx *pulumi.Context,
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to grant secret accessor for %s: %w", secret.Name, err)
 		}
-		ctx.Export(fmt.Sprintf("cloud_run_service_backend_secret_member_%s_id", secret.Name), secretAccessor.ID())
+
 	}
 
 	return volumes, volumeMounts, nil
@@ -321,8 +318,6 @@ func (f *FullStack) grantProjectLevelIAMRoles(ctx *pulumi.Context,
 			}
 			// Track created IAM members for testing/inspection
 			f.backendProjectIamMembers = append(f.backendProjectIamMembers, iamMember)
-
-			ctx.Export(fmt.Sprintf("cloud_run_service_backend_iam_member_%s", role), iamMember.ID())
 		}
 	}
 
@@ -361,7 +356,6 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create frontend service account: %w", err)
 	}
-	ctx.Export("cloud_run_service_frontend_account_id", serviceAccount.ID())
 
 	volumes, volumeMounts, err := f.setupInstanceSecrets(ctx, serviceName, args.Secrets, serviceAccount, frontendLabels, args.InstanceArgs)
 	if err != nil {
@@ -429,8 +423,6 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create frontend Cloud Run service: %w", err)
 	}
-	ctx.Export("cloud_run_service_frontend_id", frontendService.ID())
-	ctx.Export("cloud_run_service_frontend_uri", frontendService.Uri)
 
 	return frontendService, serviceAccount, nil
 }
