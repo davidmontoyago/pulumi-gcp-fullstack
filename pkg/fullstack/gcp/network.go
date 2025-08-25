@@ -119,8 +119,7 @@ func (f *FullStack) newHTTPSProxy(ctx *pulumi.Context, serviceName, domainURL st
 	if err != nil {
 		return fmt.Errorf("failed to create managed SSL certificate: %w", err)
 	}
-	ctx.Export("load_balancer_https_certificate_id", certificate.ID())
-	ctx.Export("load_balancer_https_certificate_uri", certificate.SelfLink)
+
 	f.certificate = certificate
 
 	httpsProxyName := f.newResourceName(serviceName, "https-proxy", 100)
@@ -135,8 +134,6 @@ func (f *FullStack) newHTTPSProxy(ctx *pulumi.Context, serviceName, domainURL st
 	if err != nil {
 		return fmt.Errorf("failed to create target HTTPS proxy: %w", err)
 	}
-	ctx.Export("load_balancer_https_proxy_id", httpsProxy.ID())
-	ctx.Export("load_balancer_https_proxy_uri", httpsProxy.SelfLink)
 
 	if !privateTraffic {
 		var lbIPAddress pulumi.StringOutput
@@ -175,7 +172,7 @@ func (f *FullStack) setupTrafficRouterToUpstreamNEG(ctx *pulumi.Context,
 	}
 
 	proxySubnetName := f.newResourceName(serviceName, "proxy-subnet", 100)
-	subnet, err := compute.NewSubnetwork(ctx, proxySubnetName, &compute.SubnetworkArgs{
+	_, err := compute.NewSubnetwork(ctx, proxySubnetName, &compute.SubnetworkArgs{
 		Name:        pulumi.String(proxySubnetName),
 		Description: pulumi.String(fmt.Sprintf("proxy-only subnet for %s traffic", serviceName)),
 		Project:     pulumi.String(f.Project),
@@ -189,8 +186,6 @@ func (f *FullStack) setupTrafficRouterToUpstreamNEG(ctx *pulumi.Context,
 	if err != nil {
 		return nil, fmt.Errorf("failed to create proxy-only subnet: %w", err)
 	}
-	ctx.Export("load_balancer_proxy_subnet_id", subnet.ID())
-	ctx.Export("load_balancer_proxy_subnet_uri", subnet.SelfLink)
 
 	var urlMap *compute.URLMap
 
@@ -206,8 +201,6 @@ func (f *FullStack) setupTrafficRouterToUpstreamNEG(ctx *pulumi.Context,
 		}
 	}
 
-	ctx.Export("load_balancer_url_map_id", urlMap.ID())
-	ctx.Export("load_balancer_url_map_uri", urlMap.SelfLink)
 	f.urlMap = urlMap
 
 	return urlMap, nil
@@ -273,8 +266,6 @@ func (f *FullStack) createGatewayNEG(ctx *pulumi.Context,
 		return nil, fmt.Errorf("failed to create Gateway NEG: %w", err)
 	}
 	f.apiGatewayNeg = neg
-	ctx.Export("load_balancer_gateway_network_endpoint_group_id", neg.ID())
-	ctx.Export("load_balancer_gateway_network_endpoint_group_uri", neg.SelfLink)
 
 	lbGatewayServiceArgs := &compute.BackendServiceArgs{
 		Description:         pulumi.String(fmt.Sprintf("service backend for %s", serviceName)),
@@ -299,8 +290,6 @@ func (f *FullStack) createGatewayNEG(ctx *pulumi.Context,
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Gateway backend service: %w", err)
 	}
-	ctx.Export("load_balancer_gateway_backend_service_id", lbGatewayBackendService.ID())
-	ctx.Export("load_balancer_gateway_backend_service_uri", lbGatewayBackendService.SelfLink)
 
 	return lbGatewayBackendService, nil
 }
@@ -326,8 +315,6 @@ func (f *FullStack) createCloudRunNEGs(ctx *pulumi.Context,
 		return nil, nil, fmt.Errorf("failed to create backend Cloud Run NEG: %w", err)
 	}
 	f.backendNeg = backendNeg
-	ctx.Export("load_balancer_backend_network_endpoint_group_id", backendNeg.ID())
-	ctx.Export("load_balancer_backend_network_endpoint_group_uri", backendNeg.SelfLink)
 
 	cloudrunFrontendNegName := f.newResourceName(serviceName, "frontend-cloudrun-neg", 100)
 	frontendNeg, err := compute.NewRegionNetworkEndpointGroup(ctx, cloudrunFrontendNegName, &compute.RegionNetworkEndpointGroupArgs{
@@ -343,8 +330,6 @@ func (f *FullStack) createCloudRunNEGs(ctx *pulumi.Context,
 		return nil, nil, fmt.Errorf("failed to create frontend Cloud Run NEG: %w", err)
 	}
 	f.frontendNeg = frontendNeg
-	ctx.Export("load_balancer_frontend_network_endpoint_group_id", frontendNeg.ID())
-	ctx.Export("load_balancer_frontend_network_endpoint_group_uri", frontendNeg.SelfLink)
 
 	lbBackendServiceArgs := &compute.BackendServiceArgs{
 		Description:         pulumi.String(fmt.Sprintf("service backend for %s", serviceName)),
@@ -382,16 +367,12 @@ func (f *FullStack) createCloudRunNEGs(ctx *pulumi.Context,
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create backend service for NEG: %w", err)
 	}
-	ctx.Export("load_balancer_cloud_run_backend_service_id", backendService.ID())
-	ctx.Export("load_balancer_cloud_run_backend_service_uri", backendService.SelfLink)
 
 	frontendServiceName := f.newResourceName(serviceName, "cloudrun-frontend-service", 100)
 	frontendService, err := compute.NewBackendService(ctx, frontendServiceName, lbFrontendServiceArgs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create frontend service for NEG: %w", err)
 	}
-	ctx.Export("load_balancer_cloud_run_frontend_service_id", frontendService.ID())
-	ctx.Export("load_balancer_cloud_run_frontend_service_uri", frontendService.SelfLink)
 
 	return backendService, frontendService, nil
 }
@@ -475,9 +456,6 @@ func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceN
 	if err != nil {
 		return pulumi.StringOutput{}, fmt.Errorf("failed to reserve global IP address: %w", err)
 	}
-	ctx.Export("load_balancer_global_address_id", ipAddress.ID())
-	ctx.Export("load_balancer_global_address_uri", ipAddress.SelfLink)
-	ctx.Export("load_balancer_global_address_ip_address", ipAddress.Address)
 
 	// https://cloud.google.com/load-balancing/docs/https#forwarding-rule
 	forwardingRuleName := f.newResourceName(serviceName, "https-forwarding", 100)
@@ -493,9 +471,6 @@ func (f *FullStack) createGlobalInternetEntrypoint(ctx *pulumi.Context, serviceN
 	if err != nil {
 		return pulumi.StringOutput{}, fmt.Errorf("failed to create global forwarding rule: %w", err)
 	}
-	ctx.Export("load_balancer_global_forwarding_rule_id", trafficRule.ID())
-	ctx.Export("load_balancer_global_forwarding_rule_uri", trafficRule.SelfLink)
-	ctx.Export("load_balancer_global_forwarding_rule_ip_address", trafficRule.IpAddress)
 
 	// Store the forwarding rule in the FullStack struct
 	f.globalForwardingRule = trafficRule
@@ -523,9 +498,6 @@ func (f *FullStack) createRegionalInternetEntrypoint(ctx *pulumi.Context, servic
 	if err != nil {
 		return pulumi.StringOutput{}, fmt.Errorf("failed to reserve regional IP address: %w", err)
 	}
-	ctx.Export("load_balancer_regional_address_id", ipAddress.ID())
-	ctx.Export("load_balancer_regional_address_uri", ipAddress.SelfLink)
-	ctx.Export("load_balancer_regional_address_ip_address", ipAddress.Address)
 
 	// Create a regional forwarding rule pointing to the global Target HTTPS Proxy (classic ALB)
 	forwardingRuleName := f.newResourceName(serviceName, "regional-https-forwarding", 100)
@@ -544,9 +516,6 @@ func (f *FullStack) createRegionalInternetEntrypoint(ctx *pulumi.Context, servic
 	if err != nil {
 		return pulumi.StringOutput{}, fmt.Errorf("failed to create regional forwarding rule: %w", err)
 	}
-	ctx.Export("load_balancer_regional_forwarding_rule_id", trafficRule.ID())
-	ctx.Export("load_balancer_regional_forwarding_rule_uri", trafficRule.SelfLink)
-	ctx.Export("load_balancer_regional_forwarding_rule_ip_address", trafficRule.IpAddress)
 
 	// Store the forwarding rule in the FullStack struct
 	f.regionalForwardingRule = trafficRule
@@ -618,9 +587,6 @@ func (f *FullStack) createDNSRecord(ctx *pulumi.Context, serviceName, domainURL 
 	if err != nil {
 		return nil, err
 	}
-
-	ctx.Export("load_balancer_dns_record_id", dnsRecord.ID())
-	ctx.Export("load_balancer_dns_record_ip_address", dnsRecord.Rrdatas)
 
 	return dnsRecord, nil
 }

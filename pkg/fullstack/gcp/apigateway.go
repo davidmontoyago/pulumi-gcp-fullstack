@@ -60,15 +60,11 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API: %w", err)
 	}
-	ctx.Export("api_gateway_api_id", api.ApiId)
-	ctx.Export("api_gateway_api_name", api.Name)
 
 	apiConfig, err := f.createAPIConfig(ctx, apiID, args.Config, api, gatewayServiceAccount.Email, gatewayLabels)
 	if err != nil {
 		return nil, fmt.Errorf("failed to deploy API config: %w", err)
 	}
-	ctx.Export("api_gateway_config_id", apiConfig.ApiConfigId)
-	ctx.Export("api_gateway_config_name", apiConfig.Name)
 
 	// Create Gateway in the first region (or default region if none specified)
 	region := f.Region
@@ -90,9 +86,6 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Gateway: %w", err)
 	}
-	ctx.Export("api_gateway_gateway_id", gateway.GatewayId)
-	ctx.Export("api_gateway_gateway_name", gateway.Name)
-	ctx.Export("api_gateway_gateway_default_hostname", gateway.DefaultHostname)
 
 	f.apiGateway = gateway
 
@@ -115,8 +108,7 @@ func (f *FullStack) createAPIGatewayIAM(ctx *pulumi.Context, gatewayName string)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API Gateway service account: %w", err)
 	}
-	ctx.Export("api_gateway_service_account_id", serviceAccount.ID())
-	ctx.Export("api_gateway_service_account_email", serviceAccount.Email)
+
 	f.gatewayServiceAccount = serviceAccount
 
 	// Grant API Gateway service account permission to invoke Cloud Run services
