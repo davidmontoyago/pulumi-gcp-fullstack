@@ -434,6 +434,52 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		assert.Equal(t, "/healthz", *frontendContainer.LivenessProbe.HttpGet.Path, "Frontend container LivenessProbe should use /healthz path")
 		assert.Equal(t, 3000, *frontendContainer.LivenessProbe.HttpGet.Port, "Frontend container LivenessProbe should use port 3000")
 
+		// Assert frontend environment variables are set correctly
+		frontendEnvVarsCh := make(chan []cloudrunv2.ServiceTemplateContainerEnv, 1)
+		defer close(frontendEnvVarsCh)
+		frontendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
+			frontendEnvVarsCh <- containers[0].Envs
+
+			return nil
+		})
+		frontendEnvVars := <-frontendEnvVarsCh
+
+		// Find and verify DOTENV_CONFIG_PATH environment variable
+		var dotenvConfigPathEnv *cloudrunv2.ServiceTemplateContainerEnv
+		for i := range frontendEnvVars {
+			if frontendEnvVars[i].Name == "DOTENV_CONFIG_PATH" {
+				dotenvConfigPathEnv = &frontendEnvVars[i]
+				break
+			}
+		}
+		require.NotNil(t, dotenvConfigPathEnv, "Frontend should have DOTENV_CONFIG_PATH environment variable")
+		require.NotNil(t, dotenvConfigPathEnv.Value, "Frontend DOTENV_CONFIG_PATH value should not be nil")
+		assert.Equal(t, "/app/.next/config/.env.production", *dotenvConfigPathEnv.Value, "Frontend DOTENV_CONFIG_PATH should match expected value")
+
+		// Find and verify APP_BASE_URL environment variable
+		var appBaseURLEnv *cloudrunv2.ServiceTemplateContainerEnv
+		for i := range frontendEnvVars {
+			if frontendEnvVars[i].Name == "APP_BASE_URL" {
+				appBaseURLEnv = &frontendEnvVars[i]
+				break
+			}
+		}
+		require.NotNil(t, appBaseURLEnv, "Frontend should have APP_BASE_URL environment variable")
+		require.NotNil(t, appBaseURLEnv.Value, "Frontend APP_BASE_URL value should not be nil")
+		assert.Equal(t, "https://myapp.example.com", *appBaseURLEnv.Value, "Frontend APP_BASE_URL should match expected value")
+
+		// Verify custom environment variables are also set
+		var nodeEnvVar *cloudrunv2.ServiceTemplateContainerEnv
+		for i := range frontendEnvVars {
+			if frontendEnvVars[i].Name == "NODE_ENV" {
+				nodeEnvVar = &frontendEnvVars[i]
+				break
+			}
+		}
+		require.NotNil(t, nodeEnvVar, "Frontend should have NODE_ENV environment variable")
+		require.NotNil(t, nodeEnvVar.Value, "Frontend NODE_ENV value should not be nil")
+		assert.Equal(t, "production", *nodeEnvVar.Value, "Frontend NODE_ENV should match expected value")
+
 		// Verify API Gateway configuration
 		apiGateway := fullstack.GetAPIGateway()
 		require.NotNil(t, apiGateway, "API Gateway should not be nil")
@@ -537,6 +583,63 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		assert.NotNil(t, backendContainer.LivenessProbe.HttpGet, "Backend container LivenessProbe should have HttpGet configured")
 		assert.Equal(t, "/healthz", *backendContainer.LivenessProbe.HttpGet.Path, "Backend container LivenessProbe should use /healthz path")
 		assert.Equal(t, 8080, *backendContainer.LivenessProbe.HttpGet.Port, "Backend container LivenessProbe should use port 8080")
+
+		// Assert backend environment variables are set correctly
+		backendEnvVarsCh := make(chan []cloudrunv2.ServiceTemplateContainerEnv, 1)
+		defer close(backendEnvVarsCh)
+		backendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
+			backendEnvVarsCh <- containers[0].Envs
+
+			return nil
+		})
+		backendEnvVars := <-backendEnvVarsCh
+
+		// Find and verify DOTENV_CONFIG_PATH environment variable
+		var backendDotenvConfigPathEnv *cloudrunv2.ServiceTemplateContainerEnv
+		for i := range backendEnvVars {
+			if backendEnvVars[i].Name == "DOTENV_CONFIG_PATH" {
+				backendDotenvConfigPathEnv = &backendEnvVars[i]
+				break
+			}
+		}
+		require.NotNil(t, backendDotenvConfigPathEnv, "Backend should have DOTENV_CONFIG_PATH environment variable")
+		require.NotNil(t, backendDotenvConfigPathEnv.Value, "Backend DOTENV_CONFIG_PATH value should not be nil")
+		assert.Equal(t, "/app/config/.env", *backendDotenvConfigPathEnv.Value, "Backend DOTENV_CONFIG_PATH should match expected value")
+
+		// Find and verify APP_BASE_URL environment variable
+		var backendAppBaseURLEnv *cloudrunv2.ServiceTemplateContainerEnv
+		for i := range backendEnvVars {
+			if backendEnvVars[i].Name == "APP_BASE_URL" {
+				backendAppBaseURLEnv = &backendEnvVars[i]
+				break
+			}
+		}
+		require.NotNil(t, backendAppBaseURLEnv, "Backend should have APP_BASE_URL environment variable")
+		require.NotNil(t, backendAppBaseURLEnv.Value, "Backend APP_BASE_URL value should not be nil")
+		assert.Equal(t, "https://myapp.example.com", *backendAppBaseURLEnv.Value, "Backend APP_BASE_URL should match expected value")
+
+		// Verify custom environment variables are also set
+		var backendLogLevelVar *cloudrunv2.ServiceTemplateContainerEnv
+		for i := range backendEnvVars {
+			if backendEnvVars[i].Name == "LOG_LEVEL" {
+				backendLogLevelVar = &backendEnvVars[i]
+				break
+			}
+		}
+		require.NotNil(t, backendLogLevelVar, "Backend LOG_LEVEL environment variable")
+		require.NotNil(t, backendLogLevelVar.Value, "Backend LOG_LEVEL value should not be nil")
+		assert.Equal(t, "info", *backendLogLevelVar.Value, "Backend LOG_LEVEL should match expected value")
+
+		var backendDatabaseURLVar *cloudrunv2.ServiceTemplateContainerEnv
+		for i := range backendEnvVars {
+			if backendEnvVars[i].Name == "DATABASE_URL" {
+				backendDatabaseURLVar = &backendEnvVars[i]
+				break
+			}
+		}
+		require.NotNil(t, backendDatabaseURLVar, "Backend should have DATABASE_URL environment variable")
+		require.NotNil(t, backendDatabaseURLVar.Value, "Backend DATABASE_URL value should not be nil")
+		assert.Equal(t, "postgresql://localhost:5432/testdb", *backendDatabaseURLVar.Value, "Backend DATABASE_URL should match expected value")
 
 		// Verify backend service account
 		backendAccount := fullstack.GetBackendAccount()
