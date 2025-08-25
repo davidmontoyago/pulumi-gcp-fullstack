@@ -187,6 +187,17 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 		// Expected outputs: name, project, network
 	case "gcp:cloudrun/domainMapping:DomainMapping":
 		outputs["location"] = testRegion
+		outputs["statuses"] = []map[string]interface{}{
+			{
+				"resourceRecords": []map[string]interface{}{
+					{
+						"name":   "api.example.com.",
+						"type":   "CNAME",
+						"rrdata": "1234567890.example.com.",
+					},
+				},
+			},
+		}
 		// Expected outputs: name, location, status
 	}
 
@@ -2140,7 +2151,7 @@ func TestNewFullStack_WithExternalWAFAndNoGoogleLoadBalancer(t *testing.T) {
 
 			return nil
 		})
-		assert.Equal(t, "myapp.example.com", <-domainMappingNameCh, "Domain mapping name should match the provided domain")
+		assert.Equal(t, "api-myapp.example.com", <-domainMappingNameCh, "Domain mapping name should match the provided domain")
 
 		// Assert domain mapping location matches the region
 		domainMappingLocationCh := make(chan string, 1)
@@ -2179,11 +2190,59 @@ func TestNewFullStack_WithExternalWAFAndNoGoogleLoadBalancer(t *testing.T) {
 		})
 		assert.Equal(t, "INGRESS_TRAFFIC_ALL", <-backendServiceIngressCh, "Backend service should have public ingress")
 
-		// TODO: Verify frontend domain mapping when implemented
-		// frontendDomainMapping := fullstack.GetFrontendDomainMapping()
-		// assert.NotNil(t, frontendDomainMapping, "Frontend domain mapping should not be nil when using External WAF")
+		// Verify frontend domain mapping was created
+		frontendDomainMapping := fullstack.GetFrontendDomainMapping()
+		require.NotNil(t, frontendDomainMapping, "Frontend domain mapping should not be nil when using External WAF")
 
-		// TODO: Add assertions for frontend domain mapping configuration
+		// Assert frontend domain mapping name matches the expected domain
+		frontendDomainMappingNameCh := make(chan string, 1)
+		defer close(frontendDomainMappingNameCh)
+		frontendDomainMapping.Name.ApplyT(func(name string) error {
+			frontendDomainMappingNameCh <- name
+			return nil
+		})
+		assert.Equal(t, "myapp.example.com", <-frontendDomainMappingNameCh, "Frontend domain mapping name should match the provided domain")
+
+		// Assert frontend domain mapping location matches the region
+		frontendDomainMappingLocationCh := make(chan string, 1)
+		defer close(frontendDomainMappingLocationCh)
+		frontendDomainMapping.Location.ApplyT(func(location string) error {
+			frontendDomainMappingLocationCh <- location
+			return nil
+		})
+		assert.Equal(t, testRegion, <-frontendDomainMappingLocationCh, "Frontend domain mapping location should match the region")
+
+		// Assert frontend domain mapping spec route name points to frontend service
+		frontendDomainMappingRouteNameCh := make(chan string, 1)
+		defer close(frontendDomainMappingRouteNameCh)
+		frontendDomainMapping.Spec.RouteName().ApplyT(func(routeName string) error {
+			frontendDomainMappingRouteNameCh <- routeName
+			return nil
+		})
+		frontendServiceNameCh := make(chan string, 1)
+		defer close(frontendServiceNameCh)
+		fullstack.GetFrontendService().Name.ApplyT(func(name string) error {
+			frontendServiceNameCh <- name
+			return nil
+		})
+		assert.Equal(t, <-frontendServiceNameCh, <-frontendDomainMappingRouteNameCh, "Frontend domain mapping should route to frontend service")
+
+		// Verify that both domain mappings have the correct metadata namespace
+		backendMetadataNamespaceCh := make(chan string, 1)
+		defer close(backendMetadataNamespaceCh)
+		backendDomainMapping.Metadata.Namespace().ApplyT(func(namespace string) error {
+			backendMetadataNamespaceCh <- namespace
+			return nil
+		})
+		assert.Equal(t, testProjectName, <-backendMetadataNamespaceCh, "Backend domain mapping should have correct project namespace")
+
+		frontendMetadataNamespaceCh := make(chan string, 1)
+		defer close(frontendMetadataNamespaceCh)
+		frontendDomainMapping.Metadata.Namespace().ApplyT(func(namespace string) error {
+			frontendMetadataNamespaceCh <- namespace
+			return nil
+		})
+		assert.Equal(t, testProjectName, <-frontendMetadataNamespaceCh, "Frontend domain mapping should have correct project namespace")
 
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
