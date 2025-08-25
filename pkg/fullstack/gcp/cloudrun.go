@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrun"
 	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/projects"
 	secretmanager "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/secretmanager"
@@ -368,52 +369,61 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 	}
 
 	frontendServiceName := f.newResourceName(serviceName, "service", 100)
-	frontendService, err := cloudrunv2.NewService(ctx, frontendServiceName, &cloudrunv2.ServiceArgs{
-		Name:        pulumi.String(frontendServiceName),
-		Ingress:     pulumi.String("INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"),
-		Description: pulumi.String(fmt.Sprintf("Serverless instance (%s)", serviceName)),
-		Location:    pulumi.String(region),
-		Project:     pulumi.String(project),
-		Labels:      frontendLabels,
-		Template: &cloudrunv2.ServiceTemplateArgs{
-			Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
-				MaxInstanceCount: pulumi.Int(args.MaxInstanceCount),
-			},
-			Containers: cloudrunv2.ServiceTemplateContainerArray{
-				&cloudrunv2.ServiceTemplateContainerArgs{
-					Image: frontendImage,
-					Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
-						Limits: args.ResourceLimits,
-					},
-					Ports: cloudrunv2.ServiceTemplateContainerPortsArgs{
-						ContainerPort: pulumi.Int(args.ContainerPort),
-					},
-					Envs: newFrontendEnvVars(args, backendURL),
-					StartupProbe: &cloudrunv2.ServiceTemplateContainerStartupProbeArgs{
-						TcpSocket: &cloudrunv2.ServiceTemplateContainerStartupProbeTcpSocketArgs{
-							Port: pulumi.Int(args.ContainerPort),
-						},
-						InitialDelaySeconds: pulumi.Int(args.StartupProbe.InitialDelaySeconds),
-						PeriodSeconds:       pulumi.Int(args.StartupProbe.PeriodSeconds),
-						TimeoutSeconds:      pulumi.Int(args.StartupProbe.TimeoutSeconds),
-						FailureThreshold:    pulumi.Int(args.StartupProbe.FailureThreshold),
-					},
-					LivenessProbe: &cloudrunv2.ServiceTemplateContainerLivenessProbeArgs{
-						HttpGet: &cloudrunv2.ServiceTemplateContainerLivenessProbeHttpGetArgs{
-							Path: pulumi.String(fmt.Sprintf("/%s", args.LivenessProbe.Path)),
-							Port: pulumi.Int(args.ContainerPort),
-						},
-						InitialDelaySeconds: pulumi.Int(args.LivenessProbe.InitialDelaySeconds),
-						PeriodSeconds:       pulumi.Int(args.LivenessProbe.PeriodSeconds),
-						TimeoutSeconds:      pulumi.Int(args.LivenessProbe.TimeoutSeconds),
-						FailureThreshold:    pulumi.Int(args.LivenessProbe.FailureThreshold),
-					},
-					VolumeMounts: volumeMounts,
-				},
-			},
-			ServiceAccount: serviceAccount.Email,
-			Volumes:        volumes,
+
+	frontendServiceTemplate := &cloudrunv2.ServiceTemplateArgs{
+		Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
+			MaxInstanceCount: pulumi.Int(args.MaxInstanceCount),
 		},
+		Containers: cloudrunv2.ServiceTemplateContainerArray{
+			&cloudrunv2.ServiceTemplateContainerArgs{
+				Image: frontendImage,
+				Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
+					Limits: args.ResourceLimits,
+				},
+				Ports: cloudrunv2.ServiceTemplateContainerPortsArgs{
+					ContainerPort: pulumi.Int(args.ContainerPort),
+				},
+				Envs: newFrontendEnvVars(args, backendURL),
+				StartupProbe: &cloudrunv2.ServiceTemplateContainerStartupProbeArgs{
+					TcpSocket: &cloudrunv2.ServiceTemplateContainerStartupProbeTcpSocketArgs{
+						Port: pulumi.Int(args.ContainerPort),
+					},
+					InitialDelaySeconds: pulumi.Int(args.StartupProbe.InitialDelaySeconds),
+					PeriodSeconds:       pulumi.Int(args.StartupProbe.PeriodSeconds),
+					TimeoutSeconds:      pulumi.Int(args.StartupProbe.TimeoutSeconds),
+					FailureThreshold:    pulumi.Int(args.StartupProbe.FailureThreshold),
+				},
+				LivenessProbe: &cloudrunv2.ServiceTemplateContainerLivenessProbeArgs{
+					HttpGet: &cloudrunv2.ServiceTemplateContainerLivenessProbeHttpGetArgs{
+						Path: pulumi.String(fmt.Sprintf("/%s", args.LivenessProbe.Path)),
+						Port: pulumi.Int(args.ContainerPort),
+					},
+					InitialDelaySeconds: pulumi.Int(args.LivenessProbe.InitialDelaySeconds),
+					PeriodSeconds:       pulumi.Int(args.LivenessProbe.PeriodSeconds),
+					TimeoutSeconds:      pulumi.Int(args.LivenessProbe.TimeoutSeconds),
+					FailureThreshold:    pulumi.Int(args.LivenessProbe.FailureThreshold),
+				},
+				VolumeMounts: volumeMounts,
+			},
+		},
+		ServiceAccount: serviceAccount.Email,
+		Volumes:        volumes,
+	}
+
+	ingress := "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+	if args.EnablePublicIngress {
+		// The instance is likely using an external WAF. Make it reachable.
+		ingress = "INGRESS_TRAFFIC_ALL"
+	}
+
+	frontendService, err := cloudrunv2.NewService(ctx, frontendServiceName, &cloudrunv2.ServiceArgs{
+		Name:               pulumi.String(frontendServiceName),
+		Ingress:            pulumi.String(ingress),
+		Description:        pulumi.String(fmt.Sprintf("Serverless instance (%s)", serviceName)),
+		Location:           pulumi.String(region),
+		Project:            pulumi.String(project),
+		Labels:             frontendLabels,
+		Template:           frontendServiceTemplate,
 		DeletionProtection: pulumi.Bool(args.DeletionProtection),
 	})
 	if err != nil {
@@ -517,4 +527,40 @@ func newSecretVolume(secret *SecretVolumeArgs) *cloudrunv2.ServiceTemplateVolume
 	}
 
 	return newVar
+}
+
+func (f *FullStack) createInstanceDomainMapping(
+	ctx *pulumi.Context,
+	serviceName string,
+	domainURL string,
+	targetInstanceName pulumi.StringOutput,
+) (*cloudrun.DomainMapping, []cloudrun.DomainMappingStatusResourceRecord, error) {
+	domainMappingName := f.newResourceName(serviceName, "domain-mapping", 100)
+	domainMapping, err := cloudrun.NewDomainMapping(ctx, domainMappingName, &cloudrun.DomainMappingArgs{
+		Location: pulumi.String(f.Region),
+		Name:     pulumi.String(domainURL),
+		Metadata: &cloudrun.DomainMappingMetadataArgs{
+			Namespace: pulumi.String(f.Project),
+		},
+		Spec: &cloudrun.DomainMappingSpecArgs{
+			RouteName: targetInstanceName,
+		},
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create custom domain mapping: %w", err)
+	}
+
+	var resourceRecords []cloudrun.DomainMappingStatusResourceRecord
+	domainMapping.Statuses.ApplyT(func(statuses []cloudrun.DomainMappingStatus) error {
+		if len(statuses) == 0 {
+			return fmt.Errorf("no statuses returned for %s domain mapping", serviceName)
+		}
+
+		// Capture resource records from the first status
+		firstStatus := statuses[0]
+		resourceRecords = firstStatus.ResourceRecords
+		return nil
+	})
+
+	return domainMapping, resourceRecords, nil
 }
