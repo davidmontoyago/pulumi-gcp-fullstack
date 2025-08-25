@@ -138,33 +138,16 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 		Containers: cloudrunv2.ServiceTemplateContainerArray{
 			&cloudrunv2.ServiceTemplateContainerArgs{
 				Image: f.BackendImage,
-				Envs:  newBackendEnvVars(args),
+				Envs:  newBackendEnvVars(args, f.AppBaseURL),
 				Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
 					Limits: args.ResourceLimits,
 				},
 				Ports: cloudrunv2.ServiceTemplateContainerPortsArgs{
 					ContainerPort: pulumi.Int(args.ContainerPort),
 				},
-				StartupProbe: &cloudrunv2.ServiceTemplateContainerStartupProbeArgs{
-					TcpSocket: &cloudrunv2.ServiceTemplateContainerStartupProbeTcpSocketArgs{
-						Port: pulumi.Int(args.ContainerPort),
-					},
-					InitialDelaySeconds: pulumi.Int(args.StartupProbe.InitialDelaySeconds),
-					PeriodSeconds:       pulumi.Int(args.StartupProbe.PeriodSeconds),
-					TimeoutSeconds:      pulumi.Int(args.StartupProbe.TimeoutSeconds),
-					FailureThreshold:    pulumi.Int(args.StartupProbe.FailureThreshold),
-				},
-				LivenessProbe: &cloudrunv2.ServiceTemplateContainerLivenessProbeArgs{
-					HttpGet: &cloudrunv2.ServiceTemplateContainerLivenessProbeHttpGetArgs{
-						Path: pulumi.String(fmt.Sprintf("/%s", args.LivenessProbe.Path)),
-						Port: pulumi.Int(args.ContainerPort),
-					},
-					InitialDelaySeconds: pulumi.Int(args.LivenessProbe.InitialDelaySeconds),
-					PeriodSeconds:       pulumi.Int(args.LivenessProbe.PeriodSeconds),
-					TimeoutSeconds:      pulumi.Int(args.LivenessProbe.TimeoutSeconds),
-					FailureThreshold:    pulumi.Int(args.LivenessProbe.FailureThreshold),
-				},
-				VolumeMounts: volumeMounts,
+				StartupProbe:  startupProbe(args.ContainerPort, args.StartupProbe),
+				LivenessProbe: livenessProbe(args.ContainerPort, args.LivenessProbe.Path, args.LivenessProbe),
+				VolumeMounts:  volumeMounts,
 			},
 		},
 		ServiceAccount: serviceAccount.Email,
@@ -377,27 +360,11 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 				Ports: cloudrunv2.ServiceTemplateContainerPortsArgs{
 					ContainerPort: pulumi.Int(args.ContainerPort),
 				},
-				Envs: newFrontendEnvVars(args, backendURL),
-				StartupProbe: &cloudrunv2.ServiceTemplateContainerStartupProbeArgs{
-					TcpSocket: &cloudrunv2.ServiceTemplateContainerStartupProbeTcpSocketArgs{
-						Port: pulumi.Int(args.ContainerPort),
-					},
-					InitialDelaySeconds: pulumi.Int(args.StartupProbe.InitialDelaySeconds),
-					PeriodSeconds:       pulumi.Int(args.StartupProbe.PeriodSeconds),
-					TimeoutSeconds:      pulumi.Int(args.StartupProbe.TimeoutSeconds),
-					FailureThreshold:    pulumi.Int(args.StartupProbe.FailureThreshold),
-				},
-				LivenessProbe: &cloudrunv2.ServiceTemplateContainerLivenessProbeArgs{
-					HttpGet: &cloudrunv2.ServiceTemplateContainerLivenessProbeHttpGetArgs{
-						Path: pulumi.String(fmt.Sprintf("/%s", args.LivenessProbe.Path)),
-						Port: pulumi.Int(args.ContainerPort),
-					},
-					InitialDelaySeconds: pulumi.Int(args.LivenessProbe.InitialDelaySeconds),
-					PeriodSeconds:       pulumi.Int(args.LivenessProbe.PeriodSeconds),
-					TimeoutSeconds:      pulumi.Int(args.LivenessProbe.TimeoutSeconds),
-					FailureThreshold:    pulumi.Int(args.LivenessProbe.FailureThreshold),
-				},
-				VolumeMounts: volumeMounts,
+				// TODO get app base url from input
+				Envs:          newFrontendEnvVars(args, backendURL, f.AppBaseURL),
+				StartupProbe:  startupProbe(args.ContainerPort, args.StartupProbe),
+				LivenessProbe: livenessProbe(args.ContainerPort, args.LivenessProbe.Path, args.LivenessProbe),
+				VolumeMounts:  volumeMounts,
 			},
 		},
 		ServiceAccount: serviceAccount.Email,
@@ -459,11 +426,15 @@ func (f *FullStack) createCloudRunInstancesIAM(ctx *pulumi.Context, frontendServ
 	return nil
 }
 
-func newFrontendEnvVars(args *FrontendArgs, backendURL pulumi.StringOutput) cloudrunv2.ServiceTemplateContainerEnvArray {
+func newFrontendEnvVars(args *FrontendArgs, backendURL pulumi.StringOutput, appBaseURL string) cloudrunv2.ServiceTemplateContainerEnvArray {
 	envVars := cloudrunv2.ServiceTemplateContainerEnvArray{
 		cloudrunv2.ServiceTemplateContainerEnvArgs{
 			Name:  pulumi.String("DOTENV_CONFIG_PATH"),
 			Value: pulumi.String(fmt.Sprintf("%s%s", args.SecretConfigFilePath, args.SecretConfigFileName)),
+		},
+		cloudrunv2.ServiceTemplateContainerEnvArgs{
+			Name:  pulumi.String("APP_BASE_URL"),
+			Value: pulumi.String(appBaseURL),
 		},
 		cloudrunv2.ServiceTemplateContainerEnvArgs{
 			Name:  pulumi.String("BACKEND_API_URL"),
@@ -480,11 +451,15 @@ func newFrontendEnvVars(args *FrontendArgs, backendURL pulumi.StringOutput) clou
 	return envVars
 }
 
-func newBackendEnvVars(args *BackendArgs) cloudrunv2.ServiceTemplateContainerEnvArray {
+func newBackendEnvVars(args *BackendArgs, appBaseURL string) cloudrunv2.ServiceTemplateContainerEnvArray {
 	envVars := cloudrunv2.ServiceTemplateContainerEnvArray{
 		cloudrunv2.ServiceTemplateContainerEnvArgs{
 			Name:  pulumi.String("DOTENV_CONFIG_PATH"),
 			Value: pulumi.String(fmt.Sprintf("%s%s", args.SecretConfigFilePath, args.SecretConfigFileName)),
+		},
+		cloudrunv2.ServiceTemplateContainerEnvArgs{
+			Name:  pulumi.String("APP_BASE_URL"),
+			Value: pulumi.String(appBaseURL),
 		},
 	}
 	for enVarName, envVarValue := range args.EnvVars {
@@ -526,7 +501,7 @@ func (f *FullStack) createInstanceDomainMapping(
 	serviceName string,
 	domainURL string,
 	targetInstanceName pulumi.StringOutput,
-) (*cloudrun.DomainMapping, []cloudrun.DomainMappingStatusResourceRecord, error) {
+) (*cloudrun.DomainMapping, error) {
 	domainMappingName := f.newResourceName(serviceName, "domain-mapping", 100)
 	domainMapping, err := cloudrun.NewDomainMapping(ctx, domainMappingName, &cloudrun.DomainMappingArgs{
 		Location: pulumi.String(f.Region),
@@ -539,20 +514,33 @@ func (f *FullStack) createInstanceDomainMapping(
 		},
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create custom domain mapping: %w", err)
+		return nil, fmt.Errorf("failed to create custom domain mapping: %w", err)
 	}
 
-	var resourceRecords []cloudrun.DomainMappingStatusResourceRecord
-	domainMapping.Statuses.ApplyT(func(statuses []cloudrun.DomainMappingStatus) error {
-		if len(statuses) == 0 {
-			return fmt.Errorf("no statuses returned for %s domain mapping", serviceName)
-		}
+	return domainMapping, nil
+}
 
-		// Capture resource records from the first status
-		firstStatus := statuses[0]
-		resourceRecords = firstStatus.ResourceRecords
-		return nil
-	})
+func startupProbe(port int, probe *Probe) *cloudrunv2.ServiceTemplateContainerStartupProbeArgs {
+	return &cloudrunv2.ServiceTemplateContainerStartupProbeArgs{
+		TcpSocket: &cloudrunv2.ServiceTemplateContainerStartupProbeTcpSocketArgs{
+			Port: pulumi.Int(port),
+		},
+		InitialDelaySeconds: pulumi.Int(probe.InitialDelaySeconds),
+		PeriodSeconds:       pulumi.Int(probe.PeriodSeconds),
+		TimeoutSeconds:      pulumi.Int(probe.TimeoutSeconds),
+		FailureThreshold:    pulumi.Int(probe.FailureThreshold),
+	}
+}
 
-	return domainMapping, resourceRecords, nil
+func livenessProbe(port int, path string, probe *Probe) *cloudrunv2.ServiceTemplateContainerLivenessProbeArgs {
+	return &cloudrunv2.ServiceTemplateContainerLivenessProbeArgs{
+		HttpGet: &cloudrunv2.ServiceTemplateContainerLivenessProbeHttpGetArgs{
+			Path: pulumi.String(fmt.Sprintf("/%s", path)),
+			Port: pulumi.Int(port),
+		},
+		InitialDelaySeconds: pulumi.Int(probe.InitialDelaySeconds),
+		PeriodSeconds:       pulumi.Int(probe.PeriodSeconds),
+		TimeoutSeconds:      pulumi.Int(probe.TimeoutSeconds),
+		FailureThreshold:    pulumi.Int(probe.FailureThreshold),
+	}
 }

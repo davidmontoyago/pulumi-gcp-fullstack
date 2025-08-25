@@ -28,6 +28,7 @@ type FullStack struct {
 	FrontendName  string
 	FrontendImage pulumi.StringOutput
 	Labels        map[string]string
+	AppBaseURL    string
 
 	name                string
 	gatewayEnabled      bool
@@ -55,10 +56,8 @@ type FullStack struct {
 	frontendNeg *compute.RegionNetworkEndpointGroup
 
 	// Domain mappings to use when the external LB is disabled and External WAF is used
-	backendDomainMapping    *cloudrun.DomainMapping
-	frontendDomainMapping   *cloudrun.DomainMapping
-	backendResourceRecords  []cloudrun.DomainMappingStatusResourceRecord
-	frontendResourceRecords []cloudrun.DomainMappingStatusResourceRecord
+	backendDomainMapping  *cloudrun.DomainMapping
+	frontendDomainMapping *cloudrun.DomainMapping
 
 	globalForwardingRule   *compute.GlobalForwardingRule
 	regionalForwardingRule *compute.ForwardingRule
@@ -90,6 +89,11 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 		frontendName = "frontend"
 	}
 
+	appBaseURL := ""
+	if args.Network != nil {
+		appBaseURL = fmt.Sprintf("https://%s", args.Network.DomainURL)
+	}
+
 	fullStack := &FullStack{
 		Project:       args.Project,
 		Region:        args.Region,
@@ -98,6 +102,7 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 		BackendName:   backendName,
 		FrontendName:  frontendName,
 		Labels:        args.Labels,
+		AppBaseURL:    appBaseURL,
 
 		name:                name,
 		gatewayEnabled:      args.Network != nil && args.Network.APIGateway != nil && !args.Network.APIGateway.Disabled,
@@ -173,7 +178,7 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 		}
 	} else if args.Network.EnableExternalWAF {
 		// create domain mappings for the backend and frontend services
-		backendDomainMapping, backendResourceRecords, err := f.createInstanceDomainMapping(
+		backendDomainMapping, err := f.createInstanceDomainMapping(
 			ctx,
 			f.BackendName,
 			fmt.Sprintf("api-%s", args.Network.DomainURL),
@@ -183,9 +188,8 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 			return fmt.Errorf("failed to create backend domain mapping: %w", err)
 		}
 		f.backendDomainMapping = backendDomainMapping
-		f.backendResourceRecords = backendResourceRecords
 
-		frontendDomainMapping, frontendResourceRecords, err := f.createInstanceDomainMapping(
+		frontendDomainMapping, err := f.createInstanceDomainMapping(
 			ctx,
 			f.FrontendName,
 			args.Network.DomainURL,
@@ -195,7 +199,6 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 			return fmt.Errorf("failed to create frontend domain mapping: %w", err)
 		}
 		f.frontendDomainMapping = frontendDomainMapping
-		f.frontendResourceRecords = frontendResourceRecords
 
 		// TODO allow backend and frontend to have separate URLs
 	}
@@ -327,14 +330,4 @@ func (f *FullStack) GetBackendDomainMapping() *cloudrun.DomainMapping {
 // TODO: implement frontend domain mapping functionality
 func (f *FullStack) GetFrontendDomainMapping() *cloudrun.DomainMapping {
 	return f.frontendDomainMapping
-}
-
-// GetBackendResourceRecords returns the resource records from the backend domain mapping status.
-func (f *FullStack) GetBackendResourceRecords() []cloudrun.DomainMappingStatusResourceRecord {
-	return f.backendResourceRecords
-}
-
-// GetFrontendResourceRecords returns the resource records from the frontend domain mapping status.
-func (f *FullStack) GetFrontendResourceRecords() []cloudrun.DomainMappingStatusResourceRecord {
-	return f.frontendResourceRecords
 }
