@@ -94,6 +94,9 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 		appBaseURL = fmt.Sprintf("https://%s", args.Network.DomainURL)
 	}
 
+	gatewayEnabled := args.Network != nil && args.Network.APIGateway != nil && !args.Network.APIGateway.Disabled
+	loadBalancerEnabled := args.Network != nil && !args.Network.EnableExternalWAF
+
 	fullStack := &FullStack{
 		Project:       args.Project,
 		Region:        args.Region,
@@ -105,8 +108,8 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 		AppBaseURL:    appBaseURL,
 
 		name:                name,
-		gatewayEnabled:      args.Network != nil && args.Network.APIGateway != nil && !args.Network.APIGateway.Disabled,
-		loadBalancerEnabled: args.Network != nil && !args.Network.EnableExternalWAF,
+		gatewayEnabled:      gatewayEnabled,
+		loadBalancerEnabled: loadBalancerEnabled,
 	}
 	err := ctx.RegisterComponentResource("pulumi-fullstack:gcp:FullStack", name, fullStack, opts...)
 	if err != nil {
@@ -119,7 +122,24 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 		return nil, fmt.Errorf("failed to deploy full stack: %w", err)
 	}
 
-	err = ctx.RegisterResourceOutputs(fullStack, pulumi.Map{})
+	// Register important outputs for the component
+	outputs := pulumi.Map{
+		"backendServiceUrl":   pulumi.String(""),
+		"frontendServiceUrl":  pulumi.String(""),
+		"apiGatewayUrl":       pulumi.String(""),
+		"gatewayEnabled":      pulumi.Bool(fullStack.gatewayEnabled),
+		"loadBalancerEnabled": pulumi.Bool(fullStack.loadBalancerEnabled),
+		"appBaseURL":          pulumi.String(fullStack.AppBaseURL),
+	}
+
+	if fullStack.backendService != nil {
+		outputs["backendServiceUrl"] = fullStack.backendService.Uri
+	}
+	if fullStack.frontendService != nil {
+		outputs["frontendServiceUrl"] = fullStack.frontendService.Uri
+	}
+
+	err = ctx.RegisterResourceOutputs(fullStack, outputs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register resource outputs: %w", err)
 	}
