@@ -81,7 +81,7 @@ mystack, err := gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
             MaxInstanceCount:   3,
             DeletionProtection: false,
             ContainerPort:      9001,
-            StartupCpuBoost:    true,
+            StartupCPUBoost:    true,
             LivenessProbe: &gcp.Probe{
                 Path:                "api/v1/healthz",
                 InitialDelaySeconds: 60,

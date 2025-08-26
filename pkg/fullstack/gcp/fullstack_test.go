@@ -253,7 +253,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 					MaxInstanceCount:   5,
 					DeletionProtection: true,
 					ContainerPort:      8080,
-					StartupCpuBoost:    true,
+					StartupCPUBoost:    true,
 				},
 				ProjectIAMRoles: []string{
 					"roles/redis.editor",
@@ -276,7 +276,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 					DeletionProtection:  false,
 					ContainerPort:       3000,
 					EnablePublicIngress: false,
-					StartupCpuBoost:     true,
+					StartupCPUBoost:     true,
 				},
 			},
 			Network: &gcp.NetworkArgs{
@@ -372,15 +372,15 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		})
 		assert.Equal(t, "gcr.io/test-project/backend:latest", <-backendImageCh, "Backend image should match the provided image")
 
-		// Assert backend StartupCpuBoost is set correctly
-		backendStartupCpuBoostCh := make(chan bool, 1)
-		defer close(backendStartupCpuBoostCh)
+		// Assert backend StartupCPUBoost is set correctly
+		backendStartupCPUBoostCh := make(chan bool, 1)
+		defer close(backendStartupCPUBoostCh)
 		backendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
-			backendStartupCpuBoostCh <- *containers[0].Resources.StartupCpuBoost
+			backendStartupCPUBoostCh <- *containers[0].Resources.StartupCpuBoost
 
 			return nil
 		})
-		assert.Equal(t, true, <-backendStartupCpuBoostCh, "Backend StartupCpuBoost should be enabled")
+		assert.Equal(t, true, <-backendStartupCPUBoostCh, "Backend StartupCPUBoost should be enabled")
 
 		// Verify frontend service configuration
 		frontendService := fullstack.GetFrontendService()
@@ -425,15 +425,15 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		})
 		assert.Equal(t, "gcr.io/test-project/frontend:latest", <-frontendImageCh, "Frontend image should match the provided image")
 
-		// Assert frontend StartupCpuBoost is set correctly
-		frontendStartupCpuBoostCh := make(chan bool, 1)
-		defer close(frontendStartupCpuBoostCh)
+		// Assert frontend StartupCPUBoost is set correctly
+		frontendStartupCPUBoostCh := make(chan bool, 1)
+		defer close(frontendStartupCPUBoostCh)
 		frontendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
-			frontendStartupCpuBoostCh <- *containers[0].Resources.StartupCpuBoost
+			frontendStartupCPUBoostCh <- *containers[0].Resources.StartupCpuBoost
 
 			return nil
 		})
-		assert.Equal(t, true, <-frontendStartupCpuBoostCh, "Frontend StartupCpuBoost should be enabled")
+		assert.Equal(t, true, <-frontendStartupCPUBoostCh, "Frontend StartupCPUBoost should be enabled")
 
 		// Assert frontend container probe configurations
 		frontendContainerCh := make(chan cloudrunv2.ServiceTemplateContainer, 1)
@@ -471,6 +471,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		for i := range frontendEnvVars {
 			if frontendEnvVars[i].Name == "DOTENV_CONFIG_PATH" {
 				dotenvConfigPathEnv = &frontendEnvVars[i]
+
 				break
 			}
 		}
@@ -483,6 +484,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		for i := range frontendEnvVars {
 			if frontendEnvVars[i].Name == "APP_BASE_URL" {
 				appBaseURLEnv = &frontendEnvVars[i]
+
 				break
 			}
 		}
@@ -495,6 +497,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		for i := range frontendEnvVars {
 			if frontendEnvVars[i].Name == "NODE_ENV" {
 				nodeEnvVar = &frontendEnvVars[i]
+
 				break
 			}
 		}
@@ -621,6 +624,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		for i := range backendEnvVars {
 			if backendEnvVars[i].Name == "DOTENV_CONFIG_PATH" {
 				backendDotenvConfigPathEnv = &backendEnvVars[i]
+
 				break
 			}
 		}
@@ -633,6 +637,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		for i := range backendEnvVars {
 			if backendEnvVars[i].Name == "APP_BASE_URL" {
 				backendAppBaseURLEnv = &backendEnvVars[i]
+
 				break
 			}
 		}
@@ -645,6 +650,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		for i := range backendEnvVars {
 			if backendEnvVars[i].Name == "LOG_LEVEL" {
 				backendLogLevelVar = &backendEnvVars[i]
+
 				break
 			}
 		}
@@ -656,6 +662,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		for i := range backendEnvVars {
 			if backendEnvVars[i].Name == "DATABASE_URL" {
 				backendDatabaseURLVar = &backendEnvVars[i]
+
 				break
 			}
 		}
@@ -2324,6 +2331,7 @@ func TestNewFullStack_WithExternalWAFAndNoGoogleLoadBalancer(t *testing.T) {
 		defer close(frontendDomainMappingNameCh)
 		frontendDomainMapping.Name.ApplyT(func(name string) error {
 			frontendDomainMappingNameCh <- name
+
 			return nil
 		})
 		assert.Equal(t, "myapp.example.com", <-frontendDomainMappingNameCh, "Frontend domain mapping name should match the provided domain")
@@ -2333,6 +2341,7 @@ func TestNewFullStack_WithExternalWAFAndNoGoogleLoadBalancer(t *testing.T) {
 		defer close(frontendDomainMappingLocationCh)
 		frontendDomainMapping.Location.ApplyT(func(location string) error {
 			frontendDomainMappingLocationCh <- location
+
 			return nil
 		})
 		assert.Equal(t, testRegion, <-frontendDomainMappingLocationCh, "Frontend domain mapping location should match the region")
@@ -2342,12 +2351,14 @@ func TestNewFullStack_WithExternalWAFAndNoGoogleLoadBalancer(t *testing.T) {
 		defer close(frontendDomainMappingRouteNameCh)
 		frontendDomainMapping.Spec.RouteName().ApplyT(func(routeName string) error {
 			frontendDomainMappingRouteNameCh <- routeName
+
 			return nil
 		})
 		frontendServiceNameCh := make(chan string, 1)
 		defer close(frontendServiceNameCh)
 		fullstack.GetFrontendService().Name.ApplyT(func(name string) error {
 			frontendServiceNameCh <- name
+
 			return nil
 		})
 		assert.Equal(t, <-frontendServiceNameCh, <-frontendDomainMappingRouteNameCh, "Frontend domain mapping should route to frontend service")
@@ -2357,6 +2368,7 @@ func TestNewFullStack_WithExternalWAFAndNoGoogleLoadBalancer(t *testing.T) {
 		defer close(backendMetadataNamespaceCh)
 		backendDomainMapping.Metadata.Namespace().ApplyT(func(namespace string) error {
 			backendMetadataNamespaceCh <- namespace
+
 			return nil
 		})
 		assert.Equal(t, testProjectName, <-backendMetadataNamespaceCh, "Backend domain mapping should have correct project namespace")
@@ -2365,6 +2377,7 @@ func TestNewFullStack_WithExternalWAFAndNoGoogleLoadBalancer(t *testing.T) {
 		defer close(frontendMetadataNamespaceCh)
 		frontendDomainMapping.Metadata.Namespace().ApplyT(func(namespace string) error {
 			frontendMetadataNamespaceCh <- namespace
+
 			return nil
 		})
 		assert.Equal(t, testProjectName, <-frontendMetadataNamespaceCh, "Frontend domain mapping should have correct project namespace")

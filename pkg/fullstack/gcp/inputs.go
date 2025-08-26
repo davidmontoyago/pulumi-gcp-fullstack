@@ -65,7 +65,7 @@ type InstanceArgs struct {
 	// IDs of additional Secret Manager secrets to mount into the container. Defaults to nil.
 	Secrets []*SecretVolumeArgs
 	// Whether to enable startup CPU boost for faster cold starts. Defaults to false.
-	StartupCpuBoost bool
+	StartupCPUBoost bool
 }
 
 // NetworkArgs contains configuration for network infrastructure including load balancers and API Gateway.
