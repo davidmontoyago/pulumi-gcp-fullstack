@@ -140,7 +140,9 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 				Image: f.BackendImage,
 				Envs:  newBackendEnvVars(args, f.AppBaseURL),
 				Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
-					Limits: args.ResourceLimits,
+					CpuIdle:         pulumi.Bool(true),
+					Limits:          args.ResourceLimits,
+					StartupCpuBoost: pulumi.Bool(args.StartupCpuBoost),
 				},
 				Ports: cloudrunv2.ServiceTemplateContainerPortsArgs{
 					ContainerPort: pulumi.Int(args.ContainerPort),
@@ -355,7 +357,10 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 			&cloudrunv2.ServiceTemplateContainerArgs{
 				Image: frontendImage,
 				Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
-					Limits: args.ResourceLimits,
+					// Stay serverless. Optimize for cold starts.
+					CpuIdle:         pulumi.Bool(true),
+					Limits:          args.ResourceLimits,
+					StartupCpuBoost: pulumi.Bool(args.StartupCpuBoost),
 				},
 				Ports: cloudrunv2.ServiceTemplateContainerPortsArgs{
 					ContainerPort: pulumi.Int(args.ContainerPort),

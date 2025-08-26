@@ -81,6 +81,7 @@ mystack, err := gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
             MaxInstanceCount:   3,
             DeletionProtection: false,
             ContainerPort:      9001,
+            StartupCpuBoost:    true,
             LivenessProbe: &gcp.Probe{
                 Path:                "api/v1/healthz",
                 InitialDelaySeconds: 60,
@@ -116,6 +117,7 @@ mystack, err := gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
             SecretConfigFilePath: "/app/config/",
             DeletionProtection:   false,
             ContainerPort:        3000,
+            StartupCpuBoost:      true,
             LivenessProbe: &gcp.Probe{
                 Path:                "api/v1/healthz",
                 InitialDelaySeconds: 60,

@@ -253,6 +253,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 					MaxInstanceCount:   5,
 					DeletionProtection: true,
 					ContainerPort:      8080,
+					StartupCpuBoost:    true,
 				},
 				ProjectIAMRoles: []string{
 					"roles/redis.editor",
@@ -275,6 +276,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 					DeletionProtection:  false,
 					ContainerPort:       3000,
 					EnablePublicIngress: false,
+					StartupCpuBoost:     true,
 				},
 			},
 			Network: &gcp.NetworkArgs{
@@ -370,6 +372,16 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		})
 		assert.Equal(t, "gcr.io/test-project/backend:latest", <-backendImageCh, "Backend image should match the provided image")
 
+		// Assert backend StartupCpuBoost is set correctly
+		backendStartupCpuBoostCh := make(chan bool, 1)
+		defer close(backendStartupCpuBoostCh)
+		backendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
+			backendStartupCpuBoostCh <- *containers[0].Resources.StartupCpuBoost
+
+			return nil
+		})
+		assert.Equal(t, true, <-backendStartupCpuBoostCh, "Backend StartupCpuBoost should be enabled")
+
 		// Verify frontend service configuration
 		frontendService := fullstack.GetFrontendService()
 		require.NotNil(t, frontendService, "Frontend service should not be nil")
@@ -412,6 +424,16 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 			return nil
 		})
 		assert.Equal(t, "gcr.io/test-project/frontend:latest", <-frontendImageCh, "Frontend image should match the provided image")
+
+		// Assert frontend StartupCpuBoost is set correctly
+		frontendStartupCpuBoostCh := make(chan bool, 1)
+		defer close(frontendStartupCpuBoostCh)
+		frontendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
+			frontendStartupCpuBoostCh <- *containers[0].Resources.StartupCpuBoost
+
+			return nil
+		})
+		assert.Equal(t, true, <-frontendStartupCpuBoostCh, "Frontend StartupCpuBoost should be enabled")
 
 		// Assert frontend container probe configurations
 		frontendContainerCh := make(chan cloudrunv2.ServiceTemplateContainer, 1)

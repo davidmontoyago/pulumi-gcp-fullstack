@@ -60,6 +60,8 @@ type InstanceArgs struct {
 	EnablePublicIngress bool
 	// IDs of additional Secret Manager secrets to mount into the container. Defaults to nil.
 	Secrets []*SecretVolumeArgs
+	// Whether to enable startup CPU boost for faster cold starts. Defaults to false.
+	StartupCpuBoost bool
 }
 
 // NetworkArgs contains configuration for network infrastructure including load balancers and API Gateway.
