@@ -58,8 +58,8 @@ func setInstanceDefaults(args *InstanceArgs, defaults InstanceDefaults) *Instanc
 	// Set default startup probe if not provided
 	if args.StartupProbe == nil {
 		args.StartupProbe = &Probe{
-			InitialDelaySeconds: 15,
-			PeriodSeconds:       3,
+			InitialDelaySeconds: 10,
+			PeriodSeconds:       2,
 			TimeoutSeconds:      1,
 			FailureThreshold:    3,
 		}
@@ -69,9 +69,9 @@ func setInstanceDefaults(args *InstanceArgs, defaults InstanceDefaults) *Instanc
 	if args.LivenessProbe == nil {
 		args.LivenessProbe = &Probe{
 			Path:                "healthz",
-			InitialDelaySeconds: 30,
-			PeriodSeconds:       10,
-			TimeoutSeconds:      5,
+			InitialDelaySeconds: 15,
+			PeriodSeconds:       5,
+			TimeoutSeconds:      3,
 			FailureThreshold:    3,
 		}
 	}

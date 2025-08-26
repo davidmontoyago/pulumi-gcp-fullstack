@@ -32,13 +32,17 @@ type FrontendArgs struct {
 	*InstanceArgs
 }
 
-// Probe contains configuration for health check probes
+// Probe contains configuration for TCP and HTTP health check probes
 type Probe struct {
-	Path                string
+	Path string
+	// Initial delay in seconds before the first health check. Defaults to 10 for TCP and 15 for HTTP.
 	InitialDelaySeconds int
-	PeriodSeconds       int
-	TimeoutSeconds      int
-	FailureThreshold    int
+	// Period in seconds between health checks. Defaults to 2 for TCP and 5 for HTTP.
+	PeriodSeconds int
+	// Timeout in seconds for the health check. Defaults to 1 for TCP and 3 for HTTP.
+	TimeoutSeconds int
+	// Number of consecutive failures before considering the instance unhealthy. Defaults to 3.
+	FailureThreshold int
 }
 
 // InstanceArgs contains configuration for Cloud Run service instances.
