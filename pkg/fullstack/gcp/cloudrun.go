@@ -290,6 +290,10 @@ func (f *FullStack) grantProjectLevelIAMRoles(ctx *pulumi.Context,
 		// Allow backend to write to Redis instance
 		instanceRoles = append(instanceRoles, "roles/redis.editor")
 	}
+	if f.storageBucket != nil {
+		// Allow backend to access storage bucket objects
+		instanceRoles = append(instanceRoles, "roles/storage.objectAdmin")
+	}
 
 	if len(instanceRoles) > 0 {
 		for _, role := range instanceRoles {

@@ -13,6 +13,7 @@ import (
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/redis"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/secretmanager"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/serviceaccount"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/storage"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/vpcaccess"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -74,6 +75,9 @@ type FullStack struct {
 	vpcConnector           *vpcaccess.Connector
 	cacheFirewall          *compute.Firewall
 	cacheCredentialsSecret *secretmanager.SecretVersion
+
+	// Storage infrastructure
+	storageBucket *storage.Bucket
 }
 
 // NewFullStack creates a new FullStack instance with the provided configuration.
@@ -153,6 +157,14 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 		err := f.deployCache(ctx, args.Backend.CacheInstance)
 		if err != nil {
 			return fmt.Errorf("failed to deploy cache: %w", err)
+		}
+	}
+
+	if args.Backend != nil && args.Backend.BucketInstance != nil {
+		// Deploy bucket companion for backend
+		err := f.deployBucket(ctx, args.Backend.BucketInstance)
+		if err != nil {
+			return fmt.Errorf("failed to deploy bucket: %w", err)
 		}
 	}
 
@@ -339,6 +351,11 @@ func (f *FullStack) GetCacheFirewall() *compute.Firewall {
 // GetCacheSecretVersion returns the secret version containing Redis credentials.
 func (f *FullStack) GetCacheSecretVersion() *secretmanager.SecretVersion {
 	return f.cacheCredentialsSecret
+}
+
+// GetStorageBucket returns the Cloud Storage bucket.
+func (f *FullStack) GetStorageBucket() *storage.Bucket {
+	return f.storageBucket
 }
 
 // GetBackendDomainMapping returns the backend domain mapping for External WAF.
