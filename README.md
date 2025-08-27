@@ -9,7 +9,8 @@ Features:
 
 1. A backend Cloud Run instance.
     - Env config loaded from Secret Manager
-    - A companion Redis cache with auto-configured AuthN & TLS.
+    - An optional companion Redis cache with auto-configured AuthN & TLS.
+    - An optional companion Bucket with auto-configured IAM.
 1. A frontend Cloud Run instance.
     - Env config loaded from Secret Manager
 2. An regional or global HTTPs load balancer ([Classic Application Load Balancer](https://cloud.google.com/load-balancing/docs/https#global-classic-connections)), with an optional gateway before the frontend and backend instances (See: [Load Balancer Recipe](#load-balancer-recipe)).

@@ -25,6 +25,7 @@ type BackendArgs struct {
 	*InstanceArgs
 	ProjectIAMRoles []string
 	CacheInstance   *CacheInstanceArgs
+	BucketInstance  *BucketInstanceArgs
 }
 
 // FrontendArgs contains configuration for the frontend service.
@@ -177,4 +178,16 @@ type CacheInstanceArgs struct {
 	ConnectorMinInstances int
 	// Maximum number of instances for the VPC connector. Defaults to the lowest allowed value of 3.
 	ConnectorMaxInstances int
+}
+
+// BucketInstanceArgs contains configuration for Cloud Storage bucket deployment.
+type BucketInstanceArgs struct {
+	// Storage class for the bucket. Defaults to "STANDARD".
+	StorageClass string
+	// Location for the bucket. Defaults to "US".
+	Location string
+	// Number of days before objects are automatically deleted. Defaults to 365.
+	RetentionDays int
+	// Whether to force destroy the bucket even if it contains objects. Defaults to false.
+	ForceDestroy bool
 }

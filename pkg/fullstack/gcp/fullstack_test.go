@@ -14,6 +14,7 @@ import (
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/compute"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/redis"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/secretmanager"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/storage"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/vpcaccess"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -38,6 +39,7 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 	_ = secretmanager.Secret{}
 	_ = vpcaccess.Connector{}
 	_ = cloudrun.DomainMapping{}
+	_ = storage.Bucket{}
 
 	outputs := map[string]interface{}{}
 	for k, v := range args.Inputs {
@@ -178,6 +180,12 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 			},
 		}
 		// Expected outputs: name, project, region, host, port, readEndpoint, readEndpointPort, authString, serverCaCerts
+	case "gcp:storage/bucket:Bucket":
+		outputs["name"] = args.Name
+		outputs["project"] = testProjectName
+		outputs["url"] = "gs://" + args.Name
+		outputs["selfLink"] = "https://www.googleapis.com/storage/v1/b/" + args.Name
+		// Expected outputs: name, project, location, storageClass, url, selfLink
 	case "gcp:vpcaccess/connector:Connector":
 		outputs["selfLink"] = "https://www.googleapis.com/compute/v1/projects/" + testProjectName + "/regions/" + testRegion + "/connectors/" + args.Name
 		// Expected outputs: name, project, region, ipCidrRange
@@ -2216,6 +2224,114 @@ func TestNewFullStack_WithCache(t *testing.T) {
 			return nil
 		})
 		assert.Equal(t, "roles/redis.editor", <-roleCh, "Backend project IAM role should allow redis editor")
+
+		return nil
+	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
+
+	if err != nil {
+		t.Fatalf("Pulumi WithMocks failed: %v", err)
+	}
+}
+
+func TestNewFullStack_WithBucket(t *testing.T) {
+	t.Parallel()
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		args := &gcp.FullStackArgs{
+			Project:       testProjectName,
+			Region:        testRegion,
+			BackendName:   backendServiceName,
+			BackendImage:  pulumi.String("gcr.io/test-project/backend:latest"),
+			FrontendName:  frontendServiceName,
+			FrontendImage: pulumi.String("gcr.io/test-project/frontend:latest"),
+			Backend: &gcp.BackendArgs{
+				InstanceArgs: &gcp.InstanceArgs{},
+				BucketInstance: &gcp.BucketInstanceArgs{
+					StorageClass:  "STANDARD",
+					Location:      "US",
+					RetentionDays: 30,
+					ForceDestroy:  true,
+				},
+			},
+			Frontend: &gcp.FrontendArgs{
+				InstanceArgs: &gcp.InstanceArgs{},
+			},
+			Network: &gcp.NetworkArgs{
+				DomainURL: "myapp.example.com",
+			},
+		}
+
+		fullstack, err := gcp.NewFullStack(ctx, "test-fullstack", args)
+		require.NoError(t, err)
+
+		// Verify basic properties
+		assert.Equal(t, testProjectName, fullstack.Project)
+		assert.Equal(t, testRegion, fullstack.Region)
+		assert.Equal(t, backendServiceName, fullstack.BackendName)
+		assert.Equal(t, frontendServiceName, fullstack.FrontendName)
+
+		// Verify storage bucket configuration
+		storageBucket := fullstack.GetStorageBucket()
+		require.NotNil(t, storageBucket, "Storage bucket should not be nil")
+
+		// Assert bucket basic properties
+		bucketProjectCh := make(chan string, 1)
+		defer close(bucketProjectCh)
+		storageBucket.Project.ApplyT(func(project string) error {
+			bucketProjectCh <- project
+
+			return nil
+		})
+		assert.Equal(t, testProjectName, <-bucketProjectCh, "Storage bucket project should match")
+
+		bucketLocationCh := make(chan string, 1)
+		defer close(bucketLocationCh)
+		storageBucket.Location.ApplyT(func(location string) error {
+			bucketLocationCh <- location
+
+			return nil
+		})
+		assert.Equal(t, "US", <-bucketLocationCh, "Storage bucket location should match")
+
+		bucketStorageClassCh := make(chan string, 1)
+		defer close(bucketStorageClassCh)
+		storageBucket.StorageClass.ApplyT(func(storageClass *string) error {
+			bucketStorageClassCh <- *storageClass
+
+			return nil
+		})
+		assert.Equal(t, "STANDARD", <-bucketStorageClassCh, "Storage bucket storage class should match")
+
+		backendProjectIamMembers := fullstack.GetBackendProjectIamMembers()
+		require.NotNil(t, backendProjectIamMembers, "Backend project IAM members should not be nil")
+		assert.Len(t, backendProjectIamMembers, 1, "Exactly one backend project IAM member should be created")
+
+		roleCh := make(chan string, 1)
+		memberCh := make(chan string, 1)
+		projectCh := make(chan string, 1)
+		defer close(roleCh)
+		defer close(memberCh)
+		defer close(projectCh)
+
+		backendProjectIamMembers[0].Role.ApplyT(func(role string) error {
+			roleCh <- role
+
+			return nil
+		})
+		backendProjectIamMembers[0].Member.ApplyT(func(member string) error {
+			memberCh <- member
+
+			return nil
+		})
+		backendProjectIamMembers[0].Project.ApplyT(func(project string) error {
+			projectCh <- project
+
+			return nil
+		})
+
+		assert.Equal(t, "roles/storage.objectAdmin", <-roleCh, "Backend project IAM role should match the requested role")
+		assert.Equal(t, "serviceAccount:test-fullstac-backen-account@test-project.iam.gserviceaccount.com", <-memberCh, "Backend project IAM member should be the backend service account")
+		assert.Equal(t, testProjectName, <-projectCh, "Backend project IAM member project should match")
 
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))

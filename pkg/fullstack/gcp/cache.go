@@ -75,8 +75,10 @@ func (f *FullStack) deployCache(ctx *pulumi.Context, args *CacheInstanceArgs) er
 // enableRedisAPI enables the Redis API service
 func (f *FullStack) enableRedisAPI(ctx *pulumi.Context) (*projects.Service, error) {
 	return projects.NewService(ctx, f.newResourceName("cache", "redis-api", 63), &projects.ServiceArgs{
-		Project: pulumi.String(f.Project),
-		Service: pulumi.String("redis.googleapis.com"),
+		Project:                  pulumi.String(f.Project),
+		Service:                  pulumi.String("redis.googleapis.com"),
+		DisableOnDestroy:         pulumi.Bool(false),
+		DisableDependentServices: pulumi.Bool(false),
 	}, pulumi.Parent(f))
 }
 
@@ -84,8 +86,10 @@ func (f *FullStack) enableRedisAPI(ctx *pulumi.Context) (*projects.Service, erro
 func (f *FullStack) createVPCAccessConnector(ctx *pulumi.Context, cacheNetwork pulumi.StringOutput, args *CacheInstanceArgs) (*vpcaccess.Connector, error) {
 	// Enable VPC Access API
 	vpcAPI, err := projects.NewService(ctx, f.newResourceName("cache", "vpcaccess-api", 63), &projects.ServiceArgs{
-		Project: pulumi.String(f.Project),
-		Service: pulumi.String("vpcaccess.googleapis.com"),
+		Project:                  pulumi.String(f.Project),
+		Service:                  pulumi.String("vpcaccess.googleapis.com"),
+		DisableOnDestroy:         pulumi.Bool(false),
+		DisableDependentServices: pulumi.Bool(false),
 	}, pulumi.Parent(f))
 	if err != nil {
 		return nil, fmt.Errorf("failed to enable VPC access API: %w", err)
