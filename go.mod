@@ -3,11 +3,11 @@ module github.com/davidmontoyago/pulumi-gcp-fullstack
 go 1.24.0
 
 require (
-	github.com/getkin/kin-openapi v0.132.0
+	github.com/getkin/kin-openapi v0.133.0
 	github.com/kelseyhightower/envconfig v1.4.0
-	github.com/pulumi/pulumi-gcp/sdk/v8 v8.40.0
-	github.com/pulumi/pulumi/sdk/v3 v3.188.0
-	github.com/stretchr/testify v1.10.0
+	github.com/pulumi/pulumi-gcp/sdk/v8 v8.41.1
+	github.com/pulumi/pulumi/sdk/v3 v3.192.0
+	github.com/stretchr/testify v1.11.1
 )
 
 require (
@@ -85,6 +85,7 @@ require (
 	github.com/texttheater/golang-levenshtein v1.0.1 // indirect
 	github.com/uber/jaeger-client-go v2.30.0+incompatible // indirect
 	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect
+	github.com/woodsbury/decimal128 v1.3.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/zclconf/go-cty v1.16.3 // indirect
