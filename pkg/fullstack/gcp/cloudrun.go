@@ -80,6 +80,18 @@ func setInstanceDefaults(args *InstanceArgs, defaults InstanceDefaults) *Instanc
 		args.Secrets = []*SecretVolumeArgs{}
 	}
 
+	if args.ColdStartSLO != nil {
+		if args.ColdStartSLO.Goal == nil {
+			args.ColdStartSLO.Goal = pulumi.Float64(0.99)
+		}
+		if args.ColdStartSLO.MaxBootTimeMs == nil {
+			args.ColdStartSLO.MaxBootTimeMs = pulumi.Float64(1000)
+		}
+		if args.ColdStartSLO.RollingPeriodDays == nil {
+			args.ColdStartSLO.RollingPeriodDays = pulumi.Int(7)
+		}
+	}
+
 	return args
 }
 
