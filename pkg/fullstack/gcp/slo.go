@@ -8,6 +8,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
+// ColdStartSLO tracks the container startup latency SLO
 type ColdStartSLO struct {
 	Slo         *monitoring.Slo
 	AlertPolicy *monitoring.AlertPolicy

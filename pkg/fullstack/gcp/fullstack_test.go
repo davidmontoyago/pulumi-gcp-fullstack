@@ -2579,6 +2579,7 @@ func TestNewFullStack_WithColdStartSLOs(t *testing.T) {
 		defer close(backendSLOServiceCh)
 		backendSLO.Slo.Service.ApplyT(func(service string) error {
 			backendSLOServiceCh <- service
+
 			return nil
 		})
 		backendSLOService := <-backendSLOServiceCh
@@ -2588,6 +2589,7 @@ func TestNewFullStack_WithColdStartSLOs(t *testing.T) {
 		defer close(backendSLOGoalCh)
 		backendSLO.Slo.Goal.ApplyT(func(goal float64) error {
 			backendSLOGoalCh <- goal
+
 			return nil
 		})
 		backendSLOGoal := <-backendSLOGoalCh
@@ -2601,6 +2603,7 @@ func TestNewFullStack_WithColdStartSLOs(t *testing.T) {
 			} else {
 				backendSLORollingPeriodCh <- 0
 			}
+
 			return nil
 		})
 		backendSLORollingPeriod := <-backendSLORollingPeriodCh
@@ -2613,6 +2616,7 @@ func TestNewFullStack_WithColdStartSLOs(t *testing.T) {
 		defer close(backendAlertNotificationChannelsCh)
 		backendSLO.AlertPolicy.NotificationChannels.ApplyT(func(channels []string) error {
 			backendAlertNotificationChannelsCh <- channels
+
 			return nil
 		})
 		backendAlertChannels := <-backendAlertNotificationChannelsCh
@@ -2631,6 +2635,7 @@ func TestNewFullStack_WithColdStartSLOs(t *testing.T) {
 		defer close(frontendSLOServiceCh)
 		frontendSLO.Slo.Service.ApplyT(func(service string) error {
 			frontendSLOServiceCh <- service
+
 			return nil
 		})
 		frontendSLOService := <-frontendSLOServiceCh
@@ -2640,6 +2645,7 @@ func TestNewFullStack_WithColdStartSLOs(t *testing.T) {
 		defer close(frontendSLOGoalCh)
 		frontendSLO.Slo.Goal.ApplyT(func(goal float64) error {
 			frontendSLOGoalCh <- goal
+
 			return nil
 		})
 		frontendSLOGoal := <-frontendSLOGoalCh
@@ -2653,6 +2659,7 @@ func TestNewFullStack_WithColdStartSLOs(t *testing.T) {
 			} else {
 				frontendSLORollingPeriodCh <- 0
 			}
+
 			return nil
 		})
 		frontendSLORollingPeriod := <-frontendSLORollingPeriodCh
