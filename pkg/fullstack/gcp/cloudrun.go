@@ -90,6 +90,14 @@ func setInstanceDefaults(args *InstanceArgs, defaults InstanceDefaults) *Instanc
 		if args.ColdStartSLO.RollingPeriodDays == nil {
 			args.ColdStartSLO.RollingPeriodDays = pulumi.Int(7)
 		}
+		if args.ColdStartSLO.AlertChannelID != "" {
+			if args.ColdStartSLO.AlertBurnRateThreshold == nil {
+				args.ColdStartSLO.AlertBurnRateThreshold = pulumi.Float64(0.1)
+			}
+			if args.ColdStartSLO.AlertThresholdDuration == nil {
+				args.ColdStartSLO.AlertThresholdDuration = pulumi.String("86400s")
+			}
+		}
 	}
 
 	return args
