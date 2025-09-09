@@ -17,19 +17,6 @@ type ColdStartSLO struct {
 // and optimized for faster boot times.
 func (f *FullStack) setupColdStartSLO(ctx *pulumi.Context, cloudRunServiceName string, args *ColdStartSLOArgs) (*ColdStartSLO, error) {
 
-	goal := args.Goal
-	if goal == nil {
-		goal = pulumi.Float64(0.99)
-	}
-	maxBootTimeMs := args.MaxBootTimeMs
-	if maxBootTimeMs == nil {
-		maxBootTimeMs = pulumi.Float64(1000)
-	}
-	rollingPeriodDays := args.RollingPeriodDays
-	if rollingPeriodDays == nil {
-		rollingPeriodDays = pulumi.Int(7)
-	}
-
 	// Create a microservice to associate with the SLO
 	// See:
 	// https://cloud.google.com/stackdriver/docs/solutions/slo-monitoring/ui/define-svc
@@ -59,8 +46,8 @@ func (f *FullStack) setupColdStartSLO(ctx *pulumi.Context, cloudRunServiceName s
 		// Reference the Cloud Run service
 		Service: monitoringService.ServiceId,
 
-		Goal:              goal,
-		RollingPeriodDays: rollingPeriodDays,
+		Goal:              args.Goal,
+		RollingPeriodDays: args.RollingPeriodDays,
 
 		// Request-based SLI measuring latency distribution
 		RequestBasedSli: &monitoring.SloRequestBasedSliArgs{
@@ -69,7 +56,7 @@ func (f *FullStack) setupColdStartSLO(ctx *pulumi.Context, cloudRunServiceName s
 				Range: &monitoring.SloRequestBasedSliDistributionCutRangeArgs{
 					// Boot times should stay within this range
 					Min: pulumi.Float64(0.0),
-					Max: maxBootTimeMs,
+					Max: args.MaxBootTimeMs,
 				},
 
 				// Filter for the Cloud Run container startup latencies metric
@@ -91,51 +78,7 @@ func (f *FullStack) setupColdStartSLO(ctx *pulumi.Context, cloudRunServiceName s
 
 	// Create an alerting policy for SLO burn rate
 	if args.AlertChannelID != "" {
-		alertPolicyName := f.newResourceName(cloudRunServiceName, "startup-latency-slo-alert", 100)
-		alertPolicy, err := monitoring.NewAlertPolicy(ctx, alertPolicyName, &monitoring.AlertPolicyArgs{
-			Project:     pulumi.String(f.Project),
-			DisplayName: pulumi.String("Cloud Run Cold Start SLO Alert"),
-
-			Conditions: monitoring.AlertPolicyConditionArray{
-				&monitoring.AlertPolicyConditionArgs{
-					DisplayName: pulumi.String("SLO burn rate too high"),
-
-					ConditionThreshold: &monitoring.AlertPolicyConditionConditionThresholdArgs{
-						Filter: slo.Name.ApplyT(func(name string) string {
-							return fmt.Sprintf(strings.Join([]string{
-								`resource.type="gce_instance"`,
-								`metric.type="run.googleapis.com/container/startup_latencies"`,
-								`metric.labels.slo_name="%s"`,
-							}, " AND "), name)
-						}).(pulumi.StringOutput),
-
-						Comparison: pulumi.String("COMPARISON_GT"),
-
-						ThresholdValue: pulumi.Float64(0.1), // Alert if burn rate > 10%
-
-						Duration: pulumi.String("300s"), // 5 minutes
-
-						Aggregations: monitoring.AlertPolicyConditionConditionThresholdAggregationArray{
-							&monitoring.AlertPolicyConditionConditionThresholdAggregationArgs{
-								AlignmentPeriod:  pulumi.String("300s"),
-								PerSeriesAligner: pulumi.String("ALIGN_RATE"),
-							},
-						},
-					},
-				},
-			},
-
-			Combiner: pulumi.String("OR"),
-
-			// Notification channel
-			NotificationChannels: pulumi.StringArray{
-				pulumi.String(fmt.Sprintf("projects/%s/notificationChannels/%s", f.Project, args.AlertChannelID)),
-			},
-
-			AlertStrategy: &monitoring.AlertPolicyAlertStrategyArgs{
-				AutoClose: pulumi.String("1800s"), // 30 minutes
-			},
-		})
+		alertPolicy, err := f.setupSLOAlertPolicy(ctx, cloudRunServiceName, slo, args)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create cold start SLO alert: %w", err)
 		}
@@ -143,4 +86,57 @@ func (f *FullStack) setupColdStartSLO(ctx *pulumi.Context, cloudRunServiceName s
 	}
 
 	return coldStartSLO, nil
+}
+
+func (f *FullStack) setupSLOAlertPolicy(ctx *pulumi.Context, cloudRunServiceName string, slo *monitoring.Slo, args *ColdStartSLOArgs) (*monitoring.AlertPolicy, error) {
+	alertPolicyName := f.newResourceName(cloudRunServiceName, "startup-latency-slo-alert", 100)
+	alertPolicy, err := monitoring.NewAlertPolicy(ctx, alertPolicyName, &monitoring.AlertPolicyArgs{
+		Project:     pulumi.String(f.Project),
+		DisplayName: pulumi.String("Cloud Run Cold Start SLO Alert"),
+
+		Conditions: monitoring.AlertPolicyConditionArray{
+			&monitoring.AlertPolicyConditionArgs{
+				DisplayName: pulumi.String("SLO burn rate too high"),
+
+				ConditionThreshold: &monitoring.AlertPolicyConditionConditionThresholdArgs{
+					Filter: slo.Name.ApplyT(func(name string) string {
+						return fmt.Sprintf(strings.Join([]string{
+							`resource.type="gce_instance"`,
+							`metric.type="run.googleapis.com/container/startup_latencies"`,
+							`metric.labels.slo_name="%s"`,
+						}, " AND "), name)
+					}).(pulumi.StringOutput),
+
+					Comparison: pulumi.String("COMPARISON_GT"),
+
+					ThresholdValue: pulumi.Float64(0.1), // Alert if burn rate > 10%
+
+					Duration: pulumi.String("300s"), // 5 minutes
+
+					Aggregations: monitoring.AlertPolicyConditionConditionThresholdAggregationArray{
+						&monitoring.AlertPolicyConditionConditionThresholdAggregationArgs{
+							AlignmentPeriod:  pulumi.String("300s"),
+							PerSeriesAligner: pulumi.String("ALIGN_RATE"),
+						},
+					},
+				},
+			},
+		},
+
+		Combiner: pulumi.String("OR"),
+
+		// Notification channel
+		NotificationChannels: pulumi.StringArray{
+			pulumi.String(fmt.Sprintf("projects/%s/notificationChannels/%s", f.Project, args.AlertChannelID)),
+		},
+
+		AlertStrategy: &monitoring.AlertPolicyAlertStrategyArgs{
+			AutoClose: pulumi.String("1800s"), // 30 minutes
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cold start SLO alert: %w", err)
+	}
+
+	return alertPolicy, nil
 }
