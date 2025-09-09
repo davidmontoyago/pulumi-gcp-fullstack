@@ -12,6 +12,7 @@ import (
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrun"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/compute"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/monitoring"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/redis"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/secretmanager"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/storage"
@@ -40,6 +41,9 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 	_ = vpcaccess.Connector{}
 	_ = cloudrun.DomainMapping{}
 	_ = storage.Bucket{}
+	_ = monitoring.Slo{}
+	_ = monitoring.AlertPolicy{}
+	_ = monitoring.GenericService{}
 
 	outputs := map[string]interface{}{}
 	for k, v := range args.Inputs {
@@ -207,6 +211,17 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 			},
 		}
 		// Expected outputs: name, location, status
+	case "gcp:monitoring/slo:Slo":
+		outputs["name"] = args.Name
+		outputs["rollingPeriodDays"] = args.Inputs["rollingPeriodDays"]
+		// Expected outputs: name, service, displayName, goal, rollingPeriodDays
+	case "gcp:monitoring/alertPolicy:AlertPolicy":
+		outputs["name"] = args.Name
+		outputs["notificationChannels"] = args.Inputs["notificationChannels"]
+		// Expected outputs: name, displayName, conditions, combiner, notificationChannels
+	case "gcp:monitoring/genericService:GenericService":
+		outputs["name"] = args.Name
+		// Expected outputs: name, project, displayName, serviceId, basicService
 	}
 
 	return args.Name + "_id", resource.NewPropertyMapFromMap(outputs), nil
@@ -2497,6 +2512,154 @@ func TestNewFullStack_WithExternalWAFAndNoGoogleLoadBalancer(t *testing.T) {
 			return nil
 		})
 		assert.Equal(t, testProjectName, <-frontendMetadataNamespaceCh, "Frontend domain mapping should have correct project namespace")
+
+		return nil
+	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
+
+	if err != nil {
+		t.Fatalf("Pulumi WithMocks failed: %v", err)
+	}
+}
+
+func TestNewFullStack_WithColdStartSLOs(t *testing.T) {
+	t.Parallel()
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		testAlertChannelID := "test-alert-channel-123"
+
+		args := &gcp.FullStackArgs{
+			Project:       testProjectName,
+			Region:        testRegion,
+			BackendName:   backendServiceName,
+			BackendImage:  pulumi.String("gcr.io/test-project/backend:latest"),
+			FrontendName:  frontendServiceName,
+			FrontendImage: pulumi.String("gcr.io/test-project/frontend:latest"),
+			Backend: &gcp.BackendArgs{
+				InstanceArgs: &gcp.InstanceArgs{
+					ColdStartSLO: &gcp.ColdStartSLOArgs{
+						Goal:              pulumi.Float64(0.95), // 95% instead of default 99%
+						MaxBootTimeMs:     pulumi.Float64(2000), // 2 seconds instead of default 1 second
+						RollingPeriodDays: pulumi.Int(14),       // 14 days instead of default 7 days
+						AlertChannelID:    testAlertChannelID,
+					},
+				},
+			},
+			Frontend: &gcp.FrontendArgs{
+				InstanceArgs: &gcp.InstanceArgs{
+					ColdStartSLO: &gcp.ColdStartSLOArgs{
+						Goal:              pulumi.Float64(0.98), // 98% instead of default 99%
+						MaxBootTimeMs:     pulumi.Float64(1500), // 1.5 seconds instead of default 1 second
+						RollingPeriodDays: pulumi.Int(30),       // 30 days instead of default 7 days
+						// No AlertChannelID - alerting should be disabled
+					},
+				},
+			},
+			Network: &gcp.NetworkArgs{
+				DomainURL: "myapp.example.com",
+			},
+		}
+
+		fullstack, err := gcp.NewFullStack(ctx, "test-fullstack", args)
+		require.NoError(t, err)
+
+		// Verify basic properties
+		assert.Equal(t, testProjectName, fullstack.Project)
+		assert.Equal(t, testRegion, fullstack.Region)
+		assert.Equal(t, backendServiceName, fullstack.BackendName)
+		assert.Equal(t, frontendServiceName, fullstack.FrontendName)
+
+		// Verify backend Cold Start SLO configuration
+		backendSLO := fullstack.GetBackendColdStartSLO()
+		require.NotNil(t, backendSLO, "Backend Cold Start SLO should not be nil")
+
+		// Assert backend SLO is configured
+		require.NotNil(t, backendSLO.Slo, "Backend SLO should not be nil")
+
+		backendSLOServiceCh := make(chan string, 1)
+		defer close(backendSLOServiceCh)
+		backendSLO.Slo.Service.ApplyT(func(service string) error {
+			backendSLOServiceCh <- service
+			return nil
+		})
+		backendSLOService := <-backendSLOServiceCh
+		assert.Contains(t, backendSLOService, "test-fullstack-backend-service-monitoring-service", "Backend SLO service should match expected generic instance name")
+
+		backendSLOGoalCh := make(chan float64, 1)
+		defer close(backendSLOGoalCh)
+		backendSLO.Slo.Goal.ApplyT(func(goal float64) error {
+			backendSLOGoalCh <- goal
+			return nil
+		})
+		backendSLOGoal := <-backendSLOGoalCh
+		assert.Equal(t, 0.95, backendSLOGoal, "Backend SLO goal should be 95%")
+
+		backendSLORollingPeriodCh := make(chan int, 1)
+		defer close(backendSLORollingPeriodCh)
+		backendSLO.Slo.RollingPeriodDays.ApplyT(func(days *int) error {
+			if days != nil {
+				backendSLORollingPeriodCh <- *days
+			} else {
+				backendSLORollingPeriodCh <- 0
+			}
+			return nil
+		})
+		backendSLORollingPeriod := <-backendSLORollingPeriodCh
+		assert.Equal(t, 14, backendSLORollingPeriod, "Backend SLO rolling period should be 14 days")
+
+		// Assert backend alert policy is configured
+		require.NotNil(t, backendSLO.AlertPolicy, "Backend alert policy should not be nil")
+
+		backendAlertNotificationChannelsCh := make(chan []string, 1)
+		defer close(backendAlertNotificationChannelsCh)
+		backendSLO.AlertPolicy.NotificationChannels.ApplyT(func(channels []string) error {
+			backendAlertNotificationChannelsCh <- channels
+			return nil
+		})
+		backendAlertChannels := <-backendAlertNotificationChannelsCh
+		require.Len(t, backendAlertChannels, 1, "Backend alert policy should have exactly one notification channel")
+		expectedAlertChannel := fmt.Sprintf("projects/test-project/notificationChannels/%s", testAlertChannelID)
+		assert.Contains(t, backendAlertChannels[0], expectedAlertChannel, "Backend alert notification channel should match expected pattern")
+
+		// Verify frontend Cold Start SLO configuration
+		frontendSLO := fullstack.GetFrontendColdStartSLO()
+		require.NotNil(t, frontendSLO, "Frontend Cold Start SLO should not be nil")
+
+		// Assert frontend SLO is configured
+		require.NotNil(t, frontendSLO.Slo, "Frontend SLO should not be nil")
+
+		frontendSLOServiceCh := make(chan string, 1)
+		defer close(frontendSLOServiceCh)
+		frontendSLO.Slo.Service.ApplyT(func(service string) error {
+			frontendSLOServiceCh <- service
+			return nil
+		})
+		frontendSLOService := <-frontendSLOServiceCh
+		assert.Contains(t, frontendSLOService, "test-fullstack-frontend-service-monitoring-service", "Frontend SLO service should match expected generic instance name")
+
+		frontendSLOGoalCh := make(chan float64, 1)
+		defer close(frontendSLOGoalCh)
+		frontendSLO.Slo.Goal.ApplyT(func(goal float64) error {
+			frontendSLOGoalCh <- goal
+			return nil
+		})
+		frontendSLOGoal := <-frontendSLOGoalCh
+		assert.Equal(t, 0.98, frontendSLOGoal, "Frontend SLO goal should be 98%")
+
+		frontendSLORollingPeriodCh := make(chan int, 1)
+		defer close(frontendSLORollingPeriodCh)
+		frontendSLO.Slo.RollingPeriodDays.ApplyT(func(days *int) error {
+			if days != nil {
+				frontendSLORollingPeriodCh <- *days
+			} else {
+				frontendSLORollingPeriodCh <- 0
+			}
+			return nil
+		})
+		frontendSLORollingPeriod := <-frontendSLORollingPeriodCh
+		assert.Equal(t, 30, frontendSLORollingPeriod, "Frontend SLO rolling period should be 30 days")
+
+		// Assert frontend alert policy is not configured (no alert channel ID provided)
+		assert.Nil(t, frontendSLO.AlertPolicy, "Frontend alert policy should be nil when no alert channel ID is provided")
 
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))

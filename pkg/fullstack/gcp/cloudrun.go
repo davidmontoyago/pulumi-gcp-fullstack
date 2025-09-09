@@ -189,6 +189,14 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 		return nil, nil, fmt.Errorf("failed to grant project level IAM roles to backend Cloud Run service: %w", err)
 	}
 
+	if args.ColdStartSLO != nil {
+		backendSLO, err := f.setupColdStartSLO(ctx, backendServiceName, args.ColdStartSLO)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to setup cold start SLO for backend Cloud Run service: %w", err)
+		}
+		f.backendColdStartSLO = backendSLO
+	}
+
 	return backendService, serviceAccount, nil
 }
 
@@ -398,6 +406,14 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create frontend Cloud Run service: %w", err)
+	}
+
+	if args.ColdStartSLO != nil {
+		frontendSLO, err := f.setupColdStartSLO(ctx, frontendServiceName, args.ColdStartSLO)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to setup cold start SLO for backend Cloud Run service: %w", err)
+		}
+		f.frontendColdStartSLO = frontendSLO
 	}
 
 	return frontendService, serviceAccount, nil
