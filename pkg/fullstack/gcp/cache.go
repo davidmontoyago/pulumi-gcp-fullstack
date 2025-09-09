@@ -74,7 +74,7 @@ func (f *FullStack) deployCache(ctx *pulumi.Context, args *CacheInstanceArgs) er
 
 // enableRedisAPI enables the Redis API service
 func (f *FullStack) enableRedisAPI(ctx *pulumi.Context) (*projects.Service, error) {
-	return projects.NewService(ctx, f.newResourceName("cache", "redis-api", 63), &projects.ServiceArgs{
+	return projects.NewService(ctx, f.NewResourceName("cache", "redis-api", 63), &projects.ServiceArgs{
 		Project:                  pulumi.String(f.Project),
 		Service:                  pulumi.String("redis.googleapis.com"),
 		DisableOnDestroy:         pulumi.Bool(false),
@@ -85,7 +85,7 @@ func (f *FullStack) enableRedisAPI(ctx *pulumi.Context) (*projects.Service, erro
 // createVPCAccessConnector creates a Serverless VPC Access connector for Cloud Run to reach private resources
 func (f *FullStack) createVPCAccessConnector(ctx *pulumi.Context, cacheNetwork pulumi.StringOutput, args *CacheInstanceArgs) (*vpcaccess.Connector, error) {
 	// Enable VPC Access API
-	vpcAPI, err := projects.NewService(ctx, f.newResourceName("cache", "vpcaccess-api", 63), &projects.ServiceArgs{
+	vpcAPI, err := projects.NewService(ctx, f.NewResourceName("cache", "vpcaccess-api", 63), &projects.ServiceArgs{
 		Project:                  pulumi.String(f.Project),
 		Service:                  pulumi.String("vpcaccess.googleapis.com"),
 		DisableOnDestroy:         pulumi.Bool(false),
@@ -95,7 +95,7 @@ func (f *FullStack) createVPCAccessConnector(ctx *pulumi.Context, cacheNetwork p
 		return nil, fmt.Errorf("failed to enable VPC access API: %w", err)
 	}
 
-	connectorName := f.newResourceName("cache", "private-connector", 25)
+	connectorName := f.NewResourceName("cache", "private-connector", 25)
 
 	return vpcaccess.NewConnector(ctx, connectorName, &vpcaccess.ConnectorArgs{
 		Name:    pulumi.String(connectorName),
@@ -121,8 +121,8 @@ func (f *FullStack) createCacheFirewallRule(ctx *pulumi.Context, connector *vpca
 	instancePort pulumi.IntOutput,
 	cacheNetwork pulumi.StringOutput) (*compute.Firewall, error) {
 
-	firewall, err := compute.NewFirewall(ctx, f.newResourceName("cache", "firewall", 63), &compute.FirewallArgs{
-		Name:    pulumi.String(f.newResourceName("cache", "allow-cloudrun-to-redis", 63)),
+	firewall, err := compute.NewFirewall(ctx, f.NewResourceName("cache", "firewall", 63), &compute.FirewallArgs{
+		Name:    pulumi.String(f.NewResourceName("cache", "allow-cloudrun-to-redis", 63)),
 		Project: pulumi.String(f.Project),
 		Network: cacheNetwork.ApplyT(func(network string) pulumi.StringInput {
 			return pulumi.String(network)
@@ -164,8 +164,8 @@ func (f *FullStack) createRedisInstance(ctx *pulumi.Context, config *CacheInstan
 	// Set defaults if not provided
 	applyCacheConfigDefaults(config)
 
-	return redis.NewInstance(ctx, f.newResourceName("cache", "instance", 63), &redis.InstanceArgs{
-		Name:                  pulumi.String(f.newResourceName("cache", "instance", 63)),
+	return redis.NewInstance(ctx, f.NewResourceName("cache", "instance", 63), &redis.InstanceArgs{
+		Name:                  pulumi.String(f.NewResourceName("cache", "instance", 63)),
 		Project:               pulumi.String(f.Project),
 		Region:                pulumi.String(f.Region),
 		Tier:                  pulumi.String(config.Tier),
@@ -181,7 +181,7 @@ func (f *FullStack) createRedisInstance(ctx *pulumi.Context, config *CacheInstan
 // secureCacheCredentials stores Redis connection details in Secret Manager
 func (f *FullStack) secureCacheCredentials(ctx *pulumi.Context, instance *redis.Instance) (*secretmanager.SecretVersion, error) {
 	// Enable Secret Manager API
-	secretManagerAPI, err := projects.NewService(ctx, f.newResourceName("cache", "secretmanager-api", 63), &projects.ServiceArgs{
+	secretManagerAPI, err := projects.NewService(ctx, f.NewResourceName("cache", "secretmanager-api", 63), &projects.ServiceArgs{
 		Project: pulumi.String(f.Project),
 		Service: pulumi.String("secretmanager.googleapis.com"),
 	}, pulumi.Parent(f))
@@ -190,7 +190,7 @@ func (f *FullStack) secureCacheCredentials(ctx *pulumi.Context, instance *redis.
 	}
 
 	// Create secret to store Redis credentials
-	secretID := f.newResourceName("cache", "creds", 100)
+	secretID := f.NewResourceName("cache", "creds", 100)
 	secret, err := secretmanager.NewSecret(ctx, secretID, &secretmanager.SecretArgs{
 		Project: pulumi.String(f.Project),
 		Replication: &secretmanager.SecretReplicationArgs{
@@ -211,7 +211,7 @@ func (f *FullStack) secureCacheCredentials(ctx *pulumi.Context, instance *redis.
 	dotenvData := createDotEnvSecretData(instance)
 
 	// Create secret version with Redis credentials marked as sensitive
-	return secretmanager.NewSecretVersion(ctx, f.newResourceName("cache", "credentials-version", 63), &secretmanager.SecretVersionArgs{
+	return secretmanager.NewSecretVersion(ctx, f.NewResourceName("cache", "credentials-version", 63), &secretmanager.SecretVersionArgs{
 		Secret: secret.ID(),
 		SecretData: pulumi.ToSecret(dotenvData).(pulumi.StringOutput).ApplyT(func(s string) *string {
 			return &s

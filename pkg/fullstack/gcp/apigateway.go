@@ -44,7 +44,7 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 		return nil, fmt.Errorf("failed to create API Gateway IAM: %w", err)
 	}
 
-	apiID := f.newResourceName(args.Name, "api", 50)
+	apiID := f.NewResourceName(args.Name, "api", 50)
 	displayName := fmt.Sprintf("Gateway API (apiID: %s)", apiID)
 	gatewayLabels := mergeLabels(f.Labels, pulumi.StringMap{
 		"gateway": pulumi.String("true"),
@@ -72,7 +72,7 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 		region = args.Regions[0]
 	}
 
-	gatewayID := f.newResourceName(args.Name, "", 50)
+	gatewayID := f.NewResourceName(args.Name, "", 50)
 	gatewayDisplayName := fmt.Sprintf("Gateway (gatewayID: %s)", gatewayID)
 
 	gateway, err := apigateway.NewGateway(ctx, gatewayID, &apigateway.GatewayArgs{
@@ -99,7 +99,7 @@ func (f *FullStack) deployAPIGateway(ctx *pulumi.Context, args *APIGatewayArgs) 
 // route traffic to both backend and frontend Cloud Run services.
 func (f *FullStack) createAPIGatewayIAM(ctx *pulumi.Context, gatewayName string) (*serviceaccount.Account, error) {
 	// Create dedicated service account for API Gateway
-	apiGatewayAccountName := f.newResourceName(gatewayName, "account", 28)
+	apiGatewayAccountName := f.NewResourceName(gatewayName, "account", 28)
 	serviceAccount, err := serviceaccount.NewAccount(ctx, apiGatewayAccountName, &serviceaccount.AccountArgs{
 		AccountId:   pulumi.String(apiGatewayAccountName),
 		DisplayName: pulumi.String(fmt.Sprintf("API Gateway service account (%s)", gatewayName)),
@@ -127,7 +127,7 @@ func (f *FullStack) createAPIGatewayIAM(ctx *pulumi.Context, gatewayName string)
 // properly route traffic to the Cloud Run services.
 func (f *FullStack) grantAPIGatewayInvokerPermissions(ctx *pulumi.Context, apiGatewayServiceAccountEmail pulumi.StringOutput, gatewayName string) error {
 	// Grant API Gateway permission to invoke backend service
-	backendInvokerName := f.newResourceName(gatewayName, "backend-invoker", 100)
+	backendInvokerName := f.NewResourceName(gatewayName, "backend-invoker", 100)
 	backendIamMember, err := cloudrunv2.NewServiceIamMember(ctx, backendInvokerName, &cloudrunv2.ServiceIamMemberArgs{
 		Name:     f.backendService.Name,
 		Project:  pulumi.String(f.Project),
@@ -141,7 +141,7 @@ func (f *FullStack) grantAPIGatewayInvokerPermissions(ctx *pulumi.Context, apiGa
 	f.backendGatewayIamMember = backendIamMember
 
 	// Grant API Gateway permission to invoke frontend service
-	frontendInvokerName := f.newResourceName(gatewayName, "frontend-invoker", 100)
+	frontendInvokerName := f.NewResourceName(gatewayName, "frontend-invoker", 100)
 	frontendIamMember, err := cloudrunv2.NewServiceIamMember(ctx, frontendInvokerName, &cloudrunv2.ServiceIamMemberArgs{
 		Name:     f.frontendService.Name,
 		Project:  pulumi.String(f.Project),

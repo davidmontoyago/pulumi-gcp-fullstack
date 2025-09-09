@@ -2155,7 +2155,7 @@ func TestNewFullStack_WithCache(t *testing.T) {
 
 		// Assert VPC connector is set correctly
 		require.NotNil(t, vpcAccess.Connector, "VPC connector should be configured")
-		assert.Contains(t, *vpcAccess.Connector, "test-full-c-private-conne", "VPC connector should be configured for cache access")
+		assert.Contains(t, *vpcAccess.Connector, "t-cache-private-connector", "VPC connector should be configured for cache access")
 
 		// Assert egress is set to private ranges only
 		require.NotNil(t, vpcAccess.Egress, "VPC egress should be configured")
@@ -2345,7 +2345,7 @@ func TestNewFullStack_WithBucket(t *testing.T) {
 		})
 
 		assert.Equal(t, "roles/storage.objectAdmin", <-roleCh, "Backend project IAM role should match the requested role")
-		assert.Equal(t, "serviceAccount:test-fullstac-backen-account@test-project.iam.gserviceaccount.com", <-memberCh, "Backend project IAM member should be the backend service account")
+		assert.Equal(t, "serviceAccount:test-fullsta-backend-account@test-project.iam.gserviceaccount.com", <-memberCh, "Backend project IAM member should be the backend service account")
 		assert.Equal(t, testProjectName, <-projectCh, "Backend project IAM member project should match")
 
 		return nil

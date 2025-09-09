@@ -42,7 +42,7 @@ func (f *FullStack) deployBucket(ctx *pulumi.Context, args *BucketInstanceArgs) 
 
 // enableStorageAPI enables the Cloud Storage API service
 func (f *FullStack) enableStorageAPI(ctx *pulumi.Context) (*projects.Service, error) {
-	return projects.NewService(ctx, f.newResourceName("bucket", "storage-api", 63), &projects.ServiceArgs{
+	return projects.NewService(ctx, f.NewResourceName("bucket", "storage-api", 63), &projects.ServiceArgs{
 		Project:                  pulumi.String(f.Project),
 		Service:                  pulumi.String("storage.googleapis.com"),
 		DisableOnDestroy:         pulumi.Bool(false),
@@ -55,7 +55,7 @@ func (f *FullStack) createStorageBucket(ctx *pulumi.Context, config *BucketInsta
 	// Set defaults if not provided
 	applyBucketConfigDefaults(config)
 
-	bucketName := f.newResourceName("bucket", "storage", 63)
+	bucketName := f.NewResourceName("bucket", "storage", 63)
 
 	return storage.NewBucket(ctx, bucketName, &storage.BucketArgs{
 		Name:         pulumi.String(bucketName),

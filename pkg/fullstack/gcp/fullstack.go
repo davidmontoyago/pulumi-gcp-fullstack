@@ -21,6 +21,7 @@ import (
 // FullStack represents a complete fullstack application infrastructure on Google Cloud Platform.
 type FullStack struct {
 	pulumi.ResourceState
+	Namer
 
 	Project       string
 	Region        string
@@ -31,7 +32,6 @@ type FullStack struct {
 	Labels        map[string]string
 	AppBaseURL    string
 
-	name                string
 	gatewayEnabled      bool
 	loadBalancerEnabled bool
 
@@ -114,7 +114,8 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 		Labels:        args.Labels,
 		AppBaseURL:    appBaseURL,
 
-		name:                name,
+		Namer: *NewNamer(name),
+
 		gatewayEnabled:      gatewayEnabled,
 		loadBalancerEnabled: loadBalancerEnabled,
 	}

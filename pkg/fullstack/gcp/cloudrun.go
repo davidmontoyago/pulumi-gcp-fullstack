@@ -114,7 +114,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 		"backend": pulumi.String("true"),
 	})
 
-	accountName := f.newResourceName(backendName, "account", 28)
+	accountName := f.NewResourceName(backendName, "account", 28)
 	serviceAccount, err := serviceaccount.NewAccount(ctx, accountName, &serviceaccount.AccountArgs{
 		AccountId:   pulumi.String(accountName),
 		DisplayName: pulumi.String(fmt.Sprintf("Backend service account (%s)", backendName)),
@@ -142,7 +142,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 		return nil, nil, fmt.Errorf("failed to setup instance secrets: %w", err)
 	}
 
-	backendServiceName := f.newResourceName(backendName, "service", 100)
+	backendServiceName := f.NewResourceName(backendName, "service", 100)
 	serviceTemplate := &cloudrunv2.ServiceTemplateArgs{
 		Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
 			MaxInstanceCount: pulumi.Int(args.MaxInstanceCount),
@@ -233,7 +233,7 @@ func (f *FullStack) mountSecrets(ctx *pulumi.Context,
 		})
 
 		// Create IAM binding for the secret (similar to secretmanager.go)
-		secretAccessorName := f.newResourceName(backendName, fmt.Sprintf("%s-secret-accessor", secret.Name), 100)
+		secretAccessorName := f.NewResourceName(backendName, fmt.Sprintf("%s-secret-accessor", secret.Name), 100)
 		_, err := secretmanager.NewSecretIamMember(ctx, secretAccessorName, &secretmanager.SecretIamMemberArgs{
 			Project:  pulumi.String(f.Project),
 			SecretId: secret.SecretID,
@@ -356,7 +356,7 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 	region := f.Region
 
 	serviceName := f.FrontendName
-	accountName := f.newResourceName(serviceName, "account", 28)
+	accountName := f.NewResourceName(serviceName, "account", 28)
 	serviceAccount, err := serviceaccount.NewAccount(ctx, accountName, &serviceaccount.AccountArgs{
 		AccountId:   pulumi.String(accountName),
 		DisplayName: pulumi.String(fmt.Sprintf("Frontend service account (%s)", serviceName)),
@@ -371,7 +371,7 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 		return nil, nil, fmt.Errorf("failed to setup instance secrets: %w", err)
 	}
 
-	frontendServiceName := f.newResourceName(serviceName, "service", 100)
+	frontendServiceName := f.NewResourceName(serviceName, "service", 100)
 
 	frontendServiceTemplate := &cloudrunv2.ServiceTemplateArgs{
 		Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
@@ -539,7 +539,7 @@ func (f *FullStack) createInstanceDomainMapping(
 	domainURL string,
 	targetInstanceName pulumi.StringOutput,
 ) (*cloudrun.DomainMapping, error) {
-	domainMappingName := f.newResourceName(serviceName, "domain-mapping", 100)
+	domainMappingName := f.NewResourceName(serviceName, "domain-mapping", 100)
 	domainMapping, err := cloudrun.NewDomainMapping(ctx, domainMappingName, &cloudrun.DomainMappingArgs{
 		Location: pulumi.String(f.Region),
 		Name:     pulumi.String(domainURL),
