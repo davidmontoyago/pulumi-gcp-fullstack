@@ -108,11 +108,9 @@ func (f *FullStack) setupSLOAlertPolicy(ctx *pulumi.Context, cloudRunServiceName
 						}, " AND "), name)
 					}).(pulumi.StringOutput),
 
-					Comparison: pulumi.String("COMPARISON_GT"),
-
-					ThresholdValue: pulumi.Float64(0.1), // Alert if burn rate > 10%
-
-					Duration: pulumi.String("300s"), // 5 minutes
+					Comparison:     pulumi.String("COMPARISON_GT"),
+					ThresholdValue: args.AlertBurnRateThreshold,
+					Duration:       args.AlertThresholdDuration,
 
 					Aggregations: monitoring.AlertPolicyConditionConditionThresholdAggregationArray{
 						&monitoring.AlertPolicyConditionConditionThresholdAggregationArgs{

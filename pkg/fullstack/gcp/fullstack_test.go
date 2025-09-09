@@ -2155,7 +2155,7 @@ func TestNewFullStack_WithCache(t *testing.T) {
 
 		// Assert VPC connector is set correctly
 		require.NotNil(t, vpcAccess.Connector, "VPC connector should be configured")
-		assert.Contains(t, *vpcAccess.Connector, "t-cache-private-connector", "VPC connector should be configured for cache access")
+		assert.Contains(t, *vpcAccess.Connector, "test-cache-vpc-connector", "VPC connector should be configured for cache access")
 
 		// Assert egress is set to private ranges only
 		require.NotNil(t, vpcAccess.Egress, "VPC egress should be configured")
@@ -2667,6 +2667,134 @@ func TestNewFullStack_WithColdStartSLOs(t *testing.T) {
 
 		// Assert frontend alert policy is not configured (no alert channel ID provided)
 		assert.Nil(t, frontendSLO.AlertPolicy, "Frontend alert policy should be nil when no alert channel ID is provided")
+
+		return nil
+	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
+
+	if err != nil {
+		t.Fatalf("Pulumi WithMocks failed: %v", err)
+	}
+}
+
+func TestNewFullStack_WithColdStartSLOAlertPolicy(t *testing.T) {
+	t.Parallel()
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		testAlertChannelID := "test-alert-channel-custom-456"
+
+		args := &gcp.FullStackArgs{
+			Project:       testProjectName,
+			Region:        testRegion,
+			BackendName:   backendServiceName,
+			BackendImage:  pulumi.String("gcr.io/test-project/backend:latest"),
+			FrontendName:  frontendServiceName,
+			FrontendImage: pulumi.String("gcr.io/test-project/frontend:latest"),
+			Backend: &gcp.BackendArgs{
+				InstanceArgs: &gcp.InstanceArgs{
+					ColdStartSLO: &gcp.ColdStartSLOArgs{
+						Goal:                   pulumi.Float64(0.97), // 97% instead of default 99%
+						MaxBootTimeMs:          pulumi.Float64(3000), // 3 seconds instead of default 1 second
+						RollingPeriodDays:      pulumi.Int(21),       // 21 days instead of default 7 days
+						AlertChannelID:         testAlertChannelID,
+						AlertBurnRateThreshold: pulumi.Float64(0.2),    // 20% instead of default 10%
+						AlertThresholdDuration: pulumi.String("3600s"), // 1 hour instead of default 1 day
+					},
+				},
+			},
+			Frontend: &gcp.FrontendArgs{
+				InstanceArgs: &gcp.InstanceArgs{},
+			},
+			Network: &gcp.NetworkArgs{
+				DomainURL: "myapp.example.com",
+			},
+		}
+
+		fullstack, err := gcp.NewFullStack(ctx, "test-fullstack", args)
+		require.NoError(t, err)
+
+		// Verify basic properties
+		assert.Equal(t, testProjectName, fullstack.Project)
+		assert.Equal(t, testRegion, fullstack.Region)
+		assert.Equal(t, backendServiceName, fullstack.BackendName)
+		assert.Equal(t, frontendServiceName, fullstack.FrontendName)
+
+		// Verify backend Cold Start SLO configuration
+		backendSLO := fullstack.GetBackendColdStartSLO()
+		require.NotNil(t, backendSLO, "Backend Cold Start SLO should not be nil")
+
+		// Assert backend SLO is configured with custom values
+		require.NotNil(t, backendSLO.Slo, "Backend SLO should not be nil")
+
+		backendSLOGoalCh := make(chan float64, 1)
+		defer close(backendSLOGoalCh)
+		backendSLO.Slo.Goal.ApplyT(func(goal float64) error {
+			backendSLOGoalCh <- goal
+
+			return nil
+		})
+		backendSLOGoal := <-backendSLOGoalCh
+		assert.Equal(t, 0.97, backendSLOGoal, "Backend SLO goal should be 97%")
+
+		backendSLORollingPeriodCh := make(chan int, 1)
+		defer close(backendSLORollingPeriodCh)
+		backendSLO.Slo.RollingPeriodDays.ApplyT(func(days *int) error {
+			if days != nil {
+				backendSLORollingPeriodCh <- *days
+			} else {
+				backendSLORollingPeriodCh <- 0
+			}
+
+			return nil
+		})
+		backendSLORollingPeriod := <-backendSLORollingPeriodCh
+		assert.Equal(t, 21, backendSLORollingPeriod, "Backend SLO rolling period should be 21 days")
+
+		// Assert backend alert policy is configured with custom values
+		require.NotNil(t, backendSLO.AlertPolicy, "Backend alert policy should not be nil")
+
+		// Verify alert notification channels
+		backendAlertNotificationChannelsCh := make(chan []string, 1)
+		defer close(backendAlertNotificationChannelsCh)
+		backendSLO.AlertPolicy.NotificationChannels.ApplyT(func(channels []string) error {
+			backendAlertNotificationChannelsCh <- channels
+
+			return nil
+		})
+		backendAlertChannels := <-backendAlertNotificationChannelsCh
+		require.Len(t, backendAlertChannels, 1, "Backend alert policy should have exactly one notification channel")
+		expectedAlertChannel := fmt.Sprintf("projects/test-project/notificationChannels/%s", testAlertChannelID)
+		assert.Contains(t, backendAlertChannels[0], expectedAlertChannel, "Backend alert notification channel should match expected pattern")
+
+		// Verify alert policy conditions with custom burn rate threshold and duration
+		backendAlertConditionsCh := make(chan []monitoring.AlertPolicyCondition, 1)
+		defer close(backendAlertConditionsCh)
+		backendSLO.AlertPolicy.Conditions.ApplyT(func(conditions []monitoring.AlertPolicyCondition) error {
+			backendAlertConditionsCh <- conditions
+
+			return nil
+		})
+		backendAlertConditions := <-backendAlertConditionsCh
+		require.Len(t, backendAlertConditions, 1, "Backend alert policy should have exactly one condition")
+
+		// Verify condition configuration
+		condition := backendAlertConditions[0]
+
+		// Verify condition threshold value (burn rate threshold)
+		require.NotNil(t, condition.ConditionThreshold, "Alert condition should have threshold configuration")
+		require.NotNil(t, condition.ConditionThreshold.ThresholdValue, "Alert condition threshold value should not be nil")
+		assert.Equal(t, 0.2, *condition.ConditionThreshold.ThresholdValue, "Alert threshold value should be 0.2 (20%)")
+
+		// Verify condition duration (alert threshold duration)
+		require.NotEmpty(t, condition.ConditionThreshold.Duration, "Alert condition duration should not be empty")
+		assert.Equal(t, "3600s", condition.ConditionThreshold.Duration, "Alert threshold duration should be 3600s (1 hour)")
+
+		// Verify condition comparison and aggregation
+		assert.Equal(t, "COMPARISON_GT", condition.ConditionThreshold.Comparison, "Alert condition should use greater than comparison")
+		require.NotNil(t, condition.ConditionThreshold.Aggregations, "Alert condition should have aggregations")
+		assert.Len(t, condition.ConditionThreshold.Aggregations, 1, "Alert condition should have exactly one aggregation")
+
+		aggregation := condition.ConditionThreshold.Aggregations[0]
+		assert.Equal(t, "300s", *aggregation.AlignmentPeriod, "Alert aggregation should use ALIGN_RATE")
 
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))

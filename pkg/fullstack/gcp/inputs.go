@@ -205,4 +205,9 @@ type ColdStartSLOArgs struct {
 	RollingPeriodDays pulumi.IntInput
 	// Where to send the alert. Alerting is disabled if not set.
 	AlertChannelID string
+	// Alert burn rate threshold. Defaults to 0.1, that is alert if burn rate is > 10%.
+	AlertBurnRateThreshold pulumi.Float64Input
+	// Amount of time that a time series must be in violation to trigger an alert.
+	// Defaults to 86400s, that is 1 day.
+	AlertThresholdDuration pulumi.StringInput
 }
