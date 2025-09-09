@@ -21,7 +21,7 @@ func (f *FullStack) setupColdStartSLO(ctx *pulumi.Context, cloudRunServiceName s
 	// Create a microservice to associate with the SLO
 	// See:
 	// https://cloud.google.com/stackdriver/docs/solutions/slo-monitoring/ui/define-svc
-	customServiceName := f.newResourceName(cloudRunServiceName, "monitoring-service", 100)
+	customServiceName := f.NewResourceName(cloudRunServiceName, "monitoring-service", 100)
 	monitoringService, err := monitoring.NewGenericService(ctx, customServiceName, &monitoring.GenericServiceArgs{
 		Project:     pulumi.String(f.Project),
 		DisplayName: pulumi.String("Cloud Run Cold Start SLO monitored service"),
@@ -39,7 +39,7 @@ func (f *FullStack) setupColdStartSLO(ctx *pulumi.Context, cloudRunServiceName s
 	}
 
 	// Create the SLO using Cloud Run's built-in container/startup_latencies metric
-	sloName := f.newResourceName(cloudRunServiceName, "startup-latency-slo", 100)
+	sloName := f.NewResourceName(cloudRunServiceName, "startup-latency-slo", 100)
 	slo, err := monitoring.NewSlo(ctx, sloName, &monitoring.SloArgs{
 		Project:     pulumi.String(f.Project),
 		DisplayName: pulumi.String("Cloud Run Container Startup Latency SLO"),
@@ -90,7 +90,7 @@ func (f *FullStack) setupColdStartSLO(ctx *pulumi.Context, cloudRunServiceName s
 }
 
 func (f *FullStack) setupSLOAlertPolicy(ctx *pulumi.Context, cloudRunServiceName string, slo *monitoring.Slo, args *ColdStartSLOArgs) (*monitoring.AlertPolicy, error) {
-	alertPolicyName := f.newResourceName(cloudRunServiceName, "startup-latency-slo-alert", 100)
+	alertPolicyName := f.NewResourceName(cloudRunServiceName, "startup-latency-slo-alert", 100)
 	alertPolicy, err := monitoring.NewAlertPolicy(ctx, alertPolicyName, &monitoring.AlertPolicyArgs{
 		Project:     pulumi.String(f.Project),
 		DisplayName: pulumi.String("Cloud Run Cold Start SLO Alert"),

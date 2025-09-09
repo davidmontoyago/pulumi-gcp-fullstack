@@ -15,7 +15,7 @@ func (f *FullStack) newEnvConfigSecret(ctx *pulumi.Context,
 	labels pulumi.StringMap,
 ) (*secretmanager.Secret, error) {
 
-	secretID := f.newResourceName(serviceName, "config-secret", 100)
+	secretID := f.NewResourceName(serviceName, "config-secret", 100)
 
 	configSecret, err := secretmanager.NewSecret(ctx, secretID, &secretmanager.SecretArgs{
 		Labels: labels,
@@ -31,7 +31,7 @@ func (f *FullStack) newEnvConfigSecret(ctx *pulumi.Context,
 	}
 
 	// allow the instance GSA to access the secret
-	secretAccessorName := f.newResourceName(serviceName, "secret-accessor", 100)
+	secretAccessorName := f.NewResourceName(serviceName, "secret-accessor", 100)
 	_, err = secretmanager.NewSecretIamMember(ctx, secretAccessorName, &secretmanager.SecretIamMemberArgs{
 		Project:  pulumi.String(f.Project),
 		SecretId: configSecret.SecretId,

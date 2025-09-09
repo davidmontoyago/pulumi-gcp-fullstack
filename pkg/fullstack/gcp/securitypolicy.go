@@ -32,7 +32,7 @@ func (f *FullStack) newCloudArmorPolicy(ctx *pulumi.Context, policyName string, 
 	// TODO add rate limiting rules
 	// TODO add named IP preconfigured rules
 
-	cloudArmorPolicyName := f.newResourceName(policyName, "cloudarmor", 100)
+	cloudArmorPolicyName := f.NewResourceName(policyName, "cloudarmor", 100)
 	policy, err := compute.NewSecurityPolicy(ctx, cloudArmorPolicyName, &compute.SecurityPolicyArgs{
 		Description: pulumi.String(fmt.Sprintf("Cloud Armor security policy for %s", policyName)),
 		Project:     pulumi.String(f.Project),
