@@ -4,6 +4,7 @@ package gcp
 import (
 	"fmt"
 
+	namer "github.com/davidmontoyago/commodity-namer"
 	apigateway "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/apigateway"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrun"
 	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
@@ -21,7 +22,7 @@ import (
 // FullStack represents a complete fullstack application infrastructure on Google Cloud Platform.
 type FullStack struct {
 	pulumi.ResourceState
-	Namer
+	namer.Namer
 
 	Project       string
 	Region        string
@@ -114,7 +115,7 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 		Labels:        args.Labels,
 		AppBaseURL:    appBaseURL,
 
-		Namer: *NewNamer(name),
+		Namer: namer.New(name),
 
 		gatewayEnabled:      gatewayEnabled,
 		loadBalancerEnabled: loadBalancerEnabled,
@@ -134,7 +135,6 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 	outputs := pulumi.Map{
 		"backendServiceUrl":   pulumi.String(""),
 		"frontendServiceUrl":  pulumi.String(""),
-		"apiGatewayUrl":       pulumi.String(""),
 		"gatewayEnabled":      pulumi.Bool(fullStack.gatewayEnabled),
 		"loadBalancerEnabled": pulumi.Bool(fullStack.loadBalancerEnabled),
 		"appBaseURL":          pulumi.String(fullStack.AppBaseURL),
