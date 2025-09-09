@@ -95,7 +95,7 @@ func (f *FullStack) createVPCAccessConnector(ctx *pulumi.Context, cacheNetwork p
 		return nil, fmt.Errorf("failed to enable VPC access API: %w", err)
 	}
 
-	connectorName := f.NewResourceName("cache", "private-connector", 25)
+	connectorName := f.NewResourceName("cache", "vpc-connector", 25)
 
 	return vpcaccess.NewConnector(ctx, connectorName, &vpcaccess.ConnectorArgs{
 		Name:    pulumi.String(connectorName),
