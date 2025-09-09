@@ -195,6 +195,7 @@ type BucketInstanceArgs struct {
 	ForceDestroy bool
 }
 
+// ColdStartSLOArgs contains configuration for the container startup latency SLO.
 type ColdStartSLOArgs struct {
 	// Goal for the SLO. Defaults to 0.99, that is a 99% success rate.
 	Goal pulumi.Float64Input
