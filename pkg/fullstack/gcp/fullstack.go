@@ -35,10 +35,13 @@ type FullStack struct {
 	gatewayEnabled      bool
 	loadBalancerEnabled bool
 
-	backendService  *cloudrunv2.Service
-	backendAccount  *serviceaccount.Account
-	frontendService *cloudrunv2.Service
-	frontendAccount *serviceaccount.Account
+	backendService      *cloudrunv2.Service
+	backendAccount      *serviceaccount.Account
+	backendColdStartSLO *ColdStartSLO
+
+	frontendService      *cloudrunv2.Service
+	frontendAccount      *serviceaccount.Account
+	frontendColdStartSLO *ColdStartSLO
 
 	// IAM members for API Gateway invoker permissions
 	gatewayServiceAccount    *serviceaccount.Account
@@ -367,4 +370,14 @@ func (f *FullStack) GetBackendDomainMapping() *cloudrun.DomainMapping {
 // TODO: implement frontend domain mapping functionality
 func (f *FullStack) GetFrontendDomainMapping() *cloudrun.DomainMapping {
 	return f.frontendDomainMapping
+}
+
+// GetBackendColdStartSLO returns the backend cold start SLO.
+func (f *FullStack) GetBackendColdStartSLO() *ColdStartSLO {
+	return f.backendColdStartSLO
+}
+
+// GetFrontendColdStartSLO returns the frontend cold start SLO.
+func (f *FullStack) GetFrontendColdStartSLO() *ColdStartSLO {
+	return f.frontendColdStartSLO
 }

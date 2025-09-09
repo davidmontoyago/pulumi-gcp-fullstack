@@ -67,6 +67,9 @@ type InstanceArgs struct {
 	Secrets []*SecretVolumeArgs
 	// Whether to enable startup CPU boost for faster cold starts. Defaults to false.
 	StartupCPUBoost bool
+
+	// Instance boot time SLO. Disabled if nil.
+	ColdStartSLO *ColdStartSLOArgs
 }
 
 // NetworkArgs contains configuration for network infrastructure including load balancers and API Gateway.
@@ -190,4 +193,15 @@ type BucketInstanceArgs struct {
 	RetentionDays int
 	// Whether to force destroy the bucket even if it contains objects. Defaults to false.
 	ForceDestroy bool
+}
+
+type ColdStartSLOArgs struct {
+	// Goal for the SLO. Defaults to 0.99, that is a 99% success rate.
+	Goal pulumi.Float64Input
+	// Max boot time acceptable for the instance in milliseconds. Defaults to 1000ms = 1 second.
+	MaxBootTimeMs pulumi.Float64Input
+	// Rolling period for the SLO in days. Defaults to 7 days.
+	RollingPeriodDays pulumi.IntInput
+	// Where to send the alert. Alerting is disabled if not set.
+	AlertChannelID string
 }
