@@ -213,11 +213,9 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 		// Expected outputs: name, location, status
 	case "gcp:monitoring/slo:Slo":
 		outputs["name"] = args.Name
-		outputs["rollingPeriodDays"] = args.Inputs["rollingPeriodDays"]
 		// Expected outputs: name, service, displayName, goal, rollingPeriodDays
 	case "gcp:monitoring/alertPolicy:AlertPolicy":
 		outputs["name"] = args.Name
-		outputs["notificationChannels"] = args.Inputs["notificationChannels"]
 		// Expected outputs: name, displayName, conditions, combiner, notificationChannels
 	case "gcp:monitoring/genericService:GenericService":
 		outputs["name"] = args.Name
