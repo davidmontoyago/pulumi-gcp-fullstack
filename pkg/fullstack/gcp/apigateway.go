@@ -127,7 +127,7 @@ func (f *FullStack) createAPIGatewayIAM(ctx *pulumi.Context, gatewayName string)
 // properly route traffic to the Cloud Run services.
 func (f *FullStack) grantAPIGatewayInvokerPermissions(ctx *pulumi.Context, apiGatewayServiceAccountEmail pulumi.StringOutput, gatewayName string) error {
 	// Grant API Gateway permission to invoke backend service
-	backendInvokerName := f.NewResourceName(gatewayName, "backend-invoker", 100)
+	backendInvokerName := f.NewResourceName(gatewayName, "backend-invoker", 63)
 	backendIamMember, err := cloudrunv2.NewServiceIamMember(ctx, backendInvokerName, &cloudrunv2.ServiceIamMemberArgs{
 		Name:     f.backendService.Name,
 		Project:  pulumi.String(f.Project),
@@ -141,7 +141,7 @@ func (f *FullStack) grantAPIGatewayInvokerPermissions(ctx *pulumi.Context, apiGa
 	f.backendGatewayIamMember = backendIamMember
 
 	// Grant API Gateway permission to invoke frontend service
-	frontendInvokerName := f.NewResourceName(gatewayName, "frontend-invoker", 100)
+	frontendInvokerName := f.NewResourceName(gatewayName, "frontend-invoker", 63)
 	frontendIamMember, err := cloudrunv2.NewServiceIamMember(ctx, frontendInvokerName, &cloudrunv2.ServiceIamMemberArgs{
 		Name:     f.frontendService.Name,
 		Project:  pulumi.String(f.Project),
