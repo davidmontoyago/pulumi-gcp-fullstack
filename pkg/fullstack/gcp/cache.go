@@ -189,7 +189,7 @@ func (f *FullStack) secureCacheCredentials(ctx *pulumi.Context, instance *redis.
 	}
 
 	// Create secret to store Redis credentials
-	secretID := f.NewResourceName("cache", "creds", 100)
+	secretID := f.NewResourceName("cache", "creds", 63)
 	secret, err := secretmanager.NewSecret(ctx, secretID, &secretmanager.SecretArgs{
 		Project: pulumi.String(f.Project),
 		Replication: &secretmanager.SecretReplicationArgs{
