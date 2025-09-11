@@ -11,12 +11,15 @@ Features:
     - Env config loaded from Secret Manager
     - An optional companion Redis cache with auto-configured AuthN & TLS.
     - An optional companion Bucket with auto-configured IAM.
+    - Optional cold start SLO monitoring and alerting.
 1. A frontend Cloud Run instance.
     - Env config loaded from Secret Manager
+    - Optional cold start SLO monitoring and alerting.
 2. An regional or global HTTPs load balancer ([Classic Application Load Balancer](https://cloud.google.com/load-balancing/docs/https#global-classic-connections)), with an optional gateway before the frontend and backend instances (See: [Load Balancer Recipe](#load-balancer-recipe)).
     - A Google-managed certificate.
     - Optional: default best-practice Cloud Armor policy.
     - Optional: restrict access to an allowlist of IPs.
+    - Optional: disable the load balancer all together and secure with an external WAF like [cloudflare](https://github.com/davidmontoyago/pulumi-cloudflare-free-edge-protection).
 
 ## Install
 
@@ -47,7 +50,9 @@ mystack, err = gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
 mystack, err := gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
     Project:       cfg.GCPProject,
     Region:        cfg.GCPRegion,
+    BackendName:   "backend",
     BackendImage:  pulumi.String(cfg.BackendImage),
+    FrontendName:  "frontend",
     FrontendImage: pulumi.String(cfg.FrontendImage),
     Network: &gcp.NetworkArgs{
         DomainURL:                cfg.DomainURL,
@@ -55,6 +60,7 @@ mystack, err := gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
         ClientIPAllowlist:        cfg.ClientIPAllowlist,
         EnablePrivateTrafficOnly: cfg.EnablePrivateTrafficOnly,
         EnableGlobalEntrypoint:   false,
+        EnableExternalWAF:        false,
         APIGateway: &gcp.APIGatewayArgs{
             // In GCP preview
             Disabled: true,
@@ -79,10 +85,11 @@ mystack, err := gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
     },
     Backend: &gcp.BackendArgs{
         InstanceArgs: &gcp.InstanceArgs{
-            MaxInstanceCount:   3,
-            DeletionProtection: false,
-            ContainerPort:      9001,
-            StartupCPUBoost:    true,
+            MaxInstanceCount:    3,
+            DeletionProtection:  false,
+            ContainerPort:       9001,
+            StartupCPUBoost:     true,
+            EnablePublicIngress: false, // Set to true if EnableExternalWAF is true
             LivenessProbe: &gcp.Probe{
                 Path:                "api/v1/healthz",
                 InitialDelaySeconds: 60,
@@ -97,15 +104,43 @@ mystack, err := gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
                 FailureThreshold:    10,
             },
             EnvVars: map[string]string{
-                "ENV":               "prod",
+                "ENV": "prod",
+            },
+            // Cold start SLO configuration
+            ColdStartSLO: &gcp.ColdStartSLOArgs{
+                Goal:                   pulumi.Float64(0.99),    // 99% success rate
+                MaxBootTimeMs:          pulumi.Float64(1000),    // 1 second max boot time
+                RollingPeriodDays:      pulumi.Int(7),           // 7 day rolling window
+                AlertChannelID:         "projects/my-project/notificationChannels/123",
+                AlertBurnRateThreshold: pulumi.Float64(0.1),     // Alert if burn rate > 10%
+                AlertThresholdDuration: pulumi.String("86400s"), // 1 day threshold
+            },
+            // Secret volume mounts
+            Secrets: []*gcp.SecretVolumeArgs{
+                {
+                    SecretID:   pulumi.String("my-app-secrets"),
+                    Name:       "app-secrets",
+                    Path:       "/etc/secrets",
+                    SecretName: "config.json",
+                    Version:    pulumi.String("latest"),
+                },
             },
         },
         CacheInstance: &gcp.CacheInstanceArgs{
             // Backend creds, certs, host and port will be auto-configured for the backend
-            RedisVersion: "REDIS_7_0",
-            Tier:         "BASIC",
-            MemorySizeGb: 2,
-            IpCidrRange:  "10.9.0.0/28",
+            RedisVersion:             "REDIS_7_0",
+            Tier:                     "BASIC",
+            MemorySizeGb:             2,
+            AuthorizedNetwork:        "default",
+            ConnectorIPCidrRange:     "10.8.0.0/28",
+            ConnectorMinInstances:    2,
+            ConnectorMaxInstances:    3,
+        },
+        BucketInstance: &gcp.BucketInstanceArgs{
+            StorageClass:  "STANDARD",
+            Location:      "US",
+            RetentionDays: 365,
+            ForceDestroy:  false,
         },
         ProjectIAMRoles: []string{
             "roles/pubsub.admin",
@@ -118,7 +153,8 @@ mystack, err := gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
             SecretConfigFilePath: "/app/config/",
             DeletionProtection:   false,
             ContainerPort:        3000,
-            StartupCpuBoost:      true,
+            StartupCPUBoost:      true,
+            EnablePublicIngress:  false, // Set to true if EnableExternalWAF is true
             LivenessProbe: &gcp.Probe{
                 Path:                "api/v1/healthz",
                 InitialDelaySeconds: 60,
@@ -131,6 +167,13 @@ mystack, err := gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
                 PeriodSeconds:       5,
                 TimeoutSeconds:      3,
                 FailureThreshold:    10,
+            },
+            // Cold start SLO configuration for frontend
+            ColdStartSLO: &gcp.ColdStartSLOArgs{
+                Goal:              pulumi.Float64(0.95),    // 95% success rate for frontend
+                MaxBootTimeMs:     pulumi.Float64(2000),    // 2 seconds max boot time
+                RollingPeriodDays: pulumi.Int(7),           // 7 day rolling window
+                AlertChannelID:    "projects/my-project/notificationChannels/123",
             },
         },
     },
