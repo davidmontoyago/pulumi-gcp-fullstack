@@ -380,7 +380,6 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 	}
 
 	frontendServiceName := f.NewResourceName(serviceName, "service", 100)
-
 	frontendServiceTemplate := &cloudrunv2.ServiceTemplateArgs{
 		Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
 			MaxInstanceCount: pulumi.Int(args.MaxInstanceCount),
