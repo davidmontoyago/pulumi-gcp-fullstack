@@ -139,3 +139,23 @@ func (f *FullStack) setupSLOAlertPolicy(ctx *pulumi.Context, cloudRunServiceName
 
 	return alertPolicy, nil
 }
+
+func setColdStartSLODefaults(args *ColdStartSLOArgs) {
+	if args.Goal == nil {
+		args.Goal = pulumi.Float64(0.99)
+	}
+	if args.MaxBootTimeMs == nil {
+		args.MaxBootTimeMs = pulumi.Float64(1000)
+	}
+	if args.RollingPeriodDays == nil {
+		args.RollingPeriodDays = pulumi.Int(7)
+	}
+	if args.AlertChannelID != "" {
+		if args.AlertBurnRateThreshold == nil {
+			args.AlertBurnRateThreshold = pulumi.Float64(0.1)
+		}
+		if args.AlertThresholdDuration == nil {
+			args.AlertThresholdDuration = pulumi.String("86400s")
+		}
+	}
+}
