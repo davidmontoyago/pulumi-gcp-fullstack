@@ -56,6 +56,7 @@ func (f *FullStack) createStorageBucket(ctx *pulumi.Context, config *BucketInsta
 	applyBucketConfigDefaults(config)
 
 	bucketName := f.NewResourceName("bucket", "storage", 63)
+
 	return storage.NewBucket(ctx, bucketName, &storage.BucketArgs{
 		Name:         pulumi.String(bucketName),
 		Project:      pulumi.String(f.Project),

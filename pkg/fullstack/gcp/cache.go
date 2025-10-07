@@ -96,6 +96,7 @@ func (f *FullStack) createVPCAccessConnector(ctx *pulumi.Context, cacheNetwork p
 	}
 
 	connectorName := f.NewResourceName("cache", "vpc-connector", 25)
+
 	return vpcaccess.NewConnector(ctx, connectorName, &vpcaccess.ConnectorArgs{
 		Name:    pulumi.String(connectorName),
 		Project: pulumi.String(f.Project),
