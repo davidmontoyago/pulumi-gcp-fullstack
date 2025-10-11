@@ -47,7 +47,9 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, args *Networ
 		_, err := projects.NewService(ctx, identityPlatformName, &projects.ServiceArgs{
 			Project: pulumi.String(f.Project),
 			Service: pulumi.String("cloudidentity.googleapis.com"),
-		})
+		},
+			pulumi.RetainOnDelete(true),
+		)
 		if err != nil {
 			return fmt.Errorf("failed to enable cloudidentity API: %w", err)
 		}
@@ -56,7 +58,9 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, args *Networ
 		_, err = projects.NewService(ctx, idToolkitName, &projects.ServiceArgs{
 			Project: pulumi.String(f.Project),
 			Service: pulumi.String("identitytoolkit.googleapis.com"),
-		})
+		},
+			pulumi.RetainOnDelete(true),
+		)
 		if err != nil {
 			return fmt.Errorf("failed to enable identitytoolkit API: %w", err)
 		}

@@ -79,7 +79,10 @@ func (f *FullStack) enableRedisAPI(ctx *pulumi.Context) (*projects.Service, erro
 		Service:                  pulumi.String("redis.googleapis.com"),
 		DisableOnDestroy:         pulumi.Bool(false),
 		DisableDependentServices: pulumi.Bool(false),
-	}, pulumi.Parent(f))
+	},
+		pulumi.Parent(f),
+		pulumi.RetainOnDelete(true),
+	)
 }
 
 // createVPCAccessConnector creates a Serverless VPC Access connector for Cloud Run to reach private resources
@@ -90,7 +93,10 @@ func (f *FullStack) createVPCAccessConnector(ctx *pulumi.Context, cacheNetwork p
 		Service:                  pulumi.String("vpcaccess.googleapis.com"),
 		DisableOnDestroy:         pulumi.Bool(false),
 		DisableDependentServices: pulumi.Bool(false),
-	}, pulumi.Parent(f))
+	},
+		pulumi.Parent(f),
+		pulumi.RetainOnDelete(true),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to enable VPC access API: %w", err)
 	}
@@ -184,7 +190,9 @@ func (f *FullStack) secureCacheCredentials(ctx *pulumi.Context, instance *redis.
 	secretManagerAPI, err := projects.NewService(ctx, f.NewResourceName("cache", "secretmanager-api", 63), &projects.ServiceArgs{
 		Project: pulumi.String(f.Project),
 		Service: pulumi.String("secretmanager.googleapis.com"),
-	}, pulumi.Parent(f))
+	}, pulumi.Parent(f),
+		pulumi.RetainOnDelete(true),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to enable Secret Manager API: %w", err)
 	}

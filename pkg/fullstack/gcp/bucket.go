@@ -47,7 +47,10 @@ func (f *FullStack) enableStorageAPI(ctx *pulumi.Context) (*projects.Service, er
 		Service:                  pulumi.String("storage.googleapis.com"),
 		DisableOnDestroy:         pulumi.Bool(false),
 		DisableDependentServices: pulumi.Bool(false),
-	}, pulumi.Parent(f))
+	},
+		pulumi.Parent(f),
+		pulumi.RetainOnDelete(true),
+	)
 }
 
 // createStorageBucket creates a Cloud Storage bucket with security and lifecycle policies
