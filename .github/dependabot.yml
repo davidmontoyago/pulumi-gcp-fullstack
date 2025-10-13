@@ -30,3 +30,5 @@ updates:
     open-pull-requests-limit: 10
     # Rebase strategy
     rebase-strategy: "auto"
+    pull-request-branch-name:
+      separator: "-"
