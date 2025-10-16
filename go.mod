@@ -6,9 +6,9 @@ require (
 	github.com/davidmontoyago/commodity-namer v0.1.1
 	github.com/getkin/kin-openapi v0.132.0
 	github.com/kelseyhightower/envconfig v1.4.0
-	github.com/pulumi/pulumi-gcp/sdk/v8 v8.40.0
-	github.com/pulumi/pulumi/sdk/v3 v3.188.0
-	github.com/stretchr/testify v1.10.0
+	github.com/pulumi/pulumi-gcp/sdk/v8 v8.41.1
+	github.com/pulumi/pulumi/sdk/v3 v3.203.0
+	github.com/stretchr/testify v1.11.1
 )
 
 require (
@@ -77,7 +77,6 @@ require (
 	github.com/pulumi/esc v0.17.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
-	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 // indirect
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
