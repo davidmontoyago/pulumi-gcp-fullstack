@@ -135,27 +135,37 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 	}
 
 	backendServiceName := f.NewResourceName(backendName, "service", 63)
+
+	containers := cloudrunv2.ServiceTemplateContainerArray{
+		&cloudrunv2.ServiceTemplateContainerArgs{
+			Image: f.BackendImage,
+			Envs:  newBackendEnvVars(args, f.AppBaseURL),
+			Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
+				CpuIdle:         pulumi.Bool(true),
+				Limits:          args.ResourceLimits,
+				StartupCpuBoost: pulumi.Bool(args.StartupCPUBoost),
+			},
+			Ports: cloudrunv2.ServiceTemplateContainerPortsArgs{
+				ContainerPort: pulumi.Int(args.ContainerPort),
+			},
+			StartupProbe:  startupProbe(args.ContainerPort, args.StartupProbe),
+			LivenessProbe: livenessProbe(args.ContainerPort, args.LivenessProbe.Path, args.LivenessProbe),
+			VolumeMounts:  volumeMounts,
+		},
+	}
+
+	// Add sidecars if enabled
+	if len(args.Sidecars) > 0 {
+		for _, sidecar := range args.Sidecars {
+			containers = append(containers, newSidecarContainer(sidecar))
+		}
+	}
+
 	serviceTemplate := &cloudrunv2.ServiceTemplateArgs{
 		Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
 			MaxInstanceCount: pulumi.Int(args.MaxInstanceCount),
 		},
-		Containers: cloudrunv2.ServiceTemplateContainerArray{
-			&cloudrunv2.ServiceTemplateContainerArgs{
-				Image: f.BackendImage,
-				Envs:  newBackendEnvVars(args, f.AppBaseURL),
-				Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
-					CpuIdle:         pulumi.Bool(true),
-					Limits:          args.ResourceLimits,
-					StartupCpuBoost: pulumi.Bool(args.StartupCPUBoost),
-				},
-				Ports: cloudrunv2.ServiceTemplateContainerPortsArgs{
-					ContainerPort: pulumi.Int(args.ContainerPort),
-				},
-				StartupProbe:  startupProbe(args.ContainerPort, args.StartupProbe),
-				LivenessProbe: livenessProbe(args.ContainerPort, args.LivenessProbe.Path, args.LivenessProbe),
-				VolumeMounts:  volumeMounts,
-			},
-		},
+		Containers:     containers,
 		ServiceAccount: serviceAccount.Email,
 		Volumes:        volumes,
 	}
@@ -364,29 +374,39 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 	}
 
 	frontendServiceName := f.NewResourceName(serviceName, "service", 63)
+
+	containers := cloudrunv2.ServiceTemplateContainerArray{
+		&cloudrunv2.ServiceTemplateContainerArgs{
+			Image: frontendImage,
+			Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
+
+				CpuIdle:         pulumi.Bool(true),
+				Limits:          args.ResourceLimits,
+				StartupCpuBoost: pulumi.Bool(args.StartupCPUBoost),
+			},
+			Ports: cloudrunv2.ServiceTemplateContainerPortsArgs{
+				ContainerPort: pulumi.Int(args.ContainerPort),
+			},
+
+			Envs:          newFrontendEnvVars(args, backendURL, f.AppBaseURL),
+			StartupProbe:  startupProbe(args.ContainerPort, args.StartupProbe),
+			LivenessProbe: livenessProbe(args.ContainerPort, args.LivenessProbe.Path, args.LivenessProbe),
+			VolumeMounts:  volumeMounts,
+		},
+	}
+
+	// Add sidecars if enabled
+	if len(args.Sidecars) > 0 {
+		for _, sidecar := range args.Sidecars {
+			containers = append(containers, newSidecarContainer(sidecar))
+		}
+	}
+
 	frontendServiceTemplate := &cloudrunv2.ServiceTemplateArgs{
 		Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
 			MaxInstanceCount: pulumi.Int(args.MaxInstanceCount),
 		},
-		Containers: cloudrunv2.ServiceTemplateContainerArray{
-			&cloudrunv2.ServiceTemplateContainerArgs{
-				Image: frontendImage,
-				Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
-					// Stay serverless. Optimize for cold starts.
-					CpuIdle:         pulumi.Bool(true),
-					Limits:          args.ResourceLimits,
-					StartupCpuBoost: pulumi.Bool(args.StartupCPUBoost),
-				},
-				Ports: cloudrunv2.ServiceTemplateContainerPortsArgs{
-					ContainerPort: pulumi.Int(args.ContainerPort),
-				},
-				// TODO get app base url from input
-				Envs:          newFrontendEnvVars(args, backendURL, f.AppBaseURL),
-				StartupProbe:  startupProbe(args.ContainerPort, args.StartupProbe),
-				LivenessProbe: livenessProbe(args.ContainerPort, args.LivenessProbe.Path, args.LivenessProbe),
-				VolumeMounts:  volumeMounts,
-			},
-		},
+		Containers:     containers,
 		ServiceAccount: serviceAccount.Email,
 		Volumes:        volumes,
 	}
@@ -571,4 +591,45 @@ func livenessProbe(port int, path string, probe *Probe) *cloudrunv2.ServiceTempl
 		TimeoutSeconds:      pulumi.Int(probe.TimeoutSeconds),
 		FailureThreshold:    pulumi.Int(probe.FailureThreshold),
 	}
+}
+
+func newSidecarEnvVars(envVars map[string]string) cloudrunv2.ServiceTemplateContainerEnvArray {
+	sidecarEnvVars := cloudrunv2.ServiceTemplateContainerEnvArray{}
+	for envVarName, envVarValue := range envVars {
+		sidecarEnvVars = append(sidecarEnvVars, cloudrunv2.ServiceTemplateContainerEnvArgs{
+			Name:  pulumi.String(envVarName),
+			Value: pulumi.String(envVarValue),
+		})
+	}
+	return sidecarEnvVars
+}
+
+func newSidecarContainer(sidecar *SidecarArgs) *cloudrunv2.ServiceTemplateContainerArgs {
+	container := &cloudrunv2.ServiceTemplateContainerArgs{
+		Name:  pulumi.String(sidecar.Name),
+		Image: pulumi.String(sidecar.Image),
+		Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
+			CpuIdle: pulumi.Bool(true),
+		},
+	}
+
+	if sidecar.ContainerPort > 0 {
+		container.Ports = cloudrunv2.ServiceTemplateContainerPortsArgs{
+			ContainerPort: pulumi.Int(sidecar.ContainerPort),
+		}
+	}
+
+	if len(sidecar.EnvVars) > 0 {
+		container.Envs = newSidecarEnvVars(sidecar.EnvVars)
+	}
+
+	if sidecar.StartupProbe != nil && sidecar.ContainerPort > 0 {
+		container.StartupProbe = startupProbe(sidecar.ContainerPort, sidecar.StartupProbe)
+	}
+
+	if sidecar.LivenessProbe != nil && sidecar.ContainerPort > 0 {
+		container.LivenessProbe = livenessProbe(sidecar.ContainerPort, sidecar.LivenessProbe.Path, sidecar.LivenessProbe)
+	}
+
+	return container
 }

@@ -2801,3 +2801,317 @@ func TestNewFullStack_WithColdStartSLOAlertPolicy(t *testing.T) {
 		t.Fatalf("Pulumi WithMocks failed: %v", err)
 	}
 }
+
+func TestNewFullStack_BackendWithSidecars(t *testing.T) {
+	t.Parallel()
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		args := &gcp.FullStackArgs{
+			Project:       testProjectName,
+			Region:        testRegion,
+			BackendName:   backendServiceName,
+			BackendImage:  pulumi.String("gcr.io/test-project/backend:latest"),
+			FrontendName:  frontendServiceName,
+			FrontendImage: pulumi.String("gcr.io/test-project/frontend:latest"),
+			Backend: &gcp.BackendArgs{
+				InstanceArgs: &gcp.InstanceArgs{
+					ResourceLimits: pulumi.StringMap{
+						"memory": pulumi.String("512Mi"),
+						"cpu":    pulumi.String("500m"),
+					},
+					ContainerPort: 4001,
+					Sidecars: []*gcp.SidecarArgs{
+						{
+							Name:          "proxy",
+							Image:         "gcr.io/test-project/proxy:latest",
+							ContainerPort: 8080,
+							EnvVars: map[string]string{
+								"PROXY_PORT": "8080",
+								"LOG_LEVEL":  "info",
+							},
+							StartupProbe: &gcp.Probe{
+								InitialDelaySeconds: 5,
+								PeriodSeconds:       2,
+								TimeoutSeconds:      1,
+								FailureThreshold:    3,
+							},
+							LivenessProbe: &gcp.Probe{
+								Path:                "health",
+								InitialDelaySeconds: 10,
+								PeriodSeconds:       5,
+								TimeoutSeconds:      3,
+								FailureThreshold:    3,
+							},
+						},
+						{
+							Name:          "mcp-server",
+							Image:         "gcr.io/test-project/mcp-server:latest",
+							ContainerPort: 3001,
+							EnvVars: map[string]string{
+								"MCP_PORT": "3001",
+								"API_KEY":  "test-api-key",
+							},
+							StartupProbe: &gcp.Probe{
+								InitialDelaySeconds: 8,
+								PeriodSeconds:       3,
+								TimeoutSeconds:      2,
+								FailureThreshold:    5,
+							},
+						},
+					},
+				},
+			},
+			Frontend: &gcp.FrontendArgs{
+				InstanceArgs: &gcp.InstanceArgs{},
+			},
+			Network: &gcp.NetworkArgs{
+				DomainURL: "myapp.example.com",
+			},
+		}
+
+		fullstack, err := gcp.NewFullStack(ctx, "test-fullstack", args)
+		require.NoError(t, err)
+
+		// Verify basic properties
+		assert.Equal(t, testProjectName, fullstack.Project)
+		assert.Equal(t, testRegion, fullstack.Region)
+		assert.Equal(t, backendServiceName, fullstack.BackendName)
+		assert.Equal(t, frontendServiceName, fullstack.FrontendName)
+
+		// Verify backend service configuration
+		backendService := fullstack.GetBackendService()
+		require.NotNil(t, backendService, "Backend service should not be nil")
+
+		// Verify backend containers include main container + 2 sidecars (3 total)
+		backendContainersCh := make(chan []cloudrunv2.ServiceTemplateContainer, 1)
+		defer close(backendContainersCh)
+		backendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
+			backendContainersCh <- containers
+			return nil
+		})
+		backendContainers := <-backendContainersCh
+		require.Len(t, backendContainers, 3, "Backend should have 3 containers (1 main + 2 sidecars)")
+
+		// Verify main backend container
+		mainBackendContainer := backendContainers[0]
+		assert.Equal(t, "gcr.io/test-project/backend:latest", mainBackendContainer.Image, "Main backend container image should match")
+		assert.Nil(t, mainBackendContainer.Name, "Main backend container should not have a name (it's the default container)")
+
+		// Find and verify proxy sidecar
+		var proxySidecar *cloudrunv2.ServiceTemplateContainer
+		for i := range backendContainers {
+			if backendContainers[i].Name != nil && *backendContainers[i].Name == "proxy" {
+				proxySidecar = &backendContainers[i]
+				break
+			}
+		}
+		require.NotNil(t, proxySidecar, "Proxy sidecar should be present")
+		assert.Equal(t, "proxy", *proxySidecar.Name, "Proxy sidecar name should match")
+		assert.Equal(t, "gcr.io/test-project/proxy:latest", proxySidecar.Image, "Proxy sidecar image should match")
+		assert.NotNil(t, proxySidecar.Ports, "Proxy sidecar should have ports configured")
+		assert.Equal(t, 8080, *proxySidecar.Ports.ContainerPort, "Proxy sidecar port should be 8080")
+		assert.NotNil(t, proxySidecar.StartupProbe, "Proxy sidecar should have startup probe")
+		assert.NotNil(t, proxySidecar.LivenessProbe, "Proxy sidecar should have liveness probe")
+
+		// Verify proxy sidecar environment variables
+		require.NotNil(t, proxySidecar.Envs, "Proxy sidecar should have environment variables")
+		var proxyPortEnv, proxyLogLevelEnv *cloudrunv2.ServiceTemplateContainerEnv
+		for i := range proxySidecar.Envs {
+			if proxySidecar.Envs[i].Name == "PROXY_PORT" {
+				proxyPortEnv = &proxySidecar.Envs[i]
+			}
+			if proxySidecar.Envs[i].Name == "LOG_LEVEL" {
+				proxyLogLevelEnv = &proxySidecar.Envs[i]
+			}
+		}
+		require.NotNil(t, proxyPortEnv, "Proxy sidecar should have PROXY_PORT environment variable")
+		assert.Equal(t, "8080", *proxyPortEnv.Value, "Proxy sidecar PROXY_PORT should be 8080")
+		require.NotNil(t, proxyLogLevelEnv, "Proxy sidecar should have LOG_LEVEL environment variable")
+		assert.Equal(t, "info", *proxyLogLevelEnv.Value, "Proxy sidecar LOG_LEVEL should be info")
+
+		// Find and verify MCP server sidecar
+		var mcpSidecar *cloudrunv2.ServiceTemplateContainer
+		for i := range backendContainers {
+			if backendContainers[i].Name != nil && *backendContainers[i].Name == "mcp-server" {
+				mcpSidecar = &backendContainers[i]
+				break
+			}
+		}
+		require.NotNil(t, mcpSidecar, "MCP server sidecar should be present")
+		assert.Equal(t, "mcp-server", *mcpSidecar.Name, "MCP server sidecar name should match")
+		assert.Equal(t, "gcr.io/test-project/mcp-server:latest", mcpSidecar.Image, "MCP server sidecar image should match")
+		assert.NotNil(t, mcpSidecar.Ports, "MCP server sidecar should have ports configured")
+		assert.Equal(t, 3001, *mcpSidecar.Ports.ContainerPort, "MCP server sidecar port should be 3001")
+		assert.NotNil(t, mcpSidecar.StartupProbe, "MCP server sidecar should have startup probe")
+		assert.Nil(t, mcpSidecar.LivenessProbe, "MCP server sidecar should not have liveness probe")
+
+		// Verify MCP server sidecar environment variables
+		require.NotNil(t, mcpSidecar.Envs, "MCP server sidecar should have environment variables")
+		var mcpPortEnv, mcpApiKeyEnv *cloudrunv2.ServiceTemplateContainerEnv
+		for i := range mcpSidecar.Envs {
+			if mcpSidecar.Envs[i].Name == "MCP_PORT" {
+				mcpPortEnv = &mcpSidecar.Envs[i]
+			}
+			if mcpSidecar.Envs[i].Name == "API_KEY" {
+				mcpApiKeyEnv = &mcpSidecar.Envs[i]
+			}
+		}
+		require.NotNil(t, mcpPortEnv, "MCP server sidecar should have MCP_PORT environment variable")
+		assert.Equal(t, "3001", *mcpPortEnv.Value, "MCP server sidecar MCP_PORT should be 3001")
+		require.NotNil(t, mcpApiKeyEnv, "MCP server sidecar should have API_KEY environment variable")
+		assert.Equal(t, "test-api-key", *mcpApiKeyEnv.Value, "MCP server sidecar API_KEY should match")
+
+		// Verify frontend service is not affected (should have only 1 container - the main one)
+		frontendService := fullstack.GetFrontendService()
+		require.NotNil(t, frontendService, "Frontend service should not be nil")
+
+		frontendContainersCh := make(chan []cloudrunv2.ServiceTemplateContainer, 1)
+		defer close(frontendContainersCh)
+		frontendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
+			frontendContainersCh <- containers
+			return nil
+		})
+		frontendContainers := <-frontendContainersCh
+		require.Len(t, frontendContainers, 1, "Frontend should have only 1 container (main container, no sidecars)")
+		assert.Equal(t, "gcr.io/test-project/frontend:latest", frontendContainers[0].Image, "Frontend container image should match")
+
+		return nil
+	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
+
+	if err != nil {
+		t.Fatalf("Pulumi WithMocks failed: %v", err)
+	}
+}
+
+func TestNewFullStack_FrontendWithSidecar(t *testing.T) {
+	t.Parallel()
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		args := &gcp.FullStackArgs{
+			Project:       testProjectName,
+			Region:        testRegion,
+			BackendName:   backendServiceName,
+			BackendImage:  pulumi.String("gcr.io/test-project/backend:latest"),
+			FrontendName:  frontendServiceName,
+			FrontendImage: pulumi.String("gcr.io/test-project/frontend:latest"),
+			Backend: &gcp.BackendArgs{
+				InstanceArgs: &gcp.InstanceArgs{},
+			},
+			Frontend: &gcp.FrontendArgs{
+				InstanceArgs: &gcp.InstanceArgs{
+					ResourceLimits: pulumi.StringMap{
+						"memory": pulumi.String("1Gi"),
+						"cpu":    pulumi.String("1000m"),
+					},
+					ContainerPort: 3000,
+					Sidecars: []*gcp.SidecarArgs{
+						{
+							Name:          "analytics",
+							Image:         "gcr.io/test-project/analytics:latest",
+							ContainerPort: 9090,
+							EnvVars: map[string]string{
+								"ANALYTICS_PORT": "9090",
+								"ENVIRONMENT":    "production",
+							},
+							LivenessProbe: &gcp.Probe{
+								Path:                "ready",
+								InitialDelaySeconds: 15,
+								PeriodSeconds:       5,
+								TimeoutSeconds:      3,
+								FailureThreshold:    3,
+							},
+						},
+					},
+				},
+			},
+			Network: &gcp.NetworkArgs{
+				DomainURL: "myapp.example.com",
+			},
+		}
+
+		fullstack, err := gcp.NewFullStack(ctx, "test-fullstack", args)
+		require.NoError(t, err)
+
+		// Verify basic properties
+		assert.Equal(t, testProjectName, fullstack.Project)
+		assert.Equal(t, testRegion, fullstack.Region)
+		assert.Equal(t, backendServiceName, fullstack.BackendName)
+		assert.Equal(t, frontendServiceName, fullstack.FrontendName)
+
+		// Verify frontend service configuration
+		frontendService := fullstack.GetFrontendService()
+		require.NotNil(t, frontendService, "Frontend service should not be nil")
+
+		// Verify frontend containers include main container + 1 sidecar (2 total)
+		frontendContainersCh := make(chan []cloudrunv2.ServiceTemplateContainer, 1)
+		defer close(frontendContainersCh)
+		frontendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
+			frontendContainersCh <- containers
+			return nil
+		})
+		frontendContainers := <-frontendContainersCh
+		require.Len(t, frontendContainers, 2, "Frontend should have 2 containers (1 main + 1 sidecar)")
+
+		// Verify main frontend container
+		mainFrontendContainer := frontendContainers[0]
+		assert.Equal(t, "gcr.io/test-project/frontend:latest", mainFrontendContainer.Image, "Main frontend container image should match")
+		assert.Nil(t, mainFrontendContainer.Name, "Main frontend container should not have a name (it's the default container)")
+
+		// Find and verify analytics sidecar
+		var analyticsSidecar *cloudrunv2.ServiceTemplateContainer
+		for i := range frontendContainers {
+			if frontendContainers[i].Name != nil && *frontendContainers[i].Name == "analytics" {
+				analyticsSidecar = &frontendContainers[i]
+				break
+			}
+		}
+		require.NotNil(t, analyticsSidecar, "Analytics sidecar should be present")
+		assert.Equal(t, "analytics", *analyticsSidecar.Name, "Analytics sidecar name should match")
+		assert.Equal(t, "gcr.io/test-project/analytics:latest", analyticsSidecar.Image, "Analytics sidecar image should match")
+		assert.NotNil(t, analyticsSidecar.Ports, "Analytics sidecar should have ports configured")
+		assert.Equal(t, 9090, *analyticsSidecar.Ports.ContainerPort, "Analytics sidecar port should be 9090")
+		assert.Nil(t, analyticsSidecar.StartupProbe, "Analytics sidecar should not have startup probe")
+		assert.NotNil(t, analyticsSidecar.LivenessProbe, "Analytics sidecar should have liveness probe")
+
+		// Verify analytics sidecar liveness probe configuration
+		assert.NotNil(t, analyticsSidecar.LivenessProbe.HttpGet, "Analytics sidecar liveness probe should have HttpGet")
+		assert.Equal(t, "/ready", *analyticsSidecar.LivenessProbe.HttpGet.Path, "Analytics sidecar liveness probe path should be /ready")
+		assert.Equal(t, 9090, *analyticsSidecar.LivenessProbe.HttpGet.Port, "Analytics sidecar liveness probe port should be 9090")
+
+		// Verify analytics sidecar environment variables
+		require.NotNil(t, analyticsSidecar.Envs, "Analytics sidecar should have environment variables")
+		var analyticsPortEnv, analyticsEnvVar *cloudrunv2.ServiceTemplateContainerEnv
+		for i := range analyticsSidecar.Envs {
+			if analyticsSidecar.Envs[i].Name == "ANALYTICS_PORT" {
+				analyticsPortEnv = &analyticsSidecar.Envs[i]
+			}
+			if analyticsSidecar.Envs[i].Name == "ENVIRONMENT" {
+				analyticsEnvVar = &analyticsSidecar.Envs[i]
+			}
+		}
+		require.NotNil(t, analyticsPortEnv, "Analytics sidecar should have ANALYTICS_PORT environment variable")
+		assert.Equal(t, "9090", *analyticsPortEnv.Value, "Analytics sidecar ANALYTICS_PORT should be 9090")
+		require.NotNil(t, analyticsEnvVar, "Analytics sidecar should have ENVIRONMENT environment variable")
+		assert.Equal(t, "production", *analyticsEnvVar.Value, "Analytics sidecar ENVIRONMENT should be production")
+
+		// Verify backend service is not affected (should have only 1 container - the main one)
+		backendService := fullstack.GetBackendService()
+		require.NotNil(t, backendService, "Backend service should not be nil")
+
+		backendContainersCh := make(chan []cloudrunv2.ServiceTemplateContainer, 1)
+		defer close(backendContainersCh)
+		backendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
+			backendContainersCh <- containers
+			return nil
+		})
+		backendContainers := <-backendContainersCh
+		require.Len(t, backendContainers, 1, "Backend should have only 1 container (main container, no sidecars)")
+		assert.Equal(t, "gcr.io/test-project/backend:latest", backendContainers[0].Image, "Backend container image should match")
+
+		return nil
+	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
+
+	if err != nil {
+		t.Fatalf("Pulumi WithMocks failed: %v", err)
+	}
+}
