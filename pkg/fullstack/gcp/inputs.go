@@ -70,6 +70,20 @@ type InstanceArgs struct {
 
 	// Instance boot time SLO. Disabled if nil.
 	ColdStartSLO *ColdStartSLOArgs
+
+	// Sidecars to deploy with the instance. Defaults to nil.
+	// Sidecars are private to the instance and are not exposed to the public internet.
+	Sidecars []*SidecarArgs
+}
+
+// SidecarArgs contains configuration for a sidecar container to deploy with the instance.
+type SidecarArgs struct {
+	Name          string
+	Image         string
+	ContainerPort int
+	EnvVars       map[string]string
+	StartupProbe  *Probe
+	LivenessProbe *Probe
 }
 
 // NetworkArgs contains configuration for network infrastructure including load balancers and API Gateway.

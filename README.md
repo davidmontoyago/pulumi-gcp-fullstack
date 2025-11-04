@@ -12,10 +12,11 @@ Features:
     - An optional companion Redis cache with auto-configured AuthN & TLS.
     - An optional companion Bucket with auto-configured IAM.
     - Optional cold start SLO monitoring and alerting.
-1. A frontend Cloud Run instance.
+    - Optional sidecars.
+2. A frontend Cloud Run instance.
     - Env config loaded from Secret Manager
     - Optional cold start SLO monitoring and alerting.
-2. An regional or global HTTPs load balancer ([Classic Application Load Balancer](https://cloud.google.com/load-balancing/docs/https#global-classic-connections)), with an optional gateway before the frontend and backend instances (See: [Load Balancer Recipe](#load-balancer-recipe)).
+3. An regional or global HTTPs load balancer ([Classic Application Load Balancer](https://cloud.google.com/load-balancing/docs/https#global-classic-connections)), with an optional gateway before the frontend and backend instances (See: [Load Balancer Recipe](#load-balancer-recipe)).
     - A Google-managed certificate.
     - Optional: default best-practice Cloud Armor policy.
     - Optional: restrict access to an allowlist of IPs.
@@ -123,6 +124,31 @@ mystack, err := gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
                     Path:       "/etc/secrets",
                     SecretName: "config.json",
                     Version:    pulumi.String("latest"),
+                },
+            },
+            // Sidecar containers
+            Sidecars: []*gcp.SidecarArgs{
+                {
+                    Name:          "proxy",
+                    Image:         "gcr.io/my-project/proxy:latest",
+                    ContainerPort: 8080,
+                    EnvVars: map[string]string{
+                        "PROXY_PORT": "8080",
+                        "LOG_LEVEL":  "info",
+                    },
+                    StartupProbe: &gcp.Probe{
+                        InitialDelaySeconds: 5,
+                        PeriodSeconds:       2,
+                        TimeoutSeconds:      1,
+                        FailureThreshold:    3,
+                    },
+                    LivenessProbe: &gcp.Probe{
+                        Path:                "health",
+                        InitialDelaySeconds: 10,
+                        PeriodSeconds:       5,
+                        TimeoutSeconds:      3,
+                        FailureThreshold:    3,
+                    },
                 },
             },
         },
