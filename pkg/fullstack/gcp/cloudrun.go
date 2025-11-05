@@ -611,6 +611,7 @@ func newSidecarContainer(sidecar *SidecarArgs) *cloudrunv2.ServiceTemplateContai
 		Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
 			CpuIdle: pulumi.Bool(true),
 		},
+		Args: setDefaultStringArray(sidecar.Args, []string{}),
 	}
 
 	if sidecar.ContainerPort > 0 {

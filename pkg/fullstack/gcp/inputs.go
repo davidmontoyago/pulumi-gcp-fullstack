@@ -81,6 +81,7 @@ type SidecarArgs struct {
 	Name          string
 	Image         string
 	ContainerPort int
+	Args          []string
 	EnvVars       map[string]string
 	StartupProbe  *Probe
 	LivenessProbe *Probe
