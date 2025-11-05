@@ -134,6 +134,33 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 		return nil, nil, fmt.Errorf("failed to setup instance secrets: %w", err)
 	}
 
+	// Collect all sidecar secrets and mount them
+	var sidecarSecrets []*SecretVolumeArgs
+	for _, sidecar := range args.Sidecars {
+		if len(sidecar.Secrets) > 0 {
+			sidecarSecrets = append(sidecarSecrets, sidecar.Secrets...)
+		}
+	}
+
+	// Mount sidecar secrets if any
+	var sidecarVolumes *cloudrunv2.ServiceTemplateVolumeArray
+	sidecarMountMap := make(map[string]cloudrunv2.ServiceTemplateContainerVolumeMountInput)
+	if len(sidecarSecrets) > 0 {
+		sidecarVols, sidecarMounts, err := f.mountSecrets(ctx, sidecarSecrets, backendName, serviceAccount.Email)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to mount sidecar secrets: %w", err)
+		}
+		sidecarVolumes = sidecarVols
+		// Create a map of secret name to volume mount for easy lookup
+		for i, secret := range sidecarSecrets {
+			sidecarMountMap[secret.Name] = (*sidecarMounts)[i]
+		}
+		// Add sidecar volumes to main volumes
+		if sidecarVolumes != nil {
+			*volumes = append(*volumes, *sidecarVolumes...)
+		}
+	}
+
 	backendServiceName := f.NewResourceName(backendName, "service", 63)
 
 	containers := cloudrunv2.ServiceTemplateContainerArray{
@@ -157,7 +184,18 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 	// Add sidecars if enabled
 	if len(args.Sidecars) > 0 {
 		for _, sidecar := range args.Sidecars {
-			containers = append(containers, newSidecarContainer(sidecar))
+			// Get volume mounts for this sidecar's secrets
+			var sidecarVolumeMounts *cloudrunv2.ServiceTemplateContainerVolumeMountArray
+			if len(sidecar.Secrets) > 0 {
+				sidecarVolumeMounts = &cloudrunv2.ServiceTemplateContainerVolumeMountArray{}
+				for _, secret := range sidecar.Secrets {
+					// Find the volume mount for this secret
+					if mount, exists := sidecarMountMap[secret.Name]; exists {
+						*sidecarVolumeMounts = append(*sidecarVolumeMounts, mount)
+					}
+				}
+			}
+			containers = append(containers, newSidecarContainer(sidecar, sidecarVolumeMounts))
 		}
 	}
 
@@ -216,7 +254,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 
 func (f *FullStack) mountSecrets(ctx *pulumi.Context,
 	secrets []*SecretVolumeArgs,
-	backendName string,
+	serviceName string,
 	serviceAccountEmail pulumi.StringOutput,
 ) (*cloudrunv2.ServiceTemplateVolumeArray, *cloudrunv2.ServiceTemplateContainerVolumeMountArray, error) {
 
@@ -235,7 +273,7 @@ func (f *FullStack) mountSecrets(ctx *pulumi.Context,
 		})
 
 		// Create IAM binding for the secret (similar to secretmanager.go)
-		secretAccessorName := f.NewResourceName(backendName, fmt.Sprintf("%s-secret-accessor", secret.Name), 63)
+		secretAccessorName := f.NewResourceName(serviceName, fmt.Sprintf("%s-secret-accessor", secret.Name), 63)
 		_, err := secretmanager.NewSecretIamMember(ctx, secretAccessorName, &secretmanager.SecretIamMemberArgs{
 			Project:  pulumi.String(f.Project),
 			SecretId: secret.SecretID,
@@ -373,6 +411,33 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 		return nil, nil, fmt.Errorf("failed to setup instance secrets: %w", err)
 	}
 
+	// Collect all sidecar secrets and mount them
+	var sidecarSecrets []*SecretVolumeArgs
+	for _, sidecar := range args.Sidecars {
+		if len(sidecar.Secrets) > 0 {
+			sidecarSecrets = append(sidecarSecrets, sidecar.Secrets...)
+		}
+	}
+
+	// Mount sidecar secrets if any
+	var sidecarVolumes *cloudrunv2.ServiceTemplateVolumeArray
+	sidecarMountMap := make(map[string]cloudrunv2.ServiceTemplateContainerVolumeMountInput)
+	if len(sidecarSecrets) > 0 {
+		sidecarVols, sidecarMounts, err := f.mountSecrets(ctx, sidecarSecrets, serviceName, serviceAccount.Email)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to mount sidecar secrets: %w", err)
+		}
+		sidecarVolumes = sidecarVols
+		// Create a map of secret name to volume mount for easy lookup
+		for i, secret := range sidecarSecrets {
+			sidecarMountMap[secret.Name] = (*sidecarMounts)[i]
+		}
+		// Add sidecar volumes to main volumes
+		if sidecarVolumes != nil {
+			*volumes = append(*volumes, *sidecarVolumes...)
+		}
+	}
+
 	frontendServiceName := f.NewResourceName(serviceName, "service", 63)
 
 	containers := cloudrunv2.ServiceTemplateContainerArray{
@@ -398,7 +463,18 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 	// Add sidecars if enabled
 	if len(args.Sidecars) > 0 {
 		for _, sidecar := range args.Sidecars {
-			containers = append(containers, newSidecarContainer(sidecar))
+			// Get volume mounts for this sidecar's secrets
+			var sidecarVolumeMounts *cloudrunv2.ServiceTemplateContainerVolumeMountArray
+			if len(sidecar.Secrets) > 0 {
+				sidecarVolumeMounts = &cloudrunv2.ServiceTemplateContainerVolumeMountArray{}
+				for _, secret := range sidecar.Secrets {
+					// Find the volume mount for this secret
+					if mount, exists := sidecarMountMap[secret.Name]; exists {
+						*sidecarVolumeMounts = append(*sidecarVolumeMounts, mount)
+					}
+				}
+			}
+			containers = append(containers, newSidecarContainer(sidecar, sidecarVolumeMounts))
 		}
 	}
 
@@ -605,7 +681,7 @@ func newSidecarEnvVars(envVars map[string]string) cloudrunv2.ServiceTemplateCont
 	return sidecarEnvVars
 }
 
-func newSidecarContainer(sidecar *SidecarArgs) *cloudrunv2.ServiceTemplateContainerArgs {
+func newSidecarContainer(sidecar *SidecarArgs, volumeMounts *cloudrunv2.ServiceTemplateContainerVolumeMountArray) *cloudrunv2.ServiceTemplateContainerArgs {
 	container := &cloudrunv2.ServiceTemplateContainerArgs{
 		Name:  pulumi.String(sidecar.Name),
 		Image: pulumi.String(sidecar.Image),
@@ -617,6 +693,10 @@ func newSidecarContainer(sidecar *SidecarArgs) *cloudrunv2.ServiceTemplateContai
 
 	if len(sidecar.EnvVars) > 0 {
 		container.Envs = newSidecarEnvVars(sidecar.EnvVars)
+	}
+
+	if volumeMounts != nil && len(*volumeMounts) > 0 {
+		container.VolumeMounts = volumeMounts
 	}
 
 	if sidecar.StartupProbe != nil {

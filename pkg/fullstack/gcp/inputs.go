@@ -95,6 +95,8 @@ type SidecarArgs struct {
 	StartupProbe *Probe
 	// Liveness probe configuration for the sidecar container.
 	LivenessProbe *Probe
+	// IDs of Secret Manager secrets to mount into the sidecar container. Defaults to nil.
+	Secrets []*SecretVolumeArgs
 }
 
 // NetworkArgs contains configuration for network infrastructure including load balancers and API Gateway.

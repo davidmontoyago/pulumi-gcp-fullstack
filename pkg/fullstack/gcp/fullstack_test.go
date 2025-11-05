@@ -2853,6 +2853,21 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 								"MCP_PORT": "3001",
 								"API_KEY":  "test-api-key",
 							},
+							Secrets: []*gcp.SecretVolumeArgs{
+								{
+									SecretID:   pulumi.String("mcp-server-tls-cert"),
+									Name:       "mcp-tls-cert",
+									Path:       "/app/secrets/tls",
+									SecretName: "cert.pem",
+									Version:    pulumi.String("latest"),
+								},
+								{
+									SecretID: pulumi.String("mcp-server-config"),
+									Name:     "mcp-config",
+									Path:     "/app/config",
+									Version:  pulumi.String("1"),
+								},
+							},
 							StartupProbe: &gcp.Probe{
 								Port:                3001,
 								InitialDelaySeconds: 8,
@@ -2981,6 +2996,81 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 		assert.Equal(t, "3001", *mcpPortEnv.Value, "MCP server sidecar MCP_PORT should be 3001")
 		require.NotNil(t, mcpAPIKeyEnv, "MCP server sidecar should have API_KEY environment variable")
 		assert.Equal(t, "test-api-key", *mcpAPIKeyEnv.Value, "MCP server sidecar API_KEY should match")
+
+		// Verify MCP server sidecar has volume mounts for secrets
+		require.NotNil(t, mcpSidecar.VolumeMounts, "MCP server sidecar should have volume mounts")
+		require.Len(t, mcpSidecar.VolumeMounts, 2, "MCP server sidecar should have 2 volume mounts for secrets")
+
+		// Find the secret volume mounts
+		var mcpTlsCertMount, mcpConfigMount *cloudrunv2.ServiceTemplateContainerVolumeMount
+		for i := range mcpSidecar.VolumeMounts {
+			switch mcpSidecar.VolumeMounts[i].Name {
+			case "mcp-tls-cert":
+				mcpTlsCertMount = &mcpSidecar.VolumeMounts[i]
+			case "mcp-config":
+				mcpConfigMount = &mcpSidecar.VolumeMounts[i]
+			}
+		}
+
+		// Verify mcp-tls-cert volume mount
+		require.NotNil(t, mcpTlsCertMount, "MCP server sidecar should have mcp-tls-cert volume mount")
+		assert.Equal(t, "mcp-tls-cert", mcpTlsCertMount.Name, "MCP TLS cert mount name should match")
+		assert.Equal(t, "/app/secrets/tls", mcpTlsCertMount.MountPath, "MCP TLS cert mount path should match specified path")
+
+		// Verify mcp-config volume mount
+		require.NotNil(t, mcpConfigMount, "MCP server sidecar should have mcp-config volume mount")
+		assert.Equal(t, "mcp-config", mcpConfigMount.Name, "MCP config mount name should match")
+		assert.Equal(t, "/app/config", mcpConfigMount.MountPath, "MCP config mount path should match specified path")
+
+		// Verify backend service volumes include sidecar secret volumes
+		backendVolumesCh := make(chan []cloudrunv2.ServiceTemplateVolume, 1)
+		defer close(backendVolumesCh)
+		backendService.Template.Volumes().ApplyT(func(volumes []cloudrunv2.ServiceTemplateVolume) error {
+			backendVolumesCh <- volumes
+			return nil
+		})
+		backendVolumes := <-backendVolumesCh
+
+		// Should have 3 volumes: 1 for envconfig + 2 for sidecar secrets
+		require.Len(t, backendVolumes, 3, "Backend should have 3 volumes (1 envconfig + 2 sidecar secrets)")
+
+		// Find the sidecar secret volumes
+		var mcpTlsCertVolume, mcpConfigVolume *cloudrunv2.ServiceTemplateVolume
+		for i := range backendVolumes {
+			switch backendVolumes[i].Name {
+			case "mcp-tls-cert":
+				mcpTlsCertVolume = &backendVolumes[i]
+			case "mcp-config":
+				mcpConfigVolume = &backendVolumes[i]
+			}
+		}
+
+		// Verify mcp-tls-cert secret volume
+		require.NotNil(t, mcpTlsCertVolume, "MCP TLS cert secret volume should be present")
+		assert.Equal(t, "mcp-tls-cert", mcpTlsCertVolume.Name, "MCP TLS cert volume name should match")
+		assert.NotNil(t, mcpTlsCertVolume.Secret, "MCP TLS cert volume should have secret configuration")
+		assert.NotNil(t, mcpTlsCertVolume.Secret.Items, "MCP TLS cert volume should have items")
+		assert.Len(t, mcpTlsCertVolume.Secret.Items, 1, "MCP TLS cert volume should have exactly one item")
+
+		mcpTlsCertItem := mcpTlsCertVolume.Secret.Items[0]
+		assert.Equal(t, "cert.pem", mcpTlsCertItem.Path, "MCP TLS cert item path should match the secret name")
+		assert.Equal(t, "latest", *mcpTlsCertItem.Version, "MCP TLS cert item version should be 'latest'")
+		assert.Equal(t, 0400, *mcpTlsCertItem.Mode, "MCP TLS cert item mode should be 0400 for read-only access")
+
+		// Verify mcp-config secret volume
+		require.NotNil(t, mcpConfigVolume, "MCP config secret volume should be present")
+		assert.Equal(t, "mcp-config", mcpConfigVolume.Name, "MCP config volume name should match")
+		assert.NotNil(t, mcpConfigVolume.Secret, "MCP config volume should have secret configuration")
+		assert.NotNil(t, mcpConfigVolume.Secret.Items, "MCP config volume should have items")
+		assert.Len(t, mcpConfigVolume.Secret.Items, 1, "MCP config volume should have exactly one item")
+
+		mcpConfigItem := mcpConfigVolume.Secret.Items[0]
+		assert.Equal(t, ".env", mcpConfigItem.Path, "MCP config item path should default to .env")
+		assert.Equal(t, "1", *mcpConfigItem.Version, "MCP config item version should be '1'")
+		assert.Equal(t, 0400, *mcpConfigItem.Mode, "MCP config item mode should be 0400 for read-only access")
+
+		// Verify proxy sidecar does NOT have volume mounts (no secrets configured)
+		assert.Nil(t, proxySidecar.VolumeMounts, "Proxy sidecar should not have volume mounts (no secrets configured)")
 
 		// Verify frontend service is not affected (should have only 1 container - the main one)
 		frontendService := fullstack.GetFrontendService()
