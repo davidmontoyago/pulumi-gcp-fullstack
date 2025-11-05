@@ -44,6 +44,9 @@ type Probe struct {
 	TimeoutSeconds int
 	// Number of consecutive failures before considering the instance unhealthy. Defaults to 3.
 	FailureThreshold int
+	// Port to use for the health check.
+	// Defaults to the container port for the ingress container and should be set for sidecar containers.
+	Port int
 }
 
 // InstanceArgs contains configuration for Cloud Run service instances.
@@ -77,13 +80,20 @@ type InstanceArgs struct {
 }
 
 // SidecarArgs contains configuration for a sidecar container to deploy with the instance.
+// No container port is allowed for sidecar containers, as only the main container can
+// have an ingress port.
 type SidecarArgs struct {
-	Name          string
-	Image         string
-	ContainerPort int
-	Args          []string
-	EnvVars       map[string]string
-	StartupProbe  *Probe
+	// Name of the sidecar container.
+	Name string
+	// Image of the sidecar container.
+	Image string
+	// Arguments to pass to the sidecar container.
+	Args []string
+	// Environment variables to set in the sidecar container.
+	EnvVars map[string]string
+	// Startup probe configuration for the sidecar container.
+	StartupProbe *Probe
+	// Liveness probe configuration for the sidecar container.
 	LivenessProbe *Probe
 }
 
