@@ -2822,15 +2822,15 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 					ContainerPort: 4001,
 					Sidecars: []*gcp.SidecarArgs{
 						{
-							Name:          "proxy",
-							Image:         "gcr.io/test-project/proxy:latest",
-							ContainerPort: 8080,
-							Args:          []string{"--proxy-mode", "http", "--verbose"},
+							Name:  "proxy",
+							Image: "gcr.io/test-project/proxy:latest",
+							Args:  []string{"--proxy-mode", "http", "--verbose"},
 							EnvVars: map[string]string{
 								"PROXY_PORT": "8080",
 								"LOG_LEVEL":  "info",
 							},
 							StartupProbe: &gcp.Probe{
+								Port:                8080,
 								InitialDelaySeconds: 5,
 								PeriodSeconds:       2,
 								TimeoutSeconds:      1,
@@ -2838,6 +2838,7 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 							},
 							LivenessProbe: &gcp.Probe{
 								Path:                "health",
+								Port:                8080,
 								InitialDelaySeconds: 10,
 								PeriodSeconds:       5,
 								TimeoutSeconds:      3,
@@ -2845,15 +2846,15 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 							},
 						},
 						{
-							Name:          "mcp-server",
-							Image:         "gcr.io/test-project/mcp-server:latest",
-							ContainerPort: 3001,
-							Args:          []string{"--port", "3001", "--log-level", "debug"},
+							Name:  "mcp-server",
+							Image: "gcr.io/test-project/mcp-server:latest",
+							Args:  []string{"--port", "3001", "--log-level", "debug"},
 							EnvVars: map[string]string{
 								"MCP_PORT": "3001",
 								"API_KEY":  "test-api-key",
 							},
 							StartupProbe: &gcp.Probe{
+								Port:                3001,
 								InitialDelaySeconds: 8,
 								PeriodSeconds:       3,
 								TimeoutSeconds:      2,
@@ -2889,6 +2890,7 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 		defer close(backendContainersCh)
 		backendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
 			backendContainersCh <- containers
+
 			return nil
 		})
 		backendContainers := <-backendContainersCh
@@ -2904,16 +2906,22 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 		for i := range backendContainers {
 			if backendContainers[i].Name != nil && *backendContainers[i].Name == "proxy" {
 				proxySidecar = &backendContainers[i]
+
 				break
 			}
 		}
 		require.NotNil(t, proxySidecar, "Proxy sidecar should be present")
 		assert.Equal(t, "proxy", *proxySidecar.Name, "Proxy sidecar name should match")
 		assert.Equal(t, "gcr.io/test-project/proxy:latest", proxySidecar.Image, "Proxy sidecar image should match")
-		assert.NotNil(t, proxySidecar.Ports, "Proxy sidecar should have ports configured")
-		assert.Equal(t, 8080, *proxySidecar.Ports.ContainerPort, "Proxy sidecar port should be 8080")
+		assert.Nil(t, proxySidecar.Ports, "Proxy sidecar should not have ports configured (sidecars cannot have container ports)")
 		assert.NotNil(t, proxySidecar.StartupProbe, "Proxy sidecar should have startup probe")
 		assert.NotNil(t, proxySidecar.LivenessProbe, "Proxy sidecar should have liveness probe")
+		// Verify proxy sidecar startup probe port
+		assert.NotNil(t, proxySidecar.StartupProbe.TcpSocket, "Proxy sidecar startup probe should have TcpSocket")
+		assert.Equal(t, 8080, *proxySidecar.StartupProbe.TcpSocket.Port, "Proxy sidecar startup probe port should be 8080")
+		// Verify proxy sidecar liveness probe port
+		assert.NotNil(t, proxySidecar.LivenessProbe.HttpGet, "Proxy sidecar liveness probe should have HttpGet")
+		assert.Equal(t, 8080, *proxySidecar.LivenessProbe.HttpGet.Port, "Proxy sidecar liveness probe port should be 8080")
 		// Verify proxy sidecar args
 		require.NotNil(t, proxySidecar.Args, "Proxy sidecar should have args configured")
 		expectedProxyArgs := []string{"--proxy-mode", "http", "--verbose"}
@@ -2940,16 +2948,19 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 		for i := range backendContainers {
 			if backendContainers[i].Name != nil && *backendContainers[i].Name == "mcp-server" {
 				mcpSidecar = &backendContainers[i]
+
 				break
 			}
 		}
 		require.NotNil(t, mcpSidecar, "MCP server sidecar should be present")
 		assert.Equal(t, "mcp-server", *mcpSidecar.Name, "MCP server sidecar name should match")
 		assert.Equal(t, "gcr.io/test-project/mcp-server:latest", mcpSidecar.Image, "MCP server sidecar image should match")
-		assert.NotNil(t, mcpSidecar.Ports, "MCP server sidecar should have ports configured")
-		assert.Equal(t, 3001, *mcpSidecar.Ports.ContainerPort, "MCP server sidecar port should be 3001")
+		assert.Nil(t, mcpSidecar.Ports, "MCP server sidecar should not have ports configured (sidecars cannot have container ports)")
 		assert.NotNil(t, mcpSidecar.StartupProbe, "MCP server sidecar should have startup probe")
 		assert.Nil(t, mcpSidecar.LivenessProbe, "MCP server sidecar should not have liveness probe")
+		// Verify MCP server sidecar startup probe port
+		assert.NotNil(t, mcpSidecar.StartupProbe.TcpSocket, "MCP server sidecar startup probe should have TcpSocket")
+		assert.Equal(t, 3001, *mcpSidecar.StartupProbe.TcpSocket.Port, "MCP server sidecar startup probe port should be 3001")
 		// Verify MCP server sidecar args
 		require.NotNil(t, mcpSidecar.Args, "MCP server sidecar should have args configured")
 		expectedMcpArgs := []string{"--port", "3001", "--log-level", "debug"}
@@ -2957,19 +2968,19 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 
 		// Verify MCP server sidecar environment variables
 		require.NotNil(t, mcpSidecar.Envs, "MCP server sidecar should have environment variables")
-		var mcpPortEnv, mcpApiKeyEnv *cloudrunv2.ServiceTemplateContainerEnv
+		var mcpPortEnv, mcpAPIKeyEnv *cloudrunv2.ServiceTemplateContainerEnv
 		for i := range mcpSidecar.Envs {
 			if mcpSidecar.Envs[i].Name == "MCP_PORT" {
 				mcpPortEnv = &mcpSidecar.Envs[i]
 			}
 			if mcpSidecar.Envs[i].Name == "API_KEY" {
-				mcpApiKeyEnv = &mcpSidecar.Envs[i]
+				mcpAPIKeyEnv = &mcpSidecar.Envs[i]
 			}
 		}
 		require.NotNil(t, mcpPortEnv, "MCP server sidecar should have MCP_PORT environment variable")
 		assert.Equal(t, "3001", *mcpPortEnv.Value, "MCP server sidecar MCP_PORT should be 3001")
-		require.NotNil(t, mcpApiKeyEnv, "MCP server sidecar should have API_KEY environment variable")
-		assert.Equal(t, "test-api-key", *mcpApiKeyEnv.Value, "MCP server sidecar API_KEY should match")
+		require.NotNil(t, mcpAPIKeyEnv, "MCP server sidecar should have API_KEY environment variable")
+		assert.Equal(t, "test-api-key", *mcpAPIKeyEnv.Value, "MCP server sidecar API_KEY should match")
 
 		// Verify frontend service is not affected (should have only 1 container - the main one)
 		frontendService := fullstack.GetFrontendService()
@@ -2979,6 +2990,7 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 		defer close(frontendContainersCh)
 		frontendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
 			frontendContainersCh <- containers
+
 			return nil
 		})
 		frontendContainers := <-frontendContainersCh
@@ -3016,15 +3028,15 @@ func TestNewFullStack_FrontendWithSidecar(t *testing.T) {
 					ContainerPort: 3000,
 					Sidecars: []*gcp.SidecarArgs{
 						{
-							Name:          "analytics",
-							Image:         "gcr.io/test-project/analytics:latest",
-							ContainerPort: 9090,
+							Name:  "analytics",
+							Image: "gcr.io/test-project/analytics:latest",
 							EnvVars: map[string]string{
 								"ANALYTICS_PORT": "9090",
 								"ENVIRONMENT":    "production",
 							},
 							LivenessProbe: &gcp.Probe{
 								Path:                "ready",
+								Port:                9090,
 								InitialDelaySeconds: 15,
 								PeriodSeconds:       5,
 								TimeoutSeconds:      3,
@@ -3057,6 +3069,7 @@ func TestNewFullStack_FrontendWithSidecar(t *testing.T) {
 		defer close(frontendContainersCh)
 		frontendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
 			frontendContainersCh <- containers
+
 			return nil
 		})
 		frontendContainers := <-frontendContainersCh
@@ -3072,14 +3085,14 @@ func TestNewFullStack_FrontendWithSidecar(t *testing.T) {
 		for i := range frontendContainers {
 			if frontendContainers[i].Name != nil && *frontendContainers[i].Name == "analytics" {
 				analyticsSidecar = &frontendContainers[i]
+
 				break
 			}
 		}
 		require.NotNil(t, analyticsSidecar, "Analytics sidecar should be present")
 		assert.Equal(t, "analytics", *analyticsSidecar.Name, "Analytics sidecar name should match")
 		assert.Equal(t, "gcr.io/test-project/analytics:latest", analyticsSidecar.Image, "Analytics sidecar image should match")
-		assert.NotNil(t, analyticsSidecar.Ports, "Analytics sidecar should have ports configured")
-		assert.Equal(t, 9090, *analyticsSidecar.Ports.ContainerPort, "Analytics sidecar port should be 9090")
+		assert.Nil(t, analyticsSidecar.Ports, "Analytics sidecar should not have ports configured (sidecars cannot have container ports)")
 		assert.Nil(t, analyticsSidecar.StartupProbe, "Analytics sidecar should not have startup probe")
 		assert.NotNil(t, analyticsSidecar.LivenessProbe, "Analytics sidecar should have liveness probe")
 
@@ -3112,6 +3125,7 @@ func TestNewFullStack_FrontendWithSidecar(t *testing.T) {
 		defer close(backendContainersCh)
 		backendService.Template.Containers().ApplyT(func(containers []cloudrunv2.ServiceTemplateContainer) error {
 			backendContainersCh <- containers
+
 			return nil
 		})
 		backendContainers := <-backendContainersCh

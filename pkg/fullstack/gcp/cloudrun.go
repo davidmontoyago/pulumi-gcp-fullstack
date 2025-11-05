@@ -601,6 +601,7 @@ func newSidecarEnvVars(envVars map[string]string) cloudrunv2.ServiceTemplateCont
 			Value: pulumi.String(envVarValue),
 		})
 	}
+
 	return sidecarEnvVars
 }
 
@@ -614,22 +615,16 @@ func newSidecarContainer(sidecar *SidecarArgs) *cloudrunv2.ServiceTemplateContai
 		Args: setDefaultStringArray(sidecar.Args, []string{}),
 	}
 
-	if sidecar.ContainerPort > 0 {
-		container.Ports = cloudrunv2.ServiceTemplateContainerPortsArgs{
-			ContainerPort: pulumi.Int(sidecar.ContainerPort),
-		}
-	}
-
 	if len(sidecar.EnvVars) > 0 {
 		container.Envs = newSidecarEnvVars(sidecar.EnvVars)
 	}
 
-	if sidecar.StartupProbe != nil && sidecar.ContainerPort > 0 {
-		container.StartupProbe = startupProbe(sidecar.ContainerPort, sidecar.StartupProbe)
+	if sidecar.StartupProbe != nil {
+		container.StartupProbe = startupProbe(sidecar.StartupProbe.Port, sidecar.StartupProbe)
 	}
 
-	if sidecar.LivenessProbe != nil && sidecar.ContainerPort > 0 {
-		container.LivenessProbe = livenessProbe(sidecar.ContainerPort, sidecar.LivenessProbe.Path, sidecar.LivenessProbe)
+	if sidecar.LivenessProbe != nil {
+		container.LivenessProbe = livenessProbe(sidecar.LivenessProbe.Port, sidecar.LivenessProbe.Path, sidecar.LivenessProbe)
 	}
 
 	return container
