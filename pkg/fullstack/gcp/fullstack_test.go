@@ -2825,6 +2825,7 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 							Name:          "proxy",
 							Image:         "gcr.io/test-project/proxy:latest",
 							ContainerPort: 8080,
+							Args:          []string{"--proxy-mode", "http", "--verbose"},
 							EnvVars: map[string]string{
 								"PROXY_PORT": "8080",
 								"LOG_LEVEL":  "info",
@@ -2847,6 +2848,7 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 							Name:          "mcp-server",
 							Image:         "gcr.io/test-project/mcp-server:latest",
 							ContainerPort: 3001,
+							Args:          []string{"--port", "3001", "--log-level", "debug"},
 							EnvVars: map[string]string{
 								"MCP_PORT": "3001",
 								"API_KEY":  "test-api-key",
@@ -2912,6 +2914,10 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 		assert.Equal(t, 8080, *proxySidecar.Ports.ContainerPort, "Proxy sidecar port should be 8080")
 		assert.NotNil(t, proxySidecar.StartupProbe, "Proxy sidecar should have startup probe")
 		assert.NotNil(t, proxySidecar.LivenessProbe, "Proxy sidecar should have liveness probe")
+		// Verify proxy sidecar args
+		require.NotNil(t, proxySidecar.Args, "Proxy sidecar should have args configured")
+		expectedProxyArgs := []string{"--proxy-mode", "http", "--verbose"}
+		assert.Equal(t, expectedProxyArgs, proxySidecar.Args, "Proxy sidecar args should match")
 
 		// Verify proxy sidecar environment variables
 		require.NotNil(t, proxySidecar.Envs, "Proxy sidecar should have environment variables")
@@ -2944,6 +2950,10 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 		assert.Equal(t, 3001, *mcpSidecar.Ports.ContainerPort, "MCP server sidecar port should be 3001")
 		assert.NotNil(t, mcpSidecar.StartupProbe, "MCP server sidecar should have startup probe")
 		assert.Nil(t, mcpSidecar.LivenessProbe, "MCP server sidecar should not have liveness probe")
+		// Verify MCP server sidecar args
+		require.NotNil(t, mcpSidecar.Args, "MCP server sidecar should have args configured")
+		expectedMcpArgs := []string{"--port", "3001", "--log-level", "debug"}
+		assert.Equal(t, expectedMcpArgs, mcpSidecar.Args, "MCP server sidecar args should match")
 
 		// Verify MCP server sidecar environment variables
 		require.NotNil(t, mcpSidecar.Envs, "MCP server sidecar should have environment variables")
