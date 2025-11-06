@@ -115,7 +115,7 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 		Labels:        args.Labels,
 		AppBaseURL:    appBaseURL,
 
-		Namer: namer.New(name),
+		Namer: namer.New(name, namer.WithReplace()),
 
 		gatewayEnabled:      gatewayEnabled,
 		loadBalancerEnabled: loadBalancerEnabled,

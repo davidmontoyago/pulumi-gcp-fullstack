@@ -193,6 +193,8 @@ type SecretVolumeArgs struct {
 	SecretName string
 	// Version of the secret to mount. Defaults to "latest".
 	Version pulumi.StringInput
+	// Mount as environment variables. Defaults to false which means the secret will be mounted as a volume.
+	MountAsEnvVars bool
 }
 
 // CacheInstanceArgs contains configuration for Redis cache deployment.
