@@ -2855,17 +2855,31 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 							},
 							Secrets: []*gcp.SecretVolumeArgs{
 								{
-									SecretID:   pulumi.String("mcp-server-tls-cert"),
-									Name:       "mcp-tls-cert",
-									Path:       "/app/secrets/tls",
-									SecretName: "cert.pem",
-									Version:    pulumi.String("latest"),
+									SecretID:       pulumi.String("mcp-server-tls-cert"),
+									Name:           "mcp-tls-cert",
+									Path:           "/app/secrets/tls",
+									SecretName:     "cert.pem",
+									Version:        pulumi.String("latest"),
+									MountAsEnvVars: false, // Mount as volume (default)
 								},
 								{
-									SecretID: pulumi.String("mcp-server-config"),
-									Name:     "mcp-config",
-									Path:     "/app/config",
-									Version:  pulumi.String("1"),
+									SecretID:       pulumi.String("mcp-server-config"),
+									Name:           "mcp-config",
+									Path:           "/app/config",
+									Version:        pulumi.String("1"),
+									MountAsEnvVars: false, // Mount as volume (default)
+								},
+								{
+									SecretID:       pulumi.String("mcp-server-api-key"),
+									Name:           "MCP_API_KEY",
+									Version:        pulumi.String("latest"),
+									MountAsEnvVars: true, // Mount as environment variable
+								},
+								{
+									SecretID:       pulumi.String("mcp-server-db-password"),
+									Name:           "MCP_DB_PASSWORD",
+									Version:        pulumi.String("1"),
+									MountAsEnvVars: true, // Mount as environment variable
 								},
 							},
 							StartupProbe: &gcp.Probe{
@@ -2981,81 +2995,119 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 		expectedMcpArgs := []string{"--port", "3001", "--log-level", "debug"}
 		assert.Equal(t, expectedMcpArgs, mcpSidecar.Args, "MCP server sidecar args should match")
 
-		// Verify MCP server sidecar environment variables
+		// Verify MCP server sidecar environment variables (regular + secret-based)
 		require.NotNil(t, mcpSidecar.Envs, "MCP server sidecar should have environment variables")
-		var mcpPortEnv, mcpAPIKeyEnv *cloudrunv2.ServiceTemplateContainerEnv
+		// Should have 4 env vars: 2 regular (MCP_PORT, API_KEY) + 2 from secrets (MCP_API_KEY, MCP_DB_PASSWORD)
+		require.Len(t, mcpSidecar.Envs, 4, "MCP server sidecar should have 4 environment variables (2 regular + 2 from secrets)")
+
+		var mcpPortEnv, apiKeySecretContainerEnv *cloudrunv2.ServiceTemplateContainerEnv
 		for i := range mcpSidecar.Envs {
 			if mcpSidecar.Envs[i].Name == "MCP_PORT" {
 				mcpPortEnv = &mcpSidecar.Envs[i]
 			}
 			if mcpSidecar.Envs[i].Name == "API_KEY" {
-				mcpAPIKeyEnv = &mcpSidecar.Envs[i]
+				apiKeySecretContainerEnv = &mcpSidecar.Envs[i]
 			}
 		}
 		require.NotNil(t, mcpPortEnv, "MCP server sidecar should have MCP_PORT environment variable")
 		assert.Equal(t, "3001", *mcpPortEnv.Value, "MCP server sidecar MCP_PORT should be 3001")
-		require.NotNil(t, mcpAPIKeyEnv, "MCP server sidecar should have API_KEY environment variable")
-		assert.Equal(t, "test-api-key", *mcpAPIKeyEnv.Value, "MCP server sidecar API_KEY should match")
+		assert.Nil(t, mcpPortEnv.ValueSource, "MCP_PORT should not have ValueSource (it's a regular env var)")
+		require.NotNil(t, apiKeySecretContainerEnv, "MCP server sidecar should have API_KEY environment variable")
+		assert.Equal(t, "test-api-key", *apiKeySecretContainerEnv.Value, "MCP server sidecar API_KEY should match")
+		assert.Nil(t, apiKeySecretContainerEnv.ValueSource, "API_KEY should not have ValueSource (it's a regular env var)")
 
-		// Verify MCP server sidecar has volume mounts for secrets
+		// Verify MCP server sidecar has volume mounts for secrets (only volume-mounted secrets)
 		require.NotNil(t, mcpSidecar.VolumeMounts, "MCP server sidecar should have volume mounts")
-		require.Len(t, mcpSidecar.VolumeMounts, 2, "MCP server sidecar should have 2 volume mounts for secrets")
+		require.Len(t, mcpSidecar.VolumeMounts, 2, "MCP server sidecar should have 2 volume mounts for volume-mounted secrets")
 
 		// Find the secret volume mounts
-		var mcpTlsCertMount, mcpConfigMount *cloudrunv2.ServiceTemplateContainerVolumeMount
+		var mcpTLSCertMount, mcpConfigMount *cloudrunv2.ServiceTemplateContainerVolumeMount
 		for i := range mcpSidecar.VolumeMounts {
 			switch mcpSidecar.VolumeMounts[i].Name {
 			case "mcp-tls-cert":
-				mcpTlsCertMount = &mcpSidecar.VolumeMounts[i]
+				mcpTLSCertMount = &mcpSidecar.VolumeMounts[i]
 			case "mcp-config":
 				mcpConfigMount = &mcpSidecar.VolumeMounts[i]
 			}
 		}
 
 		// Verify mcp-tls-cert volume mount
-		require.NotNil(t, mcpTlsCertMount, "MCP server sidecar should have mcp-tls-cert volume mount")
-		assert.Equal(t, "mcp-tls-cert", mcpTlsCertMount.Name, "MCP TLS cert mount name should match")
-		assert.Equal(t, "/app/secrets/tls", mcpTlsCertMount.MountPath, "MCP TLS cert mount path should match specified path")
+		require.NotNil(t, mcpTLSCertMount, "MCP server sidecar should have mcp-tls-cert volume mount")
+		assert.Equal(t, "mcp-tls-cert", mcpTLSCertMount.Name, "MCP TLS cert mount name should match")
+		assert.Equal(t, "/app/secrets/tls", mcpTLSCertMount.MountPath, "MCP TLS cert mount path should match specified path")
 
 		// Verify mcp-config volume mount
 		require.NotNil(t, mcpConfigMount, "MCP server sidecar should have mcp-config volume mount")
 		assert.Equal(t, "mcp-config", mcpConfigMount.Name, "MCP config mount name should match")
 		assert.Equal(t, "/app/config", mcpConfigMount.MountPath, "MCP config mount path should match specified path")
 
-		// Verify backend service volumes include sidecar secret volumes
+		// Verify MCP server sidecar has environment variables from secrets (env-var-mounted secrets)
+		// Find secret-based environment variables
+		var mcpAPIKeyEnv, mcpDbPasswordEnv *cloudrunv2.ServiceTemplateContainerEnv
+		for i := range mcpSidecar.Envs {
+			if mcpSidecar.Envs[i].Name == "MCP_API_KEY" {
+				mcpAPIKeyEnv = &mcpSidecar.Envs[i]
+			}
+			if mcpSidecar.Envs[i].Name == "MCP_DB_PASSWORD" {
+				mcpDbPasswordEnv = &mcpSidecar.Envs[i]
+			}
+		}
+
+		// Verify MCP_API_KEY environment variable from secret
+		require.NotNil(t, mcpAPIKeyEnv, "MCP server sidecar should have MCP_API_KEY environment variable from secret")
+		assert.Equal(t, "MCP_API_KEY", mcpAPIKeyEnv.Name, "MCP_API_KEY env var name should match")
+		assert.NotNil(t, mcpAPIKeyEnv.ValueSource, "MCP_API_KEY should have ValueSource")
+		assert.NotNil(t, mcpAPIKeyEnv.ValueSource.SecretKeyRef, "MCP_API_KEY should have SecretKeyRef")
+		assert.Nil(t, mcpAPIKeyEnv.Value, "MCP_API_KEY should not have direct Value (it's from a secret)")
+		// Verify SecretKeyRef points to the correct secret
+		require.NotNil(t, mcpAPIKeyEnv.ValueSource.SecretKeyRef.Secret, "MCP_API_KEY SecretKeyRef should have Secret")
+		assert.Equal(t, "mcp-server-api-key", mcpAPIKeyEnv.ValueSource.SecretKeyRef.Secret, "MCP_API_KEY SecretKeyRef should point to mcp-server-api-key secret")
+
+		// Verify MCP_DB_PASSWORD environment variable from secret
+		require.NotNil(t, mcpDbPasswordEnv, "MCP server sidecar should have MCP_DB_PASSWORD environment variable from secret")
+		assert.Equal(t, "MCP_DB_PASSWORD", mcpDbPasswordEnv.Name, "MCP_DB_PASSWORD env var name should match")
+		assert.NotNil(t, mcpDbPasswordEnv.ValueSource, "MCP_DB_PASSWORD should have ValueSource")
+		assert.NotNil(t, mcpDbPasswordEnv.ValueSource.SecretKeyRef, "MCP_DB_PASSWORD should have SecretKeyRef")
+		assert.Nil(t, mcpDbPasswordEnv.Value, "MCP_DB_PASSWORD should not have direct Value (it's from a secret)")
+		// Verify SecretKeyRef points to the correct secret
+		require.NotNil(t, mcpDbPasswordEnv.ValueSource.SecretKeyRef.Secret, "MCP_DB_PASSWORD SecretKeyRef should have Secret")
+		assert.Equal(t, "mcp-server-db-password", mcpDbPasswordEnv.ValueSource.SecretKeyRef.Secret, "MCP_DB_PASSWORD SecretKeyRef should point to mcp-server-db-password secret")
+
+		// Verify backend service volumes include sidecar secret volumes (only volume-mounted secrets)
 		backendVolumesCh := make(chan []cloudrunv2.ServiceTemplateVolume, 1)
 		defer close(backendVolumesCh)
 		backendService.Template.Volumes().ApplyT(func(volumes []cloudrunv2.ServiceTemplateVolume) error {
 			backendVolumesCh <- volumes
+
 			return nil
 		})
 		backendVolumes := <-backendVolumesCh
 
-		// Should have 3 volumes: 1 for envconfig + 2 for sidecar secrets
-		require.Len(t, backendVolumes, 3, "Backend should have 3 volumes (1 envconfig + 2 sidecar secrets)")
+		// Should have 3 volumes: 1 for envconfig + 2 for volume-mounted sidecar secrets (env-var secrets don't create volumes)
+		require.Len(t, backendVolumes, 3, "Backend should have 3 volumes (1 envconfig + 2 volume-mounted sidecar secrets)")
 
 		// Find the sidecar secret volumes
-		var mcpTlsCertVolume, mcpConfigVolume *cloudrunv2.ServiceTemplateVolume
+		var mcpTLSCertVolume, mcpConfigVolume *cloudrunv2.ServiceTemplateVolume
 		for i := range backendVolumes {
 			switch backendVolumes[i].Name {
 			case "mcp-tls-cert":
-				mcpTlsCertVolume = &backendVolumes[i]
+				mcpTLSCertVolume = &backendVolumes[i]
 			case "mcp-config":
 				mcpConfigVolume = &backendVolumes[i]
 			}
 		}
 
 		// Verify mcp-tls-cert secret volume
-		require.NotNil(t, mcpTlsCertVolume, "MCP TLS cert secret volume should be present")
-		assert.Equal(t, "mcp-tls-cert", mcpTlsCertVolume.Name, "MCP TLS cert volume name should match")
-		assert.NotNil(t, mcpTlsCertVolume.Secret, "MCP TLS cert volume should have secret configuration")
-		assert.NotNil(t, mcpTlsCertVolume.Secret.Items, "MCP TLS cert volume should have items")
-		assert.Len(t, mcpTlsCertVolume.Secret.Items, 1, "MCP TLS cert volume should have exactly one item")
+		require.NotNil(t, mcpTLSCertVolume, "MCP TLS cert secret volume should be present")
+		assert.Equal(t, "mcp-tls-cert", mcpTLSCertVolume.Name, "MCP TLS cert volume name should match")
+		assert.NotNil(t, mcpTLSCertVolume.Secret, "MCP TLS cert volume should have secret configuration")
+		assert.NotNil(t, mcpTLSCertVolume.Secret.Items, "MCP TLS cert volume should have items")
+		assert.Len(t, mcpTLSCertVolume.Secret.Items, 1, "MCP TLS cert volume should have exactly one item")
 
-		mcpTlsCertItem := mcpTlsCertVolume.Secret.Items[0]
-		assert.Equal(t, "cert.pem", mcpTlsCertItem.Path, "MCP TLS cert item path should match the secret name")
-		assert.Equal(t, "latest", *mcpTlsCertItem.Version, "MCP TLS cert item version should be 'latest'")
-		assert.Equal(t, 0400, *mcpTlsCertItem.Mode, "MCP TLS cert item mode should be 0400 for read-only access")
+		mcpTLSCertItem := mcpTLSCertVolume.Secret.Items[0]
+		assert.Equal(t, "cert.pem", mcpTLSCertItem.Path, "MCP TLS cert item path should match the secret name")
+		assert.Equal(t, "latest", *mcpTLSCertItem.Version, "MCP TLS cert item version should be 'latest'")
+		assert.Equal(t, 0400, *mcpTLSCertItem.Mode, "MCP TLS cert item mode should be 0400 for read-only access")
 
 		// Verify mcp-config secret volume
 		require.NotNil(t, mcpConfigVolume, "MCP config secret volume should be present")
@@ -3124,6 +3176,22 @@ func TestNewFullStack_FrontendWithSidecar(t *testing.T) {
 								"ANALYTICS_PORT": "9090",
 								"ENVIRONMENT":    "production",
 							},
+							Secrets: []*gcp.SecretVolumeArgs{
+								{
+									SecretID:       pulumi.String("analytics-api-key"),
+									Name:           "analytics-api-key",
+									Path:           "/app/secrets/api",
+									SecretName:     "api.key",
+									Version:        pulumi.String("latest"),
+									MountAsEnvVars: false, // Mount as volume (default)
+								},
+								{
+									SecretID:       pulumi.String("analytics-service-token"),
+									Name:           "ANALYTICS_SERVICE_TOKEN",
+									Version:        pulumi.String("latest"),
+									MountAsEnvVars: true, // Mount as environment variable
+								},
+							},
 							LivenessProbe: &gcp.Probe{
 								Path:                "ready",
 								Port:                9090,
@@ -3191,8 +3259,11 @@ func TestNewFullStack_FrontendWithSidecar(t *testing.T) {
 		assert.Equal(t, "/ready", *analyticsSidecar.LivenessProbe.HttpGet.Path, "Analytics sidecar liveness probe path should be /ready")
 		assert.Equal(t, 9090, *analyticsSidecar.LivenessProbe.HttpGet.Port, "Analytics sidecar liveness probe port should be 9090")
 
-		// Verify analytics sidecar environment variables
+		// Verify analytics sidecar environment variables (regular + secret-based)
 		require.NotNil(t, analyticsSidecar.Envs, "Analytics sidecar should have environment variables")
+		// Should have 3 env vars: 2 regular (ANALYTICS_PORT, ENVIRONMENT) + 1 from secret (ANALYTICS_SERVICE_TOKEN)
+		require.Len(t, analyticsSidecar.Envs, 3, "Analytics sidecar should have 3 environment variables (2 regular + 1 from secret)")
+
 		var analyticsPortEnv, analyticsEnvVar *cloudrunv2.ServiceTemplateContainerEnv
 		for i := range analyticsSidecar.Envs {
 			if analyticsSidecar.Envs[i].Name == "ANALYTICS_PORT" {
@@ -3204,8 +3275,84 @@ func TestNewFullStack_FrontendWithSidecar(t *testing.T) {
 		}
 		require.NotNil(t, analyticsPortEnv, "Analytics sidecar should have ANALYTICS_PORT environment variable")
 		assert.Equal(t, "9090", *analyticsPortEnv.Value, "Analytics sidecar ANALYTICS_PORT should be 9090")
+		assert.Nil(t, analyticsPortEnv.ValueSource, "ANALYTICS_PORT should not have ValueSource (it's a regular env var)")
 		require.NotNil(t, analyticsEnvVar, "Analytics sidecar should have ENVIRONMENT environment variable")
 		assert.Equal(t, "production", *analyticsEnvVar.Value, "Analytics sidecar ENVIRONMENT should be production")
+		assert.Nil(t, analyticsEnvVar.ValueSource, "ENVIRONMENT should not have ValueSource (it's a regular env var)")
+
+		// Verify analytics sidecar has volume mounts for secrets (only volume-mounted secrets)
+		require.NotNil(t, analyticsSidecar.VolumeMounts, "Analytics sidecar should have volume mounts")
+		require.Len(t, analyticsSidecar.VolumeMounts, 1, "Analytics sidecar should have 1 volume mount for volume-mounted secret")
+
+		// Find the secret volume mount
+		var analyticsAPIKeyMount *cloudrunv2.ServiceTemplateContainerVolumeMount
+		for i := range analyticsSidecar.VolumeMounts {
+			if analyticsSidecar.VolumeMounts[i].Name == "analytics-api-key" {
+				analyticsAPIKeyMount = &analyticsSidecar.VolumeMounts[i]
+
+				break
+			}
+		}
+
+		// Verify analytics-api-key volume mount
+		require.NotNil(t, analyticsAPIKeyMount, "Analytics sidecar should have analytics-api-key volume mount")
+		assert.Equal(t, "analytics-api-key", analyticsAPIKeyMount.Name, "Analytics API key mount name should match")
+		assert.Equal(t, "/app/secrets/api", analyticsAPIKeyMount.MountPath, "Analytics API key mount path should match specified path")
+
+		// Verify analytics sidecar has environment variables from secrets (env-var-mounted secrets)
+		var analyticsServiceTokenEnv *cloudrunv2.ServiceTemplateContainerEnv
+		for i := range analyticsSidecar.Envs {
+			if analyticsSidecar.Envs[i].Name == "ANALYTICS_SERVICE_TOKEN" {
+				analyticsServiceTokenEnv = &analyticsSidecar.Envs[i]
+
+				break
+			}
+		}
+
+		// Verify ANALYTICS_SERVICE_TOKEN environment variable from secret
+		require.NotNil(t, analyticsServiceTokenEnv, "Analytics sidecar should have ANALYTICS_SERVICE_TOKEN environment variable from secret")
+		assert.Equal(t, "ANALYTICS_SERVICE_TOKEN", analyticsServiceTokenEnv.Name, "ANALYTICS_SERVICE_TOKEN env var name should match")
+		assert.NotNil(t, analyticsServiceTokenEnv.ValueSource, "ANALYTICS_SERVICE_TOKEN should have ValueSource")
+		assert.NotNil(t, analyticsServiceTokenEnv.ValueSource.SecretKeyRef, "ANALYTICS_SERVICE_TOKEN should have SecretKeyRef")
+		assert.Nil(t, analyticsServiceTokenEnv.Value, "ANALYTICS_SERVICE_TOKEN should not have direct Value (it's from a secret)")
+		// Verify SecretKeyRef points to the correct secret
+		require.NotNil(t, analyticsServiceTokenEnv.ValueSource.SecretKeyRef.Secret, "ANALYTICS_SERVICE_TOKEN SecretKeyRef should have Secret")
+		assert.Equal(t, "analytics-service-token", analyticsServiceTokenEnv.ValueSource.SecretKeyRef.Secret, "ANALYTICS_SERVICE_TOKEN SecretKeyRef should point to analytics-service-token secret")
+
+		// Verify frontend service volumes include sidecar secret volumes (only volume-mounted secrets)
+		frontendVolumesCh := make(chan []cloudrunv2.ServiceTemplateVolume, 1)
+		defer close(frontendVolumesCh)
+		frontendService.Template.Volumes().ApplyT(func(volumes []cloudrunv2.ServiceTemplateVolume) error {
+			frontendVolumesCh <- volumes
+
+			return nil
+		})
+		frontendVolumes := <-frontendVolumesCh
+
+		// Should have 2 volumes: 1 for envconfig + 1 for volume-mounted sidecar secret (env-var secrets don't create volumes)
+		require.Len(t, frontendVolumes, 2, "Frontend should have 2 volumes (1 envconfig + 1 volume-mounted sidecar secret)")
+
+		// Find the sidecar secret volume
+		var analyticsAPIKeyVolume *cloudrunv2.ServiceTemplateVolume
+		for i := range frontendVolumes {
+			if frontendVolumes[i].Name == "analytics-api-key" {
+				analyticsAPIKeyVolume = &frontendVolumes[i]
+
+				break
+			}
+		}
+
+		// Verify analytics-api-key secret volume
+		require.NotNil(t, analyticsAPIKeyVolume, "Analytics API key secret volume should be present")
+		assert.Equal(t, "analytics-api-key", analyticsAPIKeyVolume.Name, "Analytics API key volume name should match")
+		assert.NotNil(t, analyticsAPIKeyVolume.Secret, "Analytics API key volume should have secret configuration")
+		assert.NotNil(t, analyticsAPIKeyVolume.Secret.Items, "Analytics API key volume should have items")
+		assert.Len(t, analyticsAPIKeyVolume.Secret.Items, 1, "Analytics API key volume should have exactly one item")
+
+		analyticsAPIKeyItem := analyticsAPIKeyVolume.Secret.Items[0]
+		assert.Equal(t, "api.key", analyticsAPIKeyItem.Path, "Analytics API key item path should match the secret name")
+		assert.Equal(t, "latest", *analyticsAPIKeyItem.Version, "Analytics API key item version should be 'latest'")
+		assert.Equal(t, 0400, *analyticsAPIKeyItem.Mode, "Analytics API key item mode should be 0400 for read-only access")
 
 		// Verify backend service is not affected (should have only 1 container - the main one)
 		backendService := fullstack.GetBackendService()
