@@ -2876,9 +2876,9 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 									MountAsEnvVars: true, // Mount as environment variable
 								},
 								{
-									SecretID:       pulumi.String("mcp-server-db-password"),
-									Name:           "MCP_DB_PASSWORD",
-									Version:        pulumi.String("1"),
+									SecretID: pulumi.String("mcp-server-db-password"),
+									Name:     "MCP_DB_PASSWORD",
+									// Version not set - should default to "latest"
 									MountAsEnvVars: true, // Mount as environment variable
 								},
 							},
@@ -3072,6 +3072,9 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 		// Verify SecretKeyRef points to the correct secret
 		require.NotNil(t, mcpDbPasswordEnv.ValueSource.SecretKeyRef.Secret, "MCP_DB_PASSWORD SecretKeyRef should have Secret")
 		assert.Equal(t, "mcp-server-db-password", mcpDbPasswordEnv.ValueSource.SecretKeyRef.Secret, "MCP_DB_PASSWORD SecretKeyRef should point to mcp-server-db-password secret")
+		// Verify that when no version is specified, it defaults to "latest"
+		require.NotNil(t, mcpDbPasswordEnv.ValueSource.SecretKeyRef.Version, "MCP_DB_PASSWORD SecretKeyRef should have Version")
+		assert.Equal(t, "latest", *mcpDbPasswordEnv.ValueSource.SecretKeyRef.Version, "MCP_DB_PASSWORD SecretKeyRef version should default to 'latest' when not specified")
 
 		// Verify backend service volumes include sidecar secret volumes (only volume-mounted secrets)
 		backendVolumesCh := make(chan []cloudrunv2.ServiceTemplateVolume, 1)
