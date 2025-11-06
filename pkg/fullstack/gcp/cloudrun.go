@@ -339,12 +339,17 @@ func (f *FullStack) mountSecretsAsEnvVars(ctx *pulumi.Context,
 			return nil, fmt.Errorf("failed to grant secret accessor for %s: %w", secret.Name, err)
 		}
 
+		version := secret.Version
+		if version == nil {
+			version = pulumi.String("latest")
+		}
+
 		*containerEnvVars = append(*containerEnvVars, cloudrunv2.ServiceTemplateContainerEnvArgs{
 			Name: pulumi.String(secret.Name),
 			ValueSource: &cloudrunv2.ServiceTemplateContainerEnvValueSourceArgs{
 				SecretKeyRef: &cloudrunv2.ServiceTemplateContainerEnvValueSourceSecretKeyRefArgs{
 					Secret:  secret.SecretID,
-					Version: secret.Version,
+					Version: version,
 				},
 			},
 		})
