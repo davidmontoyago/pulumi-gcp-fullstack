@@ -7,7 +7,7 @@ require (
 	github.com/getkin/kin-openapi v0.133.0
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/pulumi/pulumi-gcp/sdk/v8 v8.41.1
-	github.com/pulumi/pulumi/sdk/v3 v3.219.0
+	github.com/pulumi/pulumi/sdk/v3 v3.220.0
 	github.com/stretchr/testify v1.11.1
 )
 
@@ -36,7 +36,7 @@ require (
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.6.2 // indirect
-	github.com/go-git/go-git/v5 v5.16.2 // indirect
+	github.com/go-git/go-git/v5 v5.16.5 // indirect
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect
 	github.com/go-openapi/swag v0.23.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
