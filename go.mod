@@ -1,13 +1,13 @@
 module github.com/davidmontoyago/pulumi-gcp-fullstack
 
-go 1.25.6
+go 1.25.8
 
 require (
 	github.com/davidmontoyago/commodity-namer v0.2.0
 	github.com/getkin/kin-openapi v0.134.0
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/pulumi/pulumi-gcp/sdk/v8 v8.41.1
-	github.com/pulumi/pulumi/sdk/v3 v3.227.0
+	github.com/pulumi/pulumi/sdk/v3 v3.228.0
 	github.com/stretchr/testify v1.11.1
 )
 
