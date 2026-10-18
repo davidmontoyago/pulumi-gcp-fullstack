@@ -5,10 +5,10 @@ import (
 	"log"
 	"strings"
 
-	apigateway "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/apigateway"
-	compute "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/compute"
-	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/dns"
-	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/projects"
+	apigateway "github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/apigateway"
+	compute "github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/compute"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/dns"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/projects"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -47,6 +47,8 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, args *Networ
 		_, err := projects.NewService(ctx, identityPlatformName, &projects.ServiceArgs{
 			Project: pulumi.String(f.Project),
 			Service: pulumi.String("cloudidentity.googleapis.com"),
+			// Pinned: v9 dropped the default of true. Keeps the state unchanged.
+			DisableOnDestroy: pulumi.Bool(true),
 		},
 			pulumi.RetainOnDelete(true),
 		)
@@ -58,6 +60,8 @@ func (f *FullStack) deployExternalLoadBalancer(ctx *pulumi.Context, args *Networ
 		_, err = projects.NewService(ctx, idToolkitName, &projects.ServiceArgs{
 			Project: pulumi.String(f.Project),
 			Service: pulumi.String("identitytoolkit.googleapis.com"),
+			// Pinned: v9 dropped the default of true. Keeps the state unchanged.
+			DisableOnDestroy: pulumi.Bool(true),
 		},
 			pulumi.RetainOnDelete(true),
 		)

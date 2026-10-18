@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/monitoring"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/monitoring"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 

@@ -3,7 +3,7 @@ package gcp
 import (
 	"fmt"
 
-	compute "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/compute"
+	compute "github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/compute"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 

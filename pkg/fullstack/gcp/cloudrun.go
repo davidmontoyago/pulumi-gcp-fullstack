@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrun"
-	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
-	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/projects"
-	secretmanager "github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/secretmanager"
-	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/serviceaccount"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudrun"
+	cloudrunv2 "github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudrunv2"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/projects"
+	secretmanager "github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/secretmanager"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 

@@ -7,11 +7,11 @@ import (
 	"log"
 	"strings"
 
-	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/compute"
-	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/projects"
-	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/redis"
-	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/secretmanager"
-	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/vpcaccess"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/compute"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/projects"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/redis"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/secretmanager"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/vpcaccess"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -190,6 +190,8 @@ func (f *FullStack) secureCacheCredentials(ctx *pulumi.Context, instance *redis.
 	secretManagerAPI, err := projects.NewService(ctx, f.NewResourceName("cache", "secretmanager-api", 63), &projects.ServiceArgs{
 		Project: pulumi.String(f.Project),
 		Service: pulumi.String("secretmanager.googleapis.com"),
+		// Pinned: v9 dropped the default of true. Keeps the state unchanged.
+		DisableOnDestroy: pulumi.Bool(true),
 	}, pulumi.Parent(f),
 		pulumi.RetainOnDelete(true),
 	)
