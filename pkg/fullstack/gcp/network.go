@@ -5,10 +5,10 @@ import (
 	"log"
 	"strings"
 
-	apigateway "github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/apigateway"
-	compute "github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/compute"
-	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/dns"
-	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/projects"
+	apigateway "github.com/pulumi/pulumi-gcp/sdk/v10/go/gcp/apigateway"
+	compute "github.com/pulumi/pulumi-gcp/sdk/v10/go/gcp/compute"
+	"github.com/pulumi/pulumi-gcp/sdk/v10/go/gcp/dns"
+	"github.com/pulumi/pulumi-gcp/sdk/v10/go/gcp/projects"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 

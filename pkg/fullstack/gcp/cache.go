@@ -7,11 +7,11 @@ import (
 	"log"
 	"strings"
 
-	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/compute"
-	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/projects"
-	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/redis"
-	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/secretmanager"
-	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/vpcaccess"
+	"github.com/pulumi/pulumi-gcp/sdk/v10/go/gcp/compute"
+	"github.com/pulumi/pulumi-gcp/sdk/v10/go/gcp/projects"
+	"github.com/pulumi/pulumi-gcp/sdk/v10/go/gcp/redis"
+	"github.com/pulumi/pulumi-gcp/sdk/v10/go/gcp/secretmanager"
+	"github.com/pulumi/pulumi-gcp/sdk/v10/go/gcp/vpcaccess"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
