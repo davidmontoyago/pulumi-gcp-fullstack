@@ -30,6 +30,17 @@ const (
 	backendServiceName  = "backend"
 	frontendServiceName = "frontend"
 	testRegion          = "us-central1"
+
+	testDomainURL          = "myapp.example.com"
+	testEnvProduction      = "production"
+	testEnvLogLevel        = "LOG_LEVEL"
+	testResourceMemory     = "memory"
+	testResourceCPU        = "cpu"
+	testDBCredentialsMount = "db-credentials"
+	testAPIKeyMount        = "api-key"
+	testMCPTLSCertMount    = "mcp-tls-cert"
+	testMCPConfigMount     = "mcp-config"
+	testAnalyticsMount     = "analytics-api-key"
 )
 
 type fullstackMocks struct{}
@@ -69,7 +80,7 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 	case "gcp:secretmanager/secret:Secret":
 		outputs["secretId"] = args.Name
 		outputs["project"] = testProjectName
-		outputs["labels"] = map[string]string{"env": "production"}
+		outputs["labels"] = map[string]string{"env": testEnvProduction}
 		// Expected outputs: secretId, project, labels
 	case "gcp:secretmanager/secretIamMember:SecretIamMember":
 		outputs["secretId"] = args.Name
@@ -105,7 +116,7 @@ func (m *fullstackMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 		outputs["name"] = args.Name
 		outputs["project"] = testProjectName
 		outputs["managed"] = map[string]interface{}{
-			"domains": []string{"myapp.example.com"},
+			"domains": []string{testDomainURL},
 		}
 		// Expected outputs: name, project, managed
 	case "gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup":
@@ -264,12 +275,12 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 			Backend: &gcp.BackendArgs{
 				InstanceArgs: &gcp.InstanceArgs{
 					ResourceLimits: pulumi.StringMap{
-						"memory": pulumi.String("512Mi"),
-						"cpu":    pulumi.String("500m"),
+						testResourceMemory: pulumi.String("512Mi"),
+						testResourceCPU:    pulumi.String("500m"),
 					},
 					EnvVars: map[string]string{
-						"LOG_LEVEL":    "info",
-						"DATABASE_URL": "postgresql://localhost:5432/testdb",
+						testEnvLogLevel: "info",
+						"DATABASE_URL":  "postgresql://localhost:5432/testdb",
 					},
 					MaxInstanceCount:   5,
 					DeletionProtection: true,
@@ -281,15 +292,15 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 				},
 			},
 			Frontend: &gcp.FrontendArgs{
-				InstanceArgs: &gcp.InstanceArgs{
+				InstanceArgs: &gcp.InstanceArgs{ //nolint:gosec // G101 false positive: config file paths, not credentials
 					ResourceLimits: pulumi.StringMap{
-						"memory": pulumi.String("1Gi"),
-						"cpu":    pulumi.String("1000m"),
+						testResourceMemory: pulumi.String("1Gi"),
+						testResourceCPU:    pulumi.String("1000m"),
 					},
 					SecretConfigFileName: ".env.production",
 					SecretConfigFilePath: "/app/.next/config/",
 					EnvVars: map[string]string{
-						"NODE_ENV":            "production",
+						"NODE_ENV":            testEnvProduction,
 						"NEXT_PUBLIC_API_URL": "https://api.example.com",
 						"ANALYTICS_ID":        "GA-123456789",
 					},
@@ -301,7 +312,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 				},
 			},
 			Network: &gcp.NetworkArgs{
-				DomainURL: "myapp.example.com",
+				DomainURL: testDomainURL,
 				APIGateway: &gcp.APIGatewayArgs{
 					Name: "gateway",
 					Config: &gcp.APIConfigArgs{
@@ -524,7 +535,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		}
 		require.NotNil(t, nodeEnvVar, "Frontend should have NODE_ENV environment variable")
 		require.NotNil(t, nodeEnvVar.Value, "Frontend NODE_ENV value should not be nil")
-		assert.Equal(t, "production", *nodeEnvVar.Value, "Frontend NODE_ENV should match expected value")
+		assert.Equal(t, testEnvProduction, *nodeEnvVar.Value, "Frontend NODE_ENV should match expected value")
 
 		// Verify API Gateway configuration
 		apiGateway := fullstack.GetAPIGateway()
@@ -669,7 +680,7 @@ func TestNewFullStack_HappyPath(t *testing.T) {
 		// Verify custom environment variables are also set
 		var backendLogLevelVar *cloudrunv2.ServiceTemplateContainerEnv
 		for i := range backendEnvVars {
-			if backendEnvVars[i].Name == "LOG_LEVEL" {
+			if backendEnvVars[i].Name == testEnvLogLevel {
 				backendLogLevelVar = &backendEnvVars[i]
 
 				break
@@ -817,7 +828,7 @@ func TestNewFullStack_WithGatewayDefaults(t *testing.T) {
 				},
 			},
 			Network: &gcp.NetworkArgs{
-				DomainURL:  "myapp.example.com",
+				DomainURL:  testDomainURL,
 				APIGateway: &gcp.APIGatewayArgs{
 					// 	Name: "gateway",
 					// 	Config: &gcp.APIConfigArgs{
@@ -1121,7 +1132,7 @@ func TestNewFullStack_WithGatewayDefaults(t *testing.T) {
 		domains := <-certificateDomainsCh
 		require.NotNil(t, domains, "Certificate domains should not be nil")
 		assert.Len(t, domains, 1, "Certificate should have exactly one domain")
-		assert.Equal(t, "myapp.example.com", domains[0], "Certificate domain should match the provided domain")
+		assert.Equal(t, testDomainURL, domains[0], "Certificate domain should match the provided domain")
 
 		// Verify Gateway NEG configuration
 		neg := fullstack.GetGatewayNEG()
@@ -1183,7 +1194,7 @@ func TestNewFullStack_WithGlobalInternetLoadBalancer(t *testing.T) {
 				InstanceArgs: &gcp.InstanceArgs{},
 			},
 			Network: &gcp.NetworkArgs{
-				DomainURL:              "myapp.example.com",
+				DomainURL:              testDomainURL,
 				EnableGlobalEntrypoint: true,
 			},
 		}
@@ -1221,7 +1232,7 @@ func TestNewFullStack_WithGlobalInternetLoadBalancer(t *testing.T) {
 		domains := <-certificateDomainsCh
 		require.NotNil(t, domains, "Certificate domains should not be nil")
 		assert.Len(t, domains, 1, "Certificate should have exactly one domain")
-		assert.Equal(t, "myapp.example.com", domains[0], "Certificate domain should match the provided domain")
+		assert.Equal(t, testDomainURL, domains[0], "Certificate domain should match the provided domain")
 
 		// Verify DNS record configuration
 		dnsRecord := fullstack.GetDNSRecord()
@@ -1286,7 +1297,7 @@ func TestNewFullStack_WithBackendJWTAuthentication(t *testing.T) {
 				InstanceArgs: &gcp.InstanceArgs{},
 			},
 			Network: &gcp.NetworkArgs{
-				DomainURL: "myapp.example.com",
+				DomainURL: testDomainURL,
 				APIGateway: &gcp.APIGatewayArgs{
 					Name: "gateway",
 					Config: &gcp.APIConfigArgs{
@@ -1474,7 +1485,7 @@ func TestNewFullStack_WithCustomApiPaths(t *testing.T) {
 				InstanceArgs: &gcp.InstanceArgs{},
 			},
 			Network: &gcp.NetworkArgs{
-				DomainURL: "myapp.example.com",
+				DomainURL: testDomainURL,
 				APIGateway: &gcp.APIGatewayArgs{
 					Config: &gcp.APIConfigArgs{
 						Backend: &gcp.Upstream{
@@ -1615,7 +1626,7 @@ func TestNewFullStack_WithoutGateway(t *testing.T) {
 				InstanceArgs: &gcp.InstanceArgs{},
 			},
 			Network: &gcp.NetworkArgs{
-				DomainURL: "myapp.example.com",
+				DomainURL: testDomainURL,
 				APIGateway: &gcp.APIGatewayArgs{
 					Disabled: true,
 				},
@@ -1813,7 +1824,7 @@ func TestNewFullStack_WithoutGateway(t *testing.T) {
 
 		// Assert host rule uses specific domain (not wildcard "*")
 		hostRule := hostRules[0]
-		assert.Equal(t, "myapp.example.com", hostRule.Hosts[0], "Host rule should use the specific domain URL")
+		assert.Equal(t, testDomainURL, hostRule.Hosts[0], "Host rule should use the specific domain URL")
 		assert.NotContains(t, hostRule.Hosts, "*", "Host rule should not use wildcard '*' for security")
 		assert.Equal(t, "traffic-paths", hostRule.PathMatcher, "Host rule should reference the correct path matcher")
 
@@ -1841,14 +1852,14 @@ func TestNewFullStack_WithSecrets(t *testing.T) {
 					Secrets: []*gcp.SecretVolumeArgs{
 						{
 							SecretID:   pulumi.String("backend-db-secret"),
-							Name:       "db-credentials",
+							Name:       testDBCredentialsMount,
 							Path:       "/app/secrets/db",
 							SecretName: "database.json",
 							Version:    pulumi.String("1"),
 						},
 						{
 							SecretID: pulumi.String("backend-api-key"),
-							Name:     "api-key",
+							Name:     testAPIKeyMount,
 							Path:     "/app/secrets/api",
 							Version:  pulumi.String("latest"),
 						},
@@ -1859,7 +1870,7 @@ func TestNewFullStack_WithSecrets(t *testing.T) {
 				InstanceArgs: &gcp.InstanceArgs{},
 			},
 			Network: &gcp.NetworkArgs{
-				DomainURL: "myapp.example.com",
+				DomainURL: testDomainURL,
 			},
 		}
 
@@ -1887,16 +1898,16 @@ func TestNewFullStack_WithSecrets(t *testing.T) {
 		var dbSecretVolume, apiKeySecretVolume *cloudrunv2.ServiceTemplateVolume
 		for i := range backendVolumes {
 			switch backendVolumes[i].Name {
-			case "db-credentials":
+			case testDBCredentialsMount:
 				dbSecretVolume = &backendVolumes[i]
-			case "api-key":
+			case testAPIKeyMount:
 				apiKeySecretVolume = &backendVolumes[i]
 			}
 		}
 
 		// Verify db-credentials secret volume
 		require.NotNil(t, dbSecretVolume, "DB credentials secret volume should be present")
-		assert.Equal(t, "db-credentials", dbSecretVolume.Name, "DB secret volume name should match")
+		assert.Equal(t, testDBCredentialsMount, dbSecretVolume.Name, "DB secret volume name should match")
 		assert.NotNil(t, dbSecretVolume.Secret, "DB secret volume should have secret configuration")
 		assert.NotNil(t, dbSecretVolume.Secret.Items, "DB secret volume should have items")
 		assert.Len(t, dbSecretVolume.Secret.Items, 1, "DB secret volume should have exactly one item")
@@ -1908,7 +1919,7 @@ func TestNewFullStack_WithSecrets(t *testing.T) {
 
 		// Verify api-key secret volume
 		require.NotNil(t, apiKeySecretVolume, "API key secret volume should be present")
-		assert.Equal(t, "api-key", apiKeySecretVolume.Name, "API key volume name should match")
+		assert.Equal(t, testAPIKeyMount, apiKeySecretVolume.Name, "API key volume name should match")
 		assert.NotNil(t, apiKeySecretVolume.Secret, "API key volume should have secret configuration")
 		assert.NotNil(t, apiKeySecretVolume.Secret.Items, "API key volume should have items")
 		assert.Len(t, apiKeySecretVolume.Secret.Items, 1, "API key volume should have exactly one item")
@@ -1937,21 +1948,21 @@ func TestNewFullStack_WithSecrets(t *testing.T) {
 		var dbSecretMount, apiKeySecretMount *cloudrunv2.ServiceTemplateContainerVolumeMount
 		for i := range backendVolumeMounts {
 			switch backendVolumeMounts[i].Name {
-			case "db-credentials":
+			case testDBCredentialsMount:
 				dbSecretMount = &backendVolumeMounts[i]
-			case "api-key":
+			case testAPIKeyMount:
 				apiKeySecretMount = &backendVolumeMounts[i]
 			}
 		}
 
 		// Verify db-credentials volume mount
 		require.NotNil(t, dbSecretMount, "DB credentials volume mount should be present")
-		assert.Equal(t, "db-credentials", dbSecretMount.Name, "DB secret mount name should match")
+		assert.Equal(t, testDBCredentialsMount, dbSecretMount.Name, "DB secret mount name should match")
 		assert.Equal(t, "/app/secrets/db", dbSecretMount.MountPath, "DB secret mount path should match specified path")
 
 		// Verify api-key volume mount
 		require.NotNil(t, apiKeySecretMount, "API key volume mount should be present")
-		assert.Equal(t, "api-key", apiKeySecretMount.Name, "API key mount name should match")
+		assert.Equal(t, testAPIKeyMount, apiKeySecretMount.Name, "API key mount name should match")
 		assert.Equal(t, "/app/secrets/api", apiKeySecretMount.MountPath, "API key mount path should match specified path")
 
 		// Verify basic backend service configuration
@@ -1993,7 +2004,7 @@ func TestNewFullStack_WithCache(t *testing.T) {
 				InstanceArgs: &gcp.InstanceArgs{},
 			},
 			Network: &gcp.NetworkArgs{
-				DomainURL: "myapp.example.com",
+				DomainURL: testDomainURL,
 			},
 		}
 
@@ -2270,7 +2281,7 @@ func TestNewFullStack_WithBucket(t *testing.T) {
 				InstanceArgs: &gcp.InstanceArgs{},
 			},
 			Network: &gcp.NetworkArgs{
-				DomainURL: "myapp.example.com",
+				DomainURL: testDomainURL,
 			},
 		}
 
@@ -2374,7 +2385,7 @@ func TestNewFullStack_WithExternalWAFAndNoGoogleLoadBalancer(t *testing.T) {
 				InstanceArgs: &gcp.InstanceArgs{},
 			},
 			Network: &gcp.NetworkArgs{
-				DomainURL:         "myapp.example.com",
+				DomainURL:         testDomainURL,
 				EnableExternalWAF: true,
 			},
 		}
@@ -2463,7 +2474,7 @@ func TestNewFullStack_WithExternalWAFAndNoGoogleLoadBalancer(t *testing.T) {
 
 			return nil
 		})
-		assert.Equal(t, "myapp.example.com", <-frontendDomainMappingNameCh, "Frontend domain mapping name should match the provided domain")
+		assert.Equal(t, testDomainURL, <-frontendDomainMappingNameCh, "Frontend domain mapping name should match the provided domain")
 
 		// Assert frontend domain mapping location matches the region
 		frontendDomainMappingLocationCh := make(chan string, 1)
@@ -2553,7 +2564,7 @@ func TestNewFullStack_WithColdStartSLOs(t *testing.T) {
 				},
 			},
 			Network: &gcp.NetworkArgs{
-				DomainURL: "myapp.example.com",
+				DomainURL: testDomainURL,
 			},
 		}
 
@@ -2703,7 +2714,7 @@ func TestNewFullStack_WithColdStartSLOAlertPolicy(t *testing.T) {
 				InstanceArgs: &gcp.InstanceArgs{},
 			},
 			Network: &gcp.NetworkArgs{
-				DomainURL: "myapp.example.com",
+				DomainURL: testDomainURL,
 			},
 		}
 
@@ -2816,8 +2827,8 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 			Backend: &gcp.BackendArgs{
 				InstanceArgs: &gcp.InstanceArgs{
 					ResourceLimits: pulumi.StringMap{
-						"memory": pulumi.String("512Mi"),
-						"cpu":    pulumi.String("500m"),
+						testResourceMemory: pulumi.String("512Mi"),
+						testResourceCPU:    pulumi.String("500m"),
 					},
 					ContainerPort: 4001,
 					Sidecars: []*gcp.SidecarArgs{
@@ -2826,8 +2837,8 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 							Image: "gcr.io/test-project/proxy:latest",
 							Args:  []string{"--proxy-mode", "http", "--verbose"},
 							EnvVars: map[string]string{
-								"PROXY_PORT": "8080",
-								"LOG_LEVEL":  "info",
+								"PROXY_PORT":    "8080",
+								testEnvLogLevel: "info",
 							},
 							StartupProbe: &gcp.Probe{
 								Port:                8080,
@@ -2856,7 +2867,7 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 							Secrets: []*gcp.SecretVolumeArgs{
 								{
 									SecretID:       pulumi.String("mcp-server-tls-cert"),
-									Name:           "mcp-tls-cert",
+									Name:           testMCPTLSCertMount,
 									Path:           "/app/secrets/tls",
 									SecretName:     "cert.pem",
 									Version:        pulumi.String("latest"),
@@ -2864,7 +2875,7 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 								},
 								{
 									SecretID:       pulumi.String("mcp-server-config"),
-									Name:           "mcp-config",
+									Name:           testMCPConfigMount,
 									Path:           "/app/config",
 									Version:        pulumi.String("1"),
 									MountAsEnvVars: false, // Mount as volume (default)
@@ -2897,7 +2908,7 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 				InstanceArgs: &gcp.InstanceArgs{},
 			},
 			Network: &gcp.NetworkArgs{
-				DomainURL: "myapp.example.com",
+				DomainURL: testDomainURL,
 			},
 		}
 
@@ -2963,7 +2974,7 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 			if proxySidecar.Envs[i].Name == "PROXY_PORT" {
 				proxyPortEnv = &proxySidecar.Envs[i]
 			}
-			if proxySidecar.Envs[i].Name == "LOG_LEVEL" {
+			if proxySidecar.Envs[i].Name == testEnvLogLevel {
 				proxyLogLevelEnv = &proxySidecar.Envs[i]
 			}
 		}
@@ -3024,21 +3035,21 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 		var mcpTLSCertMount, mcpConfigMount *cloudrunv2.ServiceTemplateContainerVolumeMount
 		for i := range mcpSidecar.VolumeMounts {
 			switch mcpSidecar.VolumeMounts[i].Name {
-			case "mcp-tls-cert":
+			case testMCPTLSCertMount:
 				mcpTLSCertMount = &mcpSidecar.VolumeMounts[i]
-			case "mcp-config":
+			case testMCPConfigMount:
 				mcpConfigMount = &mcpSidecar.VolumeMounts[i]
 			}
 		}
 
 		// Verify mcp-tls-cert volume mount
 		require.NotNil(t, mcpTLSCertMount, "MCP server sidecar should have mcp-tls-cert volume mount")
-		assert.Equal(t, "mcp-tls-cert", mcpTLSCertMount.Name, "MCP TLS cert mount name should match")
+		assert.Equal(t, testMCPTLSCertMount, mcpTLSCertMount.Name, "MCP TLS cert mount name should match")
 		assert.Equal(t, "/app/secrets/tls", mcpTLSCertMount.MountPath, "MCP TLS cert mount path should match specified path")
 
 		// Verify mcp-config volume mount
 		require.NotNil(t, mcpConfigMount, "MCP server sidecar should have mcp-config volume mount")
-		assert.Equal(t, "mcp-config", mcpConfigMount.Name, "MCP config mount name should match")
+		assert.Equal(t, testMCPConfigMount, mcpConfigMount.Name, "MCP config mount name should match")
 		assert.Equal(t, "/app/config", mcpConfigMount.MountPath, "MCP config mount path should match specified path")
 
 		// Verify MCP server sidecar has environment variables from secrets (env-var-mounted secrets)
@@ -3093,16 +3104,16 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 		var mcpTLSCertVolume, mcpConfigVolume *cloudrunv2.ServiceTemplateVolume
 		for i := range backendVolumes {
 			switch backendVolumes[i].Name {
-			case "mcp-tls-cert":
+			case testMCPTLSCertMount:
 				mcpTLSCertVolume = &backendVolumes[i]
-			case "mcp-config":
+			case testMCPConfigMount:
 				mcpConfigVolume = &backendVolumes[i]
 			}
 		}
 
 		// Verify mcp-tls-cert secret volume
 		require.NotNil(t, mcpTLSCertVolume, "MCP TLS cert secret volume should be present")
-		assert.Equal(t, "mcp-tls-cert", mcpTLSCertVolume.Name, "MCP TLS cert volume name should match")
+		assert.Equal(t, testMCPTLSCertMount, mcpTLSCertVolume.Name, "MCP TLS cert volume name should match")
 		assert.NotNil(t, mcpTLSCertVolume.Secret, "MCP TLS cert volume should have secret configuration")
 		assert.NotNil(t, mcpTLSCertVolume.Secret.Items, "MCP TLS cert volume should have items")
 		assert.Len(t, mcpTLSCertVolume.Secret.Items, 1, "MCP TLS cert volume should have exactly one item")
@@ -3114,7 +3125,7 @@ func TestNewFullStack_BackendWithSidecars(t *testing.T) {
 
 		// Verify mcp-config secret volume
 		require.NotNil(t, mcpConfigVolume, "MCP config secret volume should be present")
-		assert.Equal(t, "mcp-config", mcpConfigVolume.Name, "MCP config volume name should match")
+		assert.Equal(t, testMCPConfigMount, mcpConfigVolume.Name, "MCP config volume name should match")
 		assert.NotNil(t, mcpConfigVolume.Secret, "MCP config volume should have secret configuration")
 		assert.NotNil(t, mcpConfigVolume.Secret.Items, "MCP config volume should have items")
 		assert.Len(t, mcpConfigVolume.Secret.Items, 1, "MCP config volume should have exactly one item")
@@ -3167,8 +3178,8 @@ func TestNewFullStack_FrontendWithSidecar(t *testing.T) {
 			Frontend: &gcp.FrontendArgs{
 				InstanceArgs: &gcp.InstanceArgs{
 					ResourceLimits: pulumi.StringMap{
-						"memory": pulumi.String("1Gi"),
-						"cpu":    pulumi.String("1000m"),
+						testResourceMemory: pulumi.String("1Gi"),
+						testResourceCPU:    pulumi.String("1000m"),
 					},
 					ContainerPort: 3000,
 					Sidecars: []*gcp.SidecarArgs{
@@ -3177,12 +3188,12 @@ func TestNewFullStack_FrontendWithSidecar(t *testing.T) {
 							Image: "gcr.io/test-project/analytics:latest",
 							EnvVars: map[string]string{
 								"ANALYTICS_PORT": "9090",
-								"ENVIRONMENT":    "production",
+								"ENVIRONMENT":    testEnvProduction,
 							},
 							Secrets: []*gcp.SecretVolumeArgs{
 								{
-									SecretID:       pulumi.String("analytics-api-key"),
-									Name:           "analytics-api-key",
+									SecretID:       pulumi.String(testAnalyticsMount),
+									Name:           testAnalyticsMount,
 									Path:           "/app/secrets/api",
 									SecretName:     "api.key",
 									Version:        pulumi.String("latest"),
@@ -3208,7 +3219,7 @@ func TestNewFullStack_FrontendWithSidecar(t *testing.T) {
 				},
 			},
 			Network: &gcp.NetworkArgs{
-				DomainURL: "myapp.example.com",
+				DomainURL: testDomainURL,
 			},
 		}
 
@@ -3280,7 +3291,7 @@ func TestNewFullStack_FrontendWithSidecar(t *testing.T) {
 		assert.Equal(t, "9090", *analyticsPortEnv.Value, "Analytics sidecar ANALYTICS_PORT should be 9090")
 		assert.Nil(t, analyticsPortEnv.ValueSource, "ANALYTICS_PORT should not have ValueSource (it's a regular env var)")
 		require.NotNil(t, analyticsEnvVar, "Analytics sidecar should have ENVIRONMENT environment variable")
-		assert.Equal(t, "production", *analyticsEnvVar.Value, "Analytics sidecar ENVIRONMENT should be production")
+		assert.Equal(t, testEnvProduction, *analyticsEnvVar.Value, "Analytics sidecar ENVIRONMENT should be production")
 		assert.Nil(t, analyticsEnvVar.ValueSource, "ENVIRONMENT should not have ValueSource (it's a regular env var)")
 
 		// Verify analytics sidecar has volume mounts for secrets (only volume-mounted secrets)
@@ -3290,7 +3301,7 @@ func TestNewFullStack_FrontendWithSidecar(t *testing.T) {
 		// Find the secret volume mount
 		var analyticsAPIKeyMount *cloudrunv2.ServiceTemplateContainerVolumeMount
 		for i := range analyticsSidecar.VolumeMounts {
-			if analyticsSidecar.VolumeMounts[i].Name == "analytics-api-key" {
+			if analyticsSidecar.VolumeMounts[i].Name == testAnalyticsMount {
 				analyticsAPIKeyMount = &analyticsSidecar.VolumeMounts[i]
 
 				break
@@ -3299,7 +3310,7 @@ func TestNewFullStack_FrontendWithSidecar(t *testing.T) {
 
 		// Verify analytics-api-key volume mount
 		require.NotNil(t, analyticsAPIKeyMount, "Analytics sidecar should have analytics-api-key volume mount")
-		assert.Equal(t, "analytics-api-key", analyticsAPIKeyMount.Name, "Analytics API key mount name should match")
+		assert.Equal(t, testAnalyticsMount, analyticsAPIKeyMount.Name, "Analytics API key mount name should match")
 		assert.Equal(t, "/app/secrets/api", analyticsAPIKeyMount.MountPath, "Analytics API key mount path should match specified path")
 
 		// Verify analytics sidecar has environment variables from secrets (env-var-mounted secrets)
@@ -3338,7 +3349,7 @@ func TestNewFullStack_FrontendWithSidecar(t *testing.T) {
 		// Find the sidecar secret volume
 		var analyticsAPIKeyVolume *cloudrunv2.ServiceTemplateVolume
 		for i := range frontendVolumes {
-			if frontendVolumes[i].Name == "analytics-api-key" {
+			if frontendVolumes[i].Name == testAnalyticsMount {
 				analyticsAPIKeyVolume = &frontendVolumes[i]
 
 				break
@@ -3347,7 +3358,7 @@ func TestNewFullStack_FrontendWithSidecar(t *testing.T) {
 
 		// Verify analytics-api-key secret volume
 		require.NotNil(t, analyticsAPIKeyVolume, "Analytics API key secret volume should be present")
-		assert.Equal(t, "analytics-api-key", analyticsAPIKeyVolume.Name, "Analytics API key volume name should match")
+		assert.Equal(t, testAnalyticsMount, analyticsAPIKeyVolume.Name, "Analytics API key volume name should match")
 		assert.NotNil(t, analyticsAPIKeyVolume.Secret, "Analytics API key volume should have secret configuration")
 		assert.NotNil(t, analyticsAPIKeyVolume.Secret.Items, "Analytics API key volume should have items")
 		assert.Len(t, analyticsAPIKeyVolume.Secret.Items, 1, "Analytics API key volume should have exactly one item")

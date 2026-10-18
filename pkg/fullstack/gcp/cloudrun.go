@@ -12,6 +12,9 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
+// Default file name of secrets mounted as a dotenv file.
+const defaultSecretConfigFileName = ".env"
+
 var (
 	// Resource "requests" do not apply to Cloud Run as in k8s
 	defaultBackendResourceLimits = pulumi.StringMap{
@@ -89,8 +92,8 @@ func setInstanceDefaults(args *InstanceArgs, defaults InstanceDefaults) *Instanc
 
 func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *BackendArgs) (*cloudrunv2.Service, *serviceaccount.Account, error) {
 	// Set defaults for backend
-	backendDefaults := InstanceDefaults{
-		SecretConfigFileName: ".env",
+	backendDefaults := InstanceDefaults{ //nolint:gosec // G101 false positive: config file paths, not credentials
+		SecretConfigFileName: defaultSecretConfigFileName,
 		SecretConfigFilePath: "/app/config/",
 		ContainerPort:        4001,
 		ResourceLimits:       defaultBackendResourceLimits,
@@ -123,7 +126,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 			SecretID:   f.cacheCredentialsSecret.Secret,
 			Name:       "cache-credentials",
 			Path:       "/app/cache-config",
-			SecretName: ".env",
+			SecretName: defaultSecretConfigFileName,
 			Version:    f.cacheCredentialsSecret.Version,
 		})
 	}
@@ -444,7 +447,7 @@ func (f *FullStack) grantProjectLevelIAMRoles(ctx *pulumi.Context,
 
 func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *FrontendArgs, backendURL pulumi.StringOutput) (*cloudrunv2.Service, *serviceaccount.Account, error) {
 	// Set defaults for frontend
-	frontendDefaults := InstanceDefaults{
+	frontendDefaults := InstanceDefaults{ //nolint:gosec // G101 false positive: config file paths, not credentials
 		SecretConfigFileName: ".env.production",
 		SecretConfigFilePath: "/app/.next/config/",
 		ContainerPort:        3000,
@@ -595,7 +598,8 @@ func (f *FullStack) createCloudRunInstancesIAM(ctx *pulumi.Context, frontendServ
 }
 
 func newFrontendEnvVars(args *FrontendArgs, backendURL pulumi.StringOutput, appBaseURL string) cloudrunv2.ServiceTemplateContainerEnvArray {
-	envVars := cloudrunv2.ServiceTemplateContainerEnvArray{
+	envVars := make(cloudrunv2.ServiceTemplateContainerEnvArray, 0, 3+len(args.EnvVars))
+	envVars = append(envVars,
 		cloudrunv2.ServiceTemplateContainerEnvArgs{
 			Name:  pulumi.String("DOTENV_CONFIG_PATH"),
 			Value: pulumi.String(fmt.Sprintf("%s%s", args.SecretConfigFilePath, args.SecretConfigFileName)),
@@ -608,7 +612,7 @@ func newFrontendEnvVars(args *FrontendArgs, backendURL pulumi.StringOutput, appB
 			Name:  pulumi.String("BACKEND_API_URL"),
 			Value: backendURL,
 		},
-	}
+	)
 	for enVarName, envVarValue := range args.EnvVars {
 		envVars = append(envVars, cloudrunv2.ServiceTemplateContainerEnvArgs{
 			Name:  pulumi.String(enVarName),
@@ -620,7 +624,8 @@ func newFrontendEnvVars(args *FrontendArgs, backendURL pulumi.StringOutput, appB
 }
 
 func newBackendEnvVars(args *BackendArgs, appBaseURL string) cloudrunv2.ServiceTemplateContainerEnvArray {
-	envVars := cloudrunv2.ServiceTemplateContainerEnvArray{
+	envVars := make(cloudrunv2.ServiceTemplateContainerEnvArray, 0, 2+len(args.EnvVars))
+	envVars = append(envVars,
 		cloudrunv2.ServiceTemplateContainerEnvArgs{
 			Name:  pulumi.String("DOTENV_CONFIG_PATH"),
 			Value: pulumi.String(fmt.Sprintf("%s%s", args.SecretConfigFilePath, args.SecretConfigFileName)),
@@ -629,7 +634,7 @@ func newBackendEnvVars(args *BackendArgs, appBaseURL string) cloudrunv2.ServiceT
 			Name:  pulumi.String("APP_BASE_URL"),
 			Value: pulumi.String(appBaseURL),
 		},
-	}
+	)
 	for enVarName, envVarValue := range args.EnvVars {
 		envVars = append(envVars, cloudrunv2.ServiceTemplateContainerEnvArgs{
 			Name:  pulumi.String(enVarName),
@@ -652,7 +657,7 @@ func newSecretVolume(secret *SecretVolumeArgs) *cloudrunv2.ServiceTemplateVolume
 							return secret.SecretName
 						}
 
-						return ".env"
+						return defaultSecretConfigFileName
 					}()),
 					Version: secret.Version,
 					Mode:    pulumi.IntPtr(0400),
@@ -714,7 +719,7 @@ func livenessProbe(port int, path string, probe *Probe) *cloudrunv2.ServiceTempl
 }
 
 func newSidecarEnvVars(envVars map[string]string) cloudrunv2.ServiceTemplateContainerEnvArray {
-	sidecarEnvVars := cloudrunv2.ServiceTemplateContainerEnvArray{}
+	sidecarEnvVars := make(cloudrunv2.ServiceTemplateContainerEnvArray, 0, len(envVars))
 	for envVarName, envVarValue := range envVars {
 		sidecarEnvVars = append(sidecarEnvVars, cloudrunv2.ServiceTemplateContainerEnvArgs{
 			Name:  pulumi.String(envVarName),

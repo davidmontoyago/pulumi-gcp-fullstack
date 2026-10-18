@@ -47,8 +47,7 @@ func (f *FullStack) newCloudArmorPolicy(ctx *pulumi.Context, policyName string, 
 }
 
 func newDefaultRule() compute.SecurityPolicyRuleTypeArray {
-	var defaultRules compute.SecurityPolicyRuleTypeArray
-	defaultRules = append(defaultRules, &compute.SecurityPolicyRuleTypeArgs{
+	return compute.SecurityPolicyRuleTypeArray{&compute.SecurityPolicyRuleTypeArgs{
 		Action:      pulumi.String("allow"),
 		Description: pulumi.String("Default allow rule"),
 		Priority:    pulumi.Int(2147483647),
@@ -60,19 +59,16 @@ func newDefaultRule() compute.SecurityPolicyRuleTypeArray {
 				},
 			},
 		},
-	})
-
-	return defaultRules
+	}}
 }
 
 func newIPAllowlistRules(clientIPAllowlist []string) compute.SecurityPolicyRuleTypeArray {
-	ipRanges := pulumi.StringArray{}
+	ipRanges := make(pulumi.StringArray, 0, len(clientIPAllowlist))
 	for _, ip := range clientIPAllowlist {
 		ipRanges = append(ipRanges, pulumi.String(ip))
 	}
 
-	var ipAllowlistRules compute.SecurityPolicyRuleTypeArray
-	ipAllowlistRules = append(ipAllowlistRules,
+	return compute.SecurityPolicyRuleTypeArray{
 		&compute.SecurityPolicyRuleTypeArgs{
 			Action:      pulumi.String("allow"),
 			Priority:    pulumi.Int(1),
@@ -95,15 +91,13 @@ func newIPAllowlistRules(clientIPAllowlist []string) compute.SecurityPolicyRuleT
 					},
 				},
 			},
-		})
-
-	return ipAllowlistRules
+		},
+	}
 }
 
 // newPreconfiguredRules returns a list of best-practice rules to deny traffic
 func newPreconfiguredRules() compute.SecurityPolicyRuleTypeArray {
-	var preconfiguredRules compute.SecurityPolicyRuleTypeArray
-	for index, rule := range []string{
+	rules := []string{
 		"sqli-v33-stable",
 		"xss-v33-stable",
 		"lfi-v33-stable",
@@ -114,7 +108,9 @@ func newPreconfiguredRules() compute.SecurityPolicyRuleTypeArray {
 		"protocolattack-v33-stable",
 		"sessionfixation-v33-stable",
 		"nodejs-v33-stable",
-	} {
+	}
+	preconfiguredRules := make(compute.SecurityPolicyRuleTypeArray, 0, len(rules))
+	for index, rule := range rules {
 		preconfiguredWafRule := fmt.Sprintf("evaluatePreconfiguredWaf('%s', {'sensitivity': 1})", rule)
 		preconfiguredRules = append(preconfiguredRules, &compute.SecurityPolicyRuleTypeArgs{
 			Action:      pulumi.String("deny(502)"),

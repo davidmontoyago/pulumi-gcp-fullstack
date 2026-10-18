@@ -4,6 +4,19 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
+const (
+	// OpenAPI security scheme name and bearer format for service-to-service JWT auth.
+	jwtSecurityScheme = "JWT"
+	// Path parameter capturing the proxied request path.
+	proxyPathParam = "proxy"
+	// API Gateway backend extension and its fields.
+	// See: https://cloud.google.com/api-gateway/docs/openapi-overview
+	googleBackendExtension       = "x-google-backend"
+	googleBackendAddress         = "address"
+	googleBackendPathTranslation = "pathTranslation"
+	googleBackendProtocol        = "protocol"
+)
+
 // Path translation constants
 const (
 	AppendPathToAddress     = "APPEND_PATH_TO_ADDRESS"
@@ -20,11 +33,11 @@ func newOpenAPISpec(backendServiceURI, frontendServiceURI string, configArgs *AP
 	// Configure JWT authentication if enabled for backend
 	if backendJWTConfig != nil {
 		// Add JWT security scheme for service-to-service authentication
-		securitySchemes["JWT"] = &openapi3.SecuritySchemeRef{
+		securitySchemes[jwtSecurityScheme] = &openapi3.SecuritySchemeRef{
 			Value: &openapi3.SecurityScheme{
 				Type:         "http",
 				Scheme:       "bearer",
-				BearerFormat: "JWT",
+				BearerFormat: jwtSecurityScheme,
 				Extensions: map[string]interface{}{
 					"x-google-issuer":   backendJWTConfig.Issuer,
 					"x-google-jwks_uri": backendJWTConfig.JwksURI,
@@ -41,10 +54,10 @@ func newOpenAPISpec(backendServiceURI, frontendServiceURI string, configArgs *AP
 		pathItem := createAPIPathItem(backendServiceURI, "/api/v1", AppendPathToAddress)
 		// Apply JWT security if configured
 		if backendJWTConfig != nil {
-			pathItem.Get.Security = &openapi3.SecurityRequirements{{"JWT": []string{}}}
-			pathItem.Post.Security = &openapi3.SecurityRequirements{{"JWT": []string{}}}
-			pathItem.Put.Security = &openapi3.SecurityRequirements{{"JWT": []string{}}}
-			pathItem.Delete.Security = &openapi3.SecurityRequirements{{"JWT": []string{}}}
+			pathItem.Get.Security = &openapi3.SecurityRequirements{{jwtSecurityScheme: []string{}}}
+			pathItem.Post.Security = &openapi3.SecurityRequirements{{jwtSecurityScheme: []string{}}}
+			pathItem.Put.Security = &openapi3.SecurityRequirements{{jwtSecurityScheme: []string{}}}
+			pathItem.Delete.Security = &openapi3.SecurityRequirements{{jwtSecurityScheme: []string{}}}
 			// OPTIONS should not require authentication for CORS preflight
 		}
 		paths.Set("/api/v1/{proxy}", pathItem)
@@ -113,10 +126,10 @@ func addPaths(paths *openapi3.Paths, pathConfigs []*APIPathArgs, serviceURI stri
 
 		// Apply JWT security if configured
 		if jwtAuthConfig != nil {
-			pathItem.Get.Security = &openapi3.SecurityRequirements{{"JWT": []string{}}}
-			pathItem.Post.Security = &openapi3.SecurityRequirements{{"JWT": []string{}}}
-			pathItem.Put.Security = &openapi3.SecurityRequirements{{"JWT": []string{}}}
-			pathItem.Delete.Security = &openapi3.SecurityRequirements{{"JWT": []string{}}}
+			pathItem.Get.Security = &openapi3.SecurityRequirements{{jwtSecurityScheme: []string{}}}
+			pathItem.Post.Security = &openapi3.SecurityRequirements{{jwtSecurityScheme: []string{}}}
+			pathItem.Put.Security = &openapi3.SecurityRequirements{{jwtSecurityScheme: []string{}}}
+			pathItem.Delete.Security = &openapi3.SecurityRequirements{{jwtSecurityScheme: []string{}}}
 			// OPTIONS should not require authentication for CORS preflight
 		}
 
@@ -177,8 +190,8 @@ func createAPIOperation(operationID, method, serviceURI, upstreamPath, pathTrans
 		Parameters: []*openapi3.ParameterRef{
 			{
 				Value: &openapi3.Parameter{
-					Name:     "proxy",
-					In:       "path",
+					Name:     proxyPathParam,
+					In:       openapi3.ParameterInPath,
 					Required: true,
 					Schema:   &openapi3.SchemaRef{Value: openapi3.NewStringSchema()},
 				},
@@ -186,10 +199,10 @@ func createAPIOperation(operationID, method, serviceURI, upstreamPath, pathTrans
 		},
 		Responses: openapi3.NewResponses(),
 		Extensions: map[string]interface{}{
-			"x-google-backend": map[string]interface{}{
-				"address":         serviceURI + upstreamPath,
-				"pathTranslation": pathTranslation,
-				"protocol":        "h2",
+			googleBackendExtension: map[string]interface{}{
+				googleBackendAddress:         serviceURI + upstreamPath,
+				googleBackendPathTranslation: pathTranslation,
+				googleBackendProtocol:        "h2",
 			},
 		},
 	}
@@ -227,8 +240,8 @@ func createUIOperation(operationID, serviceURI, upstreamPath, pathTranslation st
 		Parameters: []*openapi3.ParameterRef{
 			{
 				Value: &openapi3.Parameter{
-					Name:     "proxy",
-					In:       "path",
+					Name:     proxyPathParam,
+					In:       openapi3.ParameterInPath,
 					Required: true,
 					Schema:   &openapi3.SchemaRef{Value: openapi3.NewStringSchema()},
 				},
@@ -236,10 +249,10 @@ func createUIOperation(operationID, serviceURI, upstreamPath, pathTranslation st
 		},
 		Responses: openapi3.NewResponses(),
 		Extensions: map[string]interface{}{
-			"x-google-backend": map[string]interface{}{
-				"address":         serviceURI + upstreamPath,
-				"pathTranslation": pathTranslation,
-				"protocol":        "h2",
+			googleBackendExtension: map[string]interface{}{
+				googleBackendAddress:         serviceURI + upstreamPath,
+				googleBackendPathTranslation: pathTranslation,
+				googleBackendProtocol:        "h2",
 			},
 		},
 	}
@@ -262,8 +275,8 @@ func createCORSOperation(operationID, serviceURI, upstreamPath, pathTranslation 
 		Parameters: []*openapi3.ParameterRef{
 			{
 				Value: &openapi3.Parameter{
-					Name:     "proxy",
-					In:       "path",
+					Name:     proxyPathParam,
+					In:       openapi3.ParameterInPath,
 					Required: true,
 					Schema:   &openapi3.SchemaRef{Value: openapi3.NewStringSchema()},
 				},
@@ -271,10 +284,10 @@ func createCORSOperation(operationID, serviceURI, upstreamPath, pathTranslation 
 		},
 		Responses: openapi3.NewResponses(),
 		Extensions: map[string]interface{}{
-			"x-google-backend": map[string]interface{}{
-				"address":         serviceURI + upstreamPath,
-				"pathTranslation": pathTranslation,
-				"protocol":        "h2",
+			googleBackendExtension: map[string]interface{}{
+				googleBackendAddress:         serviceURI + upstreamPath,
+				googleBackendPathTranslation: pathTranslation,
+				googleBackendProtocol:        "h2",
 			},
 		},
 	}
