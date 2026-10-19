@@ -194,11 +194,7 @@ func (f *FullStack) deployBackendCloudRunInstance(ctx *pulumi.Context, args *Bac
 		}
 	}
 
-	ingress := "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
-	if args.EnablePublicIngress {
-		// The instance is likely using an external WAF. Make it reachable.
-		ingress = "INGRESS_TRAFFIC_ALL"
-	}
+	ingress := f.instanceIngress(args.EnablePublicIngress)
 
 	backendService, err := cloudrunv2.NewService(ctx, backendServiceName, &cloudrunv2.ServiceArgs{
 		Name:               pulumi.String(backendServiceName),
@@ -534,11 +530,7 @@ func (f *FullStack) deployFrontendCloudRunInstance(ctx *pulumi.Context, args *Fr
 		Volumes:        volumes,
 	}
 
-	ingress := "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
-	if args.EnablePublicIngress {
-		// The instance is likely using an external WAF. Make it reachable.
-		ingress = "INGRESS_TRAFFIC_ALL"
-	}
+	ingress := f.instanceIngress(args.EnablePublicIngress)
 
 	frontendService, err := cloudrunv2.NewService(ctx, frontendServiceName, &cloudrunv2.ServiceArgs{
 		Name:               pulumi.String(frontendServiceName),

@@ -3,6 +3,8 @@ package gcp
 
 import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+
+	"github.com/davidmontoyago/pulumi-gcp-fullstack/pkg/fullstack/gcp/connector"
 )
 
 // FullStackArgs contains configuration arguments for creating a FullStack instance.
@@ -123,7 +125,23 @@ type NetworkArgs struct {
 	// Whether to secure the frontend and backend instances with an external WAF using Cloud Run Domain Mapping.
 	// Set to true to disable the external load balancer. Defaults to false.
 	EnableExternalWAF bool
+	// How the external WAF reaches the instances when EnableExternalWAF is true.
+	// Defaults to ExternalWAFConnectorDomainMapping.
+	// With ExternalWAFConnectorTunnel, instances use internal-only ingress and are reached through
+	// tunnel connectors. See FullStack.DeployTunnelConnector.
+	ExternalWAFConnector string
+	// Network for tunnel connectors. Defaults to a dedicated network.
+	// Used only with ExternalWAFConnectorTunnel.
+	TunnelConnectorNetwork *connector.NetworkArgs
 }
+
+// External WAF connectors.
+const (
+	// Public ingress plus Cloud Run domain mappings.
+	ExternalWAFConnectorDomainMapping = "domain-mapping"
+	// Internal-only ingress plus tunnel connectors (e.g. cloudflared).
+	ExternalWAFConnectorTunnel = "tunnel"
+)
 
 // APIGatewayArgs contains configuration for Google API Gateway
 type APIGatewayArgs struct {

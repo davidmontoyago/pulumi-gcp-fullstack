@@ -17,6 +17,8 @@ import (
 	"github.com/pulumi/pulumi-gcp/sdk/v10/go/gcp/storage"
 	"github.com/pulumi/pulumi-gcp/sdk/v10/go/gcp/vpcaccess"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+
+	"github.com/davidmontoyago/pulumi-gcp-fullstack/pkg/fullstack/gcp/connector"
 )
 
 // FullStack represents a complete fullstack application infrastructure on Google Cloud Platform.
@@ -82,10 +84,20 @@ type FullStack struct {
 
 	// Storage infrastructure
 	storageBucket *storage.Bucket
+
+	// Tunnel connectors, when ExternalWAFConnector is ExternalWAFConnectorTunnel
+	externalWAFConnector string
+	connectorNetwork     *connector.Network
+	tunnelConnectors     map[string]*connector.TunnelConnector
 }
 
 // NewFullStack creates a new FullStack instance with the provided configuration.
 func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ...pulumi.ResourceOption) (*FullStack, error) {
+	externalWAFConnector, err := resolveExternalWAFConnector(args.Network)
+	if err != nil {
+		return nil, err
+	}
+
 	// Set default values for BackendName and FrontendName if not provided
 	backendName := args.BackendName
 	if backendName == "" {
@@ -119,8 +131,11 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 
 		gatewayEnabled:      gatewayEnabled,
 		loadBalancerEnabled: loadBalancerEnabled,
+
+		externalWAFConnector: externalWAFConnector,
+		tunnelConnectors:     map[string]*connector.TunnelConnector{},
 	}
-	err := ctx.RegisterComponentResource("pulumi-fullstack:gcp:FullStack", name, fullStack, opts...)
+	err = ctx.RegisterComponentResource("pulumi-fullstack:gcp:FullStack", name, fullStack, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register component resource: %w", err)
 	}
@@ -156,6 +171,15 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 }
 
 func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
+	if f.tunnelConnectorsEnabled() {
+		// Network shared by the tunnel connectors deployed with DeployTunnelConnector
+		connectorNetwork, err := connector.NewNetwork(ctx, f.connectorScope(), args.Network.TunnelConnectorNetwork)
+		if err != nil {
+			return fmt.Errorf("failed to deploy tunnel connector network: %w", err)
+		}
+		f.connectorNetwork = connectorNetwork
+	}
+
 	if args.Backend != nil && args.Backend.CacheInstance != nil {
 		// Deploy cache companion for backend
 		err := f.deployCache(ctx, args.Backend.CacheInstance)
@@ -212,7 +236,7 @@ func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
 		if err != nil {
 			return fmt.Errorf("failed to deploy external load balancer: %w", err)
 		}
-	} else if args.Network.EnableExternalWAF {
+	} else if args.Network != nil && args.Network.EnableExternalWAF && !f.tunnelConnectorsEnabled() {
 		// create domain mappings for the backend and frontend services
 		backendDomainMapping, err := f.createInstanceDomainMapping(
 			ctx,

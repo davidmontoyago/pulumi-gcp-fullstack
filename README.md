@@ -21,6 +21,7 @@ Features:
     - Optional: default best-practice Cloud Armor policy.
     - Optional: restrict access to an allowlist of IPs.
     - Optional: disable the load balancer all together and secure with an external WAF like [cloudflare](https://github.com/davidmontoyago/pulumi-cloudflare-free-edge-protection).
+4. Optional tunnel connectors (e.g. `cloudflared`) to reach private instances without public ingress (See: [Tunnel Connectors](#tunnel-connectors)).
 
 ## Install
 
@@ -261,6 +262,39 @@ See:
           v
    [Cloud Resources]
 ```
+
+## Tunnel Connectors
+
+A tunnel connector is a proxy process (e.g. [cloudflared](https://developers.cloudflare.com/tunnel/)) that opens outbound-only connections to an external network and relays its traffic to the frontend and backend. Instances use internal-only ingress, with no public IP, load balancer or domain mapping.
+
+```go
+mystack, err := gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
+    // ...
+    Network: &gcp.NetworkArgs{
+        DomainURL:            cfg.DomainURL,
+        EnableExternalWAF:    true,
+        ExternalWAFConnector: gcp.ExternalWAFConnectorTunnel,
+    },
+})
+
+// E.g. with pulumi-cloudflare-free-edge-protection routing to mystack.GetBackendService().Uri
+_, err = mystack.DeployTunnelConnector(ctx, connector.Cloudflared(edge.GetTunnelToken()))
+```
+
+- Each connector runs as a Cloud Run worker pool, defaulting to the minimums (0.08 vCPU, 512 MiB, 1 instance: ~$0.72/mo).
+- Its credential is stored in Secret Manager, readable only by the connector's own service account, and mounted as a file.
+- Connectors share a dedicated network: Direct VPC egress (`private-ranges-only`), Private Google Access and a private `run.app` DNS zone (~$0.20/mo). Edge traffic uses Cloud Run's built-in internet egress, so no Cloud NAT is needed.
+- Other proxies can be configured with `connector.Args` (image, args, credential as a file or env var, probes).
+
+```
+[Edge / overlay network]
+          ^
+          | outbound only
+  [Connector worker pool] --(VPC + Private Google Access)--> [Frontend] [Backend]
+                                                              (internal ingress)
+```
+
+See [Tunnel Connector Design](docs/design/tunnel-connector.md).
 
 ## API Gateway Integration
 
