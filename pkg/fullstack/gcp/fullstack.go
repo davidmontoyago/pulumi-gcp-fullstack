@@ -87,6 +87,7 @@ type FullStack struct {
 
 	// Tunnel connectors, when ExternalWAFConnector is ExternalWAFConnectorTunnel
 	externalWAFConnector string
+	connectorNetworkArgs *connector.NetworkArgs
 	connectorNetwork     *connector.Network
 	tunnelConnectors     map[string]*connector.TunnelConnector
 }
@@ -110,12 +111,16 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 	}
 
 	appBaseURL := ""
+	var connectorNetworkArgs *connector.NetworkArgs
 	if args.Network != nil {
 		appBaseURL = fmt.Sprintf("https://%s", args.Network.DomainURL)
+		connectorNetworkArgs = args.Network.TunnelConnectorNetwork
 	}
 
 	gatewayEnabled := args.Network != nil && args.Network.APIGateway != nil && !args.Network.APIGateway.Disabled
-	loadBalancerEnabled := args.Network != nil && !args.Network.EnableExternalWAF
+	// The tunnel connector implies an external WAF in front of the instances.
+	externalWAFEnabled := args.Network != nil && (args.Network.EnableExternalWAF || externalWAFConnector == ExternalWAFConnectorTunnel)
+	loadBalancerEnabled := args.Network != nil && !externalWAFEnabled
 
 	fullStack := &FullStack{
 		Project:       args.Project,
@@ -133,6 +138,7 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 		loadBalancerEnabled: loadBalancerEnabled,
 
 		externalWAFConnector: externalWAFConnector,
+		connectorNetworkArgs: connectorNetworkArgs,
 		tunnelConnectors:     map[string]*connector.TunnelConnector{},
 	}
 	err = ctx.RegisterComponentResource("pulumi-fullstack:gcp:FullStack", name, fullStack, opts...)
@@ -171,15 +177,6 @@ func NewFullStack(ctx *pulumi.Context, name string, args *FullStackArgs, opts ..
 }
 
 func (f *FullStack) deploy(ctx *pulumi.Context, args *FullStackArgs) error {
-	if f.tunnelConnectorsEnabled() {
-		// Network shared by the tunnel connectors deployed with DeployTunnelConnector
-		connectorNetwork, err := connector.NewNetwork(ctx, f.connectorScope(), args.Network.TunnelConnectorNetwork)
-		if err != nil {
-			return fmt.Errorf("failed to deploy tunnel connector network: %w", err)
-		}
-		f.connectorNetwork = connectorNetwork
-	}
-
 	if args.Backend != nil && args.Backend.CacheInstance != nil {
 		// Deploy cache companion for backend
 		err := f.deployCache(ctx, args.Backend.CacheInstance)

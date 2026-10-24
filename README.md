@@ -271,8 +271,8 @@ A tunnel connector is a proxy process (e.g. [cloudflared](https://developers.clo
 mystack, err := gcp.NewFullStack(ctx, "my-fullstack", &gcp.FullStackArgs{
     // ...
     Network: &gcp.NetworkArgs{
-        DomainURL:            cfg.DomainURL,
-        EnableExternalWAF:    true,
+        DomainURL: cfg.DomainURL,
+        // Tunnel mode: no load balancer, internal-only ingress, no domain mappings
         ExternalWAFConnector: gcp.ExternalWAFConnectorTunnel,
     },
 })
@@ -283,8 +283,9 @@ _, err = mystack.DeployTunnelConnector(ctx, connector.Cloudflared(edge.GetTunnel
 
 - Each connector runs as a Cloud Run worker pool, defaulting to the minimums (0.08 vCPU, 512 MiB, 1 instance: ~$0.72/mo).
 - Its credential is stored in Secret Manager, readable only by the connector's own service account, and mounted as a file.
-- Connectors share a dedicated network: Direct VPC egress (`private-ranges-only`), Private Google Access and a private `run.app` DNS zone (~$0.20/mo). Edge traffic uses Cloud Run's built-in internet egress, so no Cloud NAT is needed.
+- The first `DeployTunnelConnector` call creates a network that later connectors share: Direct VPC egress (`private-ranges-only`), Private Google Access and a private `run.app` DNS zone (~$0.20/mo). Edge traffic uses Cloud Run's built-in internet egress, so no Cloud NAT is needed.
 - Other proxies can be configured with `connector.Args` (image, args, credential as a file or env var, probes).
+- `DeployTunnelConnector` also works with the default `ExternalWAFConnectorDomainMapping`, where services stay public. Use it to stage a connector, then switch to `ExternalWAFConnectorTunnel` to close public ingress.
 
 ```
 [Edge / overlay network]

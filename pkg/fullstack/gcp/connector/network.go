@@ -39,6 +39,15 @@ func NewNetwork(ctx *pulumi.Context, scope Scope, args *NetworkArgs) (*Network, 
 		return nil, errors.New("connector network name and subnet name must be set together")
 	}
 
+	computeAPI, err := projects.NewService(ctx, scope.Namer.NewResourceName("connector", "compute-api", 63), &projects.ServiceArgs{
+		Project:          pulumi.String(scope.Project),
+		Service:          pulumi.String("compute.googleapis.com"),
+		DisableOnDestroy: pulumi.Bool(false),
+	}, pulumi.Parent(scope.Parent), pulumi.RetainOnDelete(true))
+	if err != nil {
+		return nil, fmt.Errorf("failed to enable Compute API: %w", err)
+	}
+
 	dnsAPI, err := projects.NewService(ctx, scope.Namer.NewResourceName("connector", "dns-api", 63), &projects.ServiceArgs{
 		Project:          pulumi.String(scope.Project),
 		Service:          pulumi.String("dns.googleapis.com"),
@@ -54,7 +63,7 @@ func NewNetwork(ctx *pulumi.Context, scope Scope, args *NetworkArgs) (*Network, 
 	}
 
 	if args.NetworkName == "" {
-		err = network.createDedicatedNetwork(ctx, scope, args)
+		err = network.createDedicatedNetwork(ctx, scope, args, computeAPI)
 		if err != nil {
 			return nil, err
 		}
@@ -97,7 +106,7 @@ func NewNetwork(ctx *pulumi.Context, scope Scope, args *NetworkArgs) (*Network, 
 
 // createDedicatedNetwork creates a custom-mode network and a subnet with Private Google Access.
 // No firewall rules: egress is allowed by default and nothing ingresses.
-func (n *Network) createDedicatedNetwork(ctx *pulumi.Context, scope Scope, args *NetworkArgs) error {
+func (n *Network) createDedicatedNetwork(ctx *pulumi.Context, scope Scope, args *NetworkArgs, computeAPI pulumi.Resource) error {
 	cidr := args.IPCidrRange
 	if cidr == "" {
 		cidr = defaultSubnetCIDR
@@ -109,7 +118,7 @@ func (n *Network) createDedicatedNetwork(ctx *pulumi.Context, scope Scope, args 
 		Name:                  pulumi.String(networkName),
 		Description:           pulumi.String("Dedicated network for tunnel connectors"),
 		AutoCreateSubnetworks: pulumi.Bool(false),
-	}, pulumi.Parent(scope.Parent))
+	}, pulumi.Parent(scope.Parent), pulumi.DependsOn([]pulumi.Resource{computeAPI}))
 	if err != nil {
 		return fmt.Errorf("failed to create connector network: %w", err)
 	}

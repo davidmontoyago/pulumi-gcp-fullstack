@@ -99,6 +99,20 @@ func TestNewNetwork_Dedicated(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestNewNetwork_CustomCIDR(t *testing.T) {
+	t.Parallel()
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		network, err := connector.NewNetwork(ctx, testScope(), &connector.NetworkArgs{IPCidrRange: "10.20.0.0/26"})
+		require.NoError(t, err)
+
+		assert.Equal(t, "10.20.0.0/26", awaitOutput(t, ctx, network.GetSubnetwork().IpCidrRange).Value)
+
+		return nil
+	}, pulumi.WithMocks("project", "stack", &connectorMocks{}))
+	require.NoError(t, err)
+}
+
 func TestNewNetwork_Existing(t *testing.T) {
 	t.Parallel()
 
@@ -129,6 +143,8 @@ func TestDeploy_Cloudflared(t *testing.T) {
 		tunnelConnector, err := connector.Deploy(ctx, testScope(), network, connector.Cloudflared(pulumi.String(testTunnelAuth)))
 		require.NoError(t, err)
 		assert.Equal(t, "cloudflared", tunnelConnector.GetName())
+		require.NotNil(t, tunnelConnector.GetCredentialSecret())
+		assert.Equal(t, "test-cloudflared-credential", awaitOutput(t, ctx, tunnelConnector.GetCredentialSecret().SecretId).Value)
 
 		// Credential is secret and readable only by the connector's service account
 		credential := awaitOutput(t, ctx, tunnelConnector.GetCredentialSecretVersion().SecretData)
@@ -137,6 +153,8 @@ func TestDeploy_Cloudflared(t *testing.T) {
 
 		workerPool := tunnelConnector.GetWorkerPool()
 		require.NotNil(t, workerPool)
+
+		assert.Equal(t, false, *awaitOutput(t, ctx, workerPool.DeletionProtection).Value.(*bool), "Deletion protection should default to false")
 
 		scaling := awaitOutput(t, ctx, workerPool.Scaling).Value.(cloudrunv2.WorkerPoolScaling)
 		assert.Equal(t, "MANUAL", *scaling.ScalingMode)
@@ -243,6 +261,25 @@ func TestDeploy_Validation(t *testing.T) {
 		{name: "missing name", args: &connector.Args{Image: testProxyImage, Credential: validCredential}, expectedErr: "connector name is required"},
 		{name: "missing image", args: &connector.Args{Name: testProxyName, Credential: validCredential}, expectedErr: "image is required"},
 		{name: "missing credential", args: &connector.Args{Name: testProxyName, Image: testProxyImage}, expectedErr: "credential is required"},
+		{
+			name:        "missing credential value",
+			args:        &connector.Args{Name: testProxyName, Image: testProxyImage, Credential: &connector.Credential{FilePath: "/etc/proxy/token"}},
+			expectedErr: "credential is required",
+		},
+		{
+			name: "neither file nor env var",
+			args: &connector.Args{Name: testProxyName, Image: testProxyImage, Credential: &connector.Credential{
+				Value: pulumi.String(testTunnelAuth),
+			}},
+			expectedErr: "exactly one of credential file path or env var",
+		},
+		{
+			name: "file path at root",
+			args: &connector.Args{Name: testProxyName, Image: testProxyImage, Credential: &connector.Credential{
+				Value: pulumi.String(testTunnelAuth), FilePath: "/token",
+			}},
+			expectedErr: "must be absolute and inside a directory",
+		},
 		{
 			name: "both file and env var",
 			args: &connector.Args{Name: testProxyName, Image: testProxyImage, Credential: &connector.Credential{

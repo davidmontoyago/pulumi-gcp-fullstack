@@ -124,14 +124,16 @@ type NetworkArgs struct {
 	EnableGlobalEntrypoint bool
 	// Whether to secure the frontend and backend instances with an external WAF using Cloud Run Domain Mapping.
 	// Set to true to disable the external load balancer. Defaults to false.
+	// Implied by ExternalWAFConnectorTunnel.
 	EnableExternalWAF bool
-	// How the external WAF reaches the instances when EnableExternalWAF is true.
-	// Defaults to ExternalWAFConnectorDomainMapping.
-	// With ExternalWAFConnectorTunnel, instances use internal-only ingress and are reached through
-	// tunnel connectors. See FullStack.DeployTunnelConnector.
+	// How the external WAF reaches the instances. Defaults to ExternalWAFConnectorDomainMapping.
+	// ExternalWAFConnectorTunnel is the single setting for tunnel mode: it enables the external WAF
+	// (no load balancer), uses internal-only ingress, skips domain mappings and ignores
+	// EnablePublicIngress. Instances are reached through tunnel connectors deployed with
+	// FullStack.DeployTunnelConnector.
 	ExternalWAFConnector string
-	// Network for tunnel connectors. Defaults to a dedicated network.
-	// Used only with ExternalWAFConnectorTunnel.
+	// Network shared by tunnel connectors, created by the first FullStack.DeployTunnelConnector call.
+	// Defaults to a dedicated network.
 	TunnelConnectorNetwork *connector.NetworkArgs
 }
 
