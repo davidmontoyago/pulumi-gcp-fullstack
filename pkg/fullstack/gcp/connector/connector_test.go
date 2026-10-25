@@ -16,11 +16,12 @@ import (
 )
 
 const (
-	testProject    = "test-project"
-	testRegion     = "us-central1"
-	testTunnelAuth = "eyJ-test-tunnel-token"
-	testProxyName  = "proxy"
-	testProxyImage = "proxy:1.0"
+	testProject       = "test-project"
+	testRegion        = "us-central1"
+	testTunnelAuth    = "eyJ-test-tunnel-token"
+	testProxyName     = "proxy"
+	testProxyImage    = "proxy:1.0"
+	testProxyAuthFile = "/etc/proxy/token"
 )
 
 type connectorMocks struct{}
@@ -250,7 +251,7 @@ func TestDeploy_EnvVarCredential(t *testing.T) {
 func TestDeploy_Validation(t *testing.T) {
 	t.Parallel()
 
-	validCredential := &connector.Credential{Value: pulumi.String(testTunnelAuth), FilePath: "/etc/proxy/token"}
+	validCredential := &connector.Credential{Value: pulumi.String(testTunnelAuth), FilePath: testProxyAuthFile}
 
 	tests := []struct {
 		name        string
@@ -263,7 +264,7 @@ func TestDeploy_Validation(t *testing.T) {
 		{name: "missing credential", args: &connector.Args{Name: testProxyName, Image: testProxyImage}, expectedErr: "credential is required"},
 		{
 			name:        "missing credential value",
-			args:        &connector.Args{Name: testProxyName, Image: testProxyImage, Credential: &connector.Credential{FilePath: "/etc/proxy/token"}},
+			args:        &connector.Args{Name: testProxyName, Image: testProxyImage, Credential: &connector.Credential{FilePath: testProxyAuthFile}},
 			expectedErr: "credential is required",
 		},
 		{
@@ -283,7 +284,7 @@ func TestDeploy_Validation(t *testing.T) {
 		{
 			name: "both file and env var",
 			args: &connector.Args{Name: testProxyName, Image: testProxyImage, Credential: &connector.Credential{
-				Value: pulumi.String(testTunnelAuth), FilePath: "/etc/proxy/token", EnvVar: "TOKEN",
+				Value: pulumi.String(testTunnelAuth), FilePath: testProxyAuthFile, EnvVar: "TOKEN",
 			}},
 			expectedErr: "exactly one of credential file path or env var",
 		},

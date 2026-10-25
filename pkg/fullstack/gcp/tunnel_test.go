@@ -181,7 +181,7 @@ func TestFullStack_DeployTunnelConnectorErrors(t *testing.T) {
 		assert.Contains(t, err.Error(), "tunnel connector args are required")
 		assert.Nil(t, fullstack.GetConnectorNetwork(), "Nil args should not create the network")
 
-		_, err = fullstack.DeployTunnelConnector(ctx, &connector.Args{Name: "proxy"})
+		_, err = fullstack.DeployTunnelConnector(ctx, &connector.Args{Name: "ngrok"})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to deploy tunnel connector: image is required")
 		assert.Empty(t, fullstack.GetTunnelConnectors(), "Failed connectors should not be registered")

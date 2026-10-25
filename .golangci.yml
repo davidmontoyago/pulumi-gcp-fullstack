@@ -1,8 +1,8 @@
 version: "2"
 
 run:
-  timeout: 5m
-  go: "1.24.0"
+  # Loading packages compiles the Pulumi provider SDKs, which takes over 10m on a cold build cache.
+  timeout: 30m
 
 linters:
   enable:
@@ -16,11 +16,10 @@ linters:
     - prealloc
     - gocritic
     - revive
-    - gomodguard
+    - gomodguard_v2
     - forbidigo
     - goconst
     - grouper
-    - importas
     - ireturn
     - makezero
     - nestif
@@ -66,10 +65,17 @@ linters:
     # Comment formatting - too strict for infrastructure documentation
     - godot
 
+  settings:
+    gomodguard_v2:
+      # Block 'replace' directives with local paths, which break consumers of the module.
+      local-replace-directives: true
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
 issues:
+  # Report every issue instead of the default caps (50 per linter, 3 identical).
   max-issues-per-linter: 0
   max-same-issues: 0
-  new: false
-  new-from-rev: ""
-  new-from-patch: ""
-  fix: false
