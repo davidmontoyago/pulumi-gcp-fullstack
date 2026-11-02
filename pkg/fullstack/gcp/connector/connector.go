@@ -80,9 +80,16 @@ func Deploy(ctx *pulumi.Context, scope Scope, network *Network, args *Args) (*Tu
 		container.LivenessProbe = newLivenessProbe(args.LivenessProbe)
 	}
 
+	containers := cloudrunv2.WorkerPoolTemplateContainerArray{container}
+	if args.EgressProbe != nil {
+		// The connector starts only after the probe's startup probe passes.
+		container.DependsOns = pulumi.ToStringArray([]string{egressProbeName})
+		containers = append(containers, newEgressProbeContainer(args.EgressProbe))
+	}
+
 	template := &cloudrunv2.WorkerPoolTemplateArgs{
 		ServiceAccount: connector.serviceAccount.Email,
-		Containers:     cloudrunv2.WorkerPoolTemplateContainerArray{container},
+		Containers:     containers,
 		VpcAccess: &cloudrunv2.WorkerPoolTemplateVpcAccessArgs{
 			Egress: pulumi.String(egressPrivateRangesOnly),
 			NetworkInterfaces: cloudrunv2.WorkerPoolTemplateVpcAccessNetworkInterfaceArray{
@@ -217,6 +224,13 @@ func withDefaults(args *Args) (*Args, error) {
 	}
 	if defaulted.ResourceLimits == nil {
 		defaulted.ResourceLimits = defaultResourceLimits
+	}
+	if defaulted.EgressProbe != nil {
+		egressProbe, err := egressProbeWithDefaults(args.Name, defaulted.EgressProbe)
+		if err != nil {
+			return nil, err
+		}
+		defaulted.EgressProbe = egressProbe
 	}
 
 	return &defaulted, nil

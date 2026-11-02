@@ -37,6 +37,27 @@ type Args struct {
 	LivenessProbe *Probe
 	// Whether to protect the worker pool from deletion. Defaults to false.
 	DeletionProtection bool
+	// TCP egress probe that delays the connector's start until the VPC path to Cloud Run works.
+	// Disabled if nil.
+	EgressProbe *EgressProbe
+}
+
+// EgressProbe runs a sidecar that opens a TCP connection (not an HTTP request) to Host on port 443
+// until it succeeds, then listens on Port so its TCP startup probe passes. The connector container
+// depends on it, so it only starts, and joins its external network, once the VPC path works.
+//
+// A TCP connection proves DNS resolution of the private run.app zone and the route through Private
+// Google Access. It ends at Google's front end, so it doesn't check that the service is healthy or
+// accepts requests. Every run.app host resolves to the same addresses, so one host is enough.
+type EgressProbe struct {
+	// Host to connect to on port 443, without scheme (e.g. "backend-abc-uc.a.run.app"). Required.
+	Host pulumi.StringInput
+	// Container image with busybox nc and httpd. Defaults to busybox pinned by digest.
+	Image string
+	// Local port the probe listens on once the TCP check succeeds. Defaults to 8081.
+	Port int
+	// Container limits. Defaults to 0.08 vCPU and 128 MiB.
+	ResourceLimits pulumi.StringMap
 }
 
 // Credential is a secret delivered as a file (preferred) or as an env var.

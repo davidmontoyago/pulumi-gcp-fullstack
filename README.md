@@ -285,6 +285,7 @@ _, err = mystack.DeployTunnelConnector(ctx, connector.Cloudflared(edge.GetTunnel
 - Its credential is stored in Secret Manager, readable only by the connector's own service account, and mounted as a file.
 - The first `DeployTunnelConnector` call creates a network that later connectors share: Direct VPC egress (`private-ranges-only`), Private Google Access and a private `run.app` DNS zone (~$0.20/mo). Edge traffic uses Cloud Run's built-in internet egress, so no Cloud NAT is needed.
 - Other proxies can be configured with `connector.Args` (image, args, credential as a file or env var, probes).
+- Optional `EgressProbe`: a busybox sidecar that opens a **TCP** connection (not an HTTP request) to the backend's `run.app` host on port 443, and the connector starts only once it succeeds. Direct VPC egress can take a minute or more to connect after an instance starts, so this keeps the connector from joining its network before the services are reachable. Enable it with `args.EgressProbe = &connector.EgressProbe{}`.
 - `DeployTunnelConnector` also works with the default `ExternalWAFConnectorDomainMapping`, where services stay public. Use it to stage a connector, then switch to `ExternalWAFConnectorTunnel` to close public ingress.
 
 ```

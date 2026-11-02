@@ -2,6 +2,7 @@ package gcp
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 
@@ -25,6 +26,8 @@ const (
 //     switching to the tunnel.
 //   - ExternalWAFConnectorTunnel: services are internal-only, so connectors are the only way in.
 //
+// With args.EgressProbe set and no Host, the TCP egress probe targets the backend's run.app host.
+//
 // E.g.: fullstack.DeployTunnelConnector(ctx, connector.Cloudflared(edge.GetTunnelToken()))
 func (f *FullStack) DeployTunnelConnector(ctx *pulumi.Context, args *connector.Args) (*connector.TunnelConnector, error) {
 	if args == nil {
@@ -32,6 +35,10 @@ func (f *FullStack) DeployTunnelConnector(ctx *pulumi.Context, args *connector.A
 	}
 	if _, exists := f.tunnelConnectors[args.Name]; exists {
 		return nil, fmt.Errorf("tunnel connector %s already deployed", args.Name)
+	}
+
+	if args.EgressProbe != nil && args.EgressProbe.Host == nil {
+		args = withBackendEgressProbeHost(args, f.backendService.Uri)
 	}
 
 	if f.connectorNetwork == nil {
@@ -49,6 +56,20 @@ func (f *FullStack) DeployTunnelConnector(ctx *pulumi.Context, args *connector.A
 	f.tunnelConnectors[args.Name] = tunnelConnector
 
 	return tunnelConnector, nil
+}
+
+// withBackendEgressProbeHost returns a copy of args whose TCP egress probe targets the backend.
+// Any run.app host tests the same VPC path, so one service is enough.
+func withBackendEgressProbeHost(args *connector.Args, backendURI pulumi.StringOutput) *connector.Args {
+	egressProbe := *args.EgressProbe
+	egressProbe.Host = backendURI.ApplyT(func(uri string) string {
+		return strings.TrimPrefix(uri, "https://")
+	}).(pulumi.StringOutput)
+
+	withProbe := *args
+	withProbe.EgressProbe = &egressProbe
+
+	return &withProbe
 }
 
 // GetTunnelConnectors returns the deployed tunnel connectors keyed by name.

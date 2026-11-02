@@ -22,6 +22,10 @@ const (
 	testProxyName     = "proxy"
 	testProxyImage    = "proxy:1.0"
 	testProxyAuthFile = "/etc/proxy/token"
+	testRunAppHost    = "backend-abc-uc.a.run.app"
+	testEgressProbe   = "egress-probe"
+	testCPU           = "cpu"
+	testMemory        = "memory"
 )
 
 type connectorMocks struct{}
@@ -170,10 +174,11 @@ func TestDeploy_Cloudflared(t *testing.T) {
 		assert.Equal(t, "test-connector-network", *template.VpcAccess.NetworkInterfaces[0].Network)
 		assert.Equal(t, "test-connector-subnet", *template.VpcAccess.NetworkInterfaces[0].Subnetwork)
 
-		require.Len(t, template.Containers, 1)
+		require.Len(t, template.Containers, 1, "No egress probe sidecar unless enabled")
 		container := template.Containers[0]
+		assert.Empty(t, container.DependsOns)
 		assert.Equal(t, connector.CloudflaredImage, container.Image)
-		assert.Equal(t, map[string]string{"cpu": "80m", "memory": "512Mi"}, container.Resources.Limits, "Should default to worker pool minimums")
+		assert.Equal(t, map[string]string{testCPU: "80m", testMemory: "512Mi"}, container.Resources.Limits, "Should default to worker pool minimums")
 		assert.Equal(t, []string{
 			"tunnel", "--loglevel", "warn", "--protocol", "http2", "--metrics", "0.0.0.0:2000",
 			"run", "--token-file", "/etc/cloudflared/token",
@@ -218,8 +223,8 @@ func TestDeploy_EnvVarCredential(t *testing.T) {
 			Image:    "docker.io/tailscale/tailscale:v1.90.0",
 			Replicas: 2,
 			ResourceLimits: pulumi.StringMap{
-				"cpu":    pulumi.String("250m"),
-				"memory": pulumi.String("512Mi"),
+				testCPU:    pulumi.String("250m"),
+				testMemory: pulumi.String("512Mi"),
 			},
 			Credential: &connector.Credential{
 				Value:  pulumi.String("tskey-auth-test"),
@@ -236,12 +241,86 @@ func TestDeploy_EnvVarCredential(t *testing.T) {
 		assert.Empty(t, template.Volumes, "Env var credentials should not mount a volume")
 
 		container := template.Containers[0]
-		assert.Equal(t, "250m", container.Resources.Limits["cpu"])
+		assert.Equal(t, "250m", container.Resources.Limits[testCPU])
 		assert.Nil(t, container.StartupProbe)
 		require.Len(t, container.Envs, 1)
 		assert.Equal(t, "TS_AUTHKEY", container.Envs[0].Name)
 		require.NotNil(t, container.Envs[0].ValueSource)
 		assert.Equal(t, "1", *container.Envs[0].ValueSource.SecretKeyRef.Version)
+
+		return nil
+	}, pulumi.WithMocks("project", "stack", &connectorMocks{}))
+	require.NoError(t, err)
+}
+
+func TestDeploy_EgressProbe(t *testing.T) {
+	t.Parallel()
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		network, err := connector.NewNetwork(ctx, testScope(), nil)
+		require.NoError(t, err)
+
+		args := connector.Cloudflared(pulumi.String(testTunnelAuth))
+		args.EgressProbe = &connector.EgressProbe{Host: pulumi.String(testRunAppHost)}
+		tunnelConnector, err := connector.Deploy(ctx, testScope(), network, args)
+		require.NoError(t, err)
+
+		template := awaitOutput(t, ctx, tunnelConnector.GetWorkerPool().Template).Value.(cloudrunv2.WorkerPoolTemplate)
+		require.Len(t, template.Containers, 2)
+		cloudflared, probe := template.Containers[0], template.Containers[1]
+		assert.Equal(t, []string{testEgressProbe}, cloudflared.DependsOns, "Connector should start after the egress probe")
+
+		assert.Equal(t, testEgressProbe, *probe.Name)
+		assert.Equal(t, connector.EgressProbeImage, probe.Image)
+		require.Len(t, probe.Commands, 3)
+		assert.Equal(t, []string{"sh", "-c"}, probe.Commands[:2])
+		assert.Contains(t, probe.Commands[2], `nc -z -w 5 "$EGRESS_PROBE_HOST" "$EGRESS_PROBE_TARGET_PORT"`, "Egress check should be a TCP connection")
+
+		envVars := map[string]string{}
+		for _, env := range probe.Envs {
+			envVars[env.Name] = *env.Value
+		}
+		assert.Equal(t, map[string]string{
+			"EGRESS_PROBE_HOST":        testRunAppHost,
+			"EGRESS_PROBE_TARGET_PORT": "443",
+			"EGRESS_PROBE_PORT":        "8081",
+		}, envVars)
+		assert.Equal(t, map[string]string{testCPU: "80m", testMemory: "128Mi"}, probe.Resources.Limits)
+
+		require.NotNil(t, probe.StartupProbe)
+		assert.Nil(t, probe.StartupProbe.HttpGet, "Startup probe should be TCP, not HTTP")
+		require.NotNil(t, probe.StartupProbe.TcpSocket)
+		assert.Equal(t, 8081, *probe.StartupProbe.TcpSocket.Port)
+		assert.Equal(t, 5, *probe.StartupProbe.PeriodSeconds)
+		assert.Equal(t, 36, *probe.StartupProbe.FailureThreshold, "Should wait up to 3 minutes for Direct VPC egress")
+
+		return nil
+	}, pulumi.WithMocks("project", "stack", &connectorMocks{}))
+	require.NoError(t, err)
+}
+
+func TestDeploy_EgressProbeCustom(t *testing.T) {
+	t.Parallel()
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		network, err := connector.NewNetwork(ctx, testScope(), nil)
+		require.NoError(t, err)
+
+		args := connector.Cloudflared(pulumi.String(testTunnelAuth))
+		args.EgressProbe = &connector.EgressProbe{
+			Host:           pulumi.String(testRunAppHost),
+			Image:          "registry.example.com/busybox:1.37",
+			Port:           9090,
+			ResourceLimits: pulumi.StringMap{testCPU: pulumi.String("100m"), testMemory: pulumi.String("256Mi")},
+		}
+		tunnelConnector, err := connector.Deploy(ctx, testScope(), network, args)
+		require.NoError(t, err)
+
+		template := awaitOutput(t, ctx, tunnelConnector.GetWorkerPool().Template).Value.(cloudrunv2.WorkerPoolTemplate)
+		probe := template.Containers[1]
+		assert.Equal(t, "registry.example.com/busybox:1.37", probe.Image)
+		assert.Equal(t, 9090, *probe.StartupProbe.TcpSocket.Port)
+		assert.Equal(t, map[string]string{testCPU: "100m", testMemory: "256Mi"}, probe.Resources.Limits)
 
 		return nil
 	}, pulumi.WithMocks("project", "stack", &connectorMocks{}))
@@ -294,6 +373,25 @@ func TestDeploy_Validation(t *testing.T) {
 				Value: pulumi.String(testTunnelAuth), FilePath: "token",
 			}},
 			expectedErr: "must be absolute and inside a directory",
+		},
+		{
+			name:        "egress probe without host",
+			args:        &connector.Args{Name: testProxyName, Image: testProxyImage, Credential: validCredential, EgressProbe: &connector.EgressProbe{}},
+			expectedErr: "egress probe host is required",
+		},
+		{
+			name: "connector named like the egress probe",
+			args: &connector.Args{Name: testEgressProbe, Image: testProxyImage, Credential: validCredential, EgressProbe: &connector.EgressProbe{
+				Host: pulumi.String(testRunAppHost),
+			}},
+			expectedErr: `connector name "egress-probe" is reserved`,
+		},
+		{
+			name: "negative egress probe port",
+			args: &connector.Args{Name: testProxyName, Image: testProxyImage, Credential: validCredential, EgressProbe: &connector.EgressProbe{
+				Host: pulumi.String(testRunAppHost), Port: -1,
+			}},
+			expectedErr: "egress probe port must not be negative",
 		},
 		{
 			name:        "negative replicas",

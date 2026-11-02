@@ -3,6 +3,7 @@ package gcp_test
 import (
 	"testing"
 
+	"github.com/pulumi/pulumi-gcp/sdk/v10/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/internals"
 	"github.com/stretchr/testify/assert"
@@ -163,6 +164,34 @@ func TestNewFullStack_TunnelConnectorWithExistingNetwork(t *testing.T) {
 		assert.Nil(t, connectorNetwork.GetNetwork(), "Existing network should not be created")
 		assert.Nil(t, connectorNetwork.GetSubnetwork())
 		assert.NotNil(t, connectorNetwork.GetRunAppZone())
+
+		return nil
+	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
+	require.NoError(t, err)
+}
+
+func TestFullStack_DeployTunnelConnectorEgressProbe(t *testing.T) {
+	t.Parallel()
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		fullstack, err := gcp.NewFullStack(ctx, "test-fullstack", externalWAFArgs(gcp.ExternalWAFConnectorTunnel))
+		require.NoError(t, err)
+
+		args := connector.Cloudflared(pulumi.String(testTunnelAuth))
+		args.EgressProbe = &connector.EgressProbe{}
+		tunnelConnector, err := fullstack.DeployTunnelConnector(ctx, args)
+		require.NoError(t, err)
+		assert.Nil(t, args.EgressProbe.Host, "Caller's args should not be modified")
+
+		template := awaitOutput(t, ctx, tunnelConnector.GetWorkerPool().Template).(cloudrunv2.WorkerPoolTemplate)
+		require.Len(t, template.Containers, 2)
+		probeHost := ""
+		for _, env := range template.Containers[1].Envs {
+			if env.Name == "EGRESS_PROBE_HOST" {
+				probeHost = *env.Value
+			}
+		}
+		assert.Equal(t, "test-fullstack-backend-service-hash-uc.a.run.app", probeHost, "Probe should default to the backend's run.app host, without scheme")
 
 		return nil
 	}, pulumi.WithMocks("project", "stack", &fullstackMocks{}))
